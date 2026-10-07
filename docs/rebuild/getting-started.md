@@ -51,3 +51,5 @@ npm run build
 ```
 
 Gebruik Node 24 of nieuwer. De workflow gebruikt Node 24. Installatie van de Playwright-browser voor ontwikkelaars: `npx playwright install chromium`.
+
+GitHub Actions voert dezelfde browserflows uit met de reeds geïnstalleerde Chrome op de Ubuntu 24.04-runner. Daarmee hoeft de publicatie geen extra apt-installatie uit te voeren; een vastlopende pakketmirror heeft de eerdere workflow geblokkeerd. De werkelijke Chrome-versie wordt in de job gelogd. Lokaal kan dezelfde route met `IMA_BROWSER_CHANNEL=chrome npm run test:e2e`; zonder die variabele blijft de geïnstalleerde Playwright-Chromium de standaard. Zie de [Playwright-channelconfiguratie](https://playwright.dev/docs/browsers#google-chrome--microsoft-edge) en de [GitHub-runnerinventaris](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md). Alle controles blijven voorwaarden voor publicatie; de verificatiejob stopt na maximaal 15 minuten.

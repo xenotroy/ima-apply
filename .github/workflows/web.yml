@@ -10,7 +10,8 @@ permissions:
   contents: read
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: web
@@ -25,8 +26,11 @@ jobs:
       - run: npm test
       - run: node --test ../scripts/import-content.test.mjs ../scripts/migrate-workspace.test.mjs
       - run: npm audit --audit-level=high
-      - run: npx playwright install --with-deps chromium
+      - name: Verify the runner's installed Chrome
+        run: google-chrome --version
       - run: npm run test:e2e
+        env:
+          IMA_BROWSER_CHANNEL: chrome
       - run: npm run build
         env:
           IMA_BASE_PATH: /ima-apply/
@@ -38,6 +42,7 @@ jobs:
     if: github.repository == 'xenotroy/ima-apply' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write
