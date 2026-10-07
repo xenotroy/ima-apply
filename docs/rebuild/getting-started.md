@@ -2,6 +2,10 @@
 
 Open [IMA Apply](https://xenotroy.github.io/ima-apply/). De eerste werkruimte is een demonstratie met fictieve gegevens. Kies **Begin een eigen werkruimte** en vul een naam in.
 
+Via **Organisatie & dossiers** leg je organisatie, locatie en afdelingen vast. Maak een RI&E-dossier met afgebakende scope, beoordelaar en geselecteerde vragen. **Inventariseren** opent uitsluitend de bevroren vragen van dat dossier. Antwoorden en bewijs van een andere beoordeling blijven afzonderlijk. Voeg bewijsrecords, waarnemingen en bevindingen toe; verbind een bevinding met scenario en actie. Beoordelen/afsluiten vraagt expliciet besluit en passend geverifieerd bewijs.
+
+Via **Onderzoek & cijfers** bewaar je een 5×Waarom- of BowTie-onderzoek. Verbind bewijs, systeemcondities en acties. Leg voor frequenties de urenbron per hele kalendermaand en dezelfde scope vast. Classificeer recordable/lost time bij de melding; ontbrekende informatie wordt geen nulfrequentie.
+
 1. Maak een concreet risicoscenario: scope, gevaar, gebeurtenisroute en gevolg.
 2. Schat in de risicowerkbank het uitgangsscenario zonder de afzonderlijk ingevoerde maatregelen. Kies W, B en E.
 3. Voeg bestaande en geplande maatregelen toe. Leg werking, scorefactor, onzekerheid, bewijs en afhankelijkheid vast.
@@ -21,6 +25,8 @@ Op pc A: bekijk eerst de cloudversie en sla na bewerking op in GitHub. Op pc B: 
 
 De tokeninvoer moet opnieuw op een ander apparaat of in een nieuw tabblad. Het token wordt niet opgeslagen. Browserlokale opslag is geen automatische cloudbackup. Exporteer bij een opslagfout je actuele werkversie.
 
+Het veld **Werkruimtebestand in de repository** bepaalt welk project je opent. Gebruik op beide pc’s hetzelfde pad. De private bronwerkruimte staat op `workspaces/bronwerkruimte.json`; zij bevat 260 oorspronkelijke themavragen en drie conceptlesteksten, zonder verzonnen projectbeoordelingen. Selecteer dit bestand, bekijk de cloudversie en kies **Gebruik cloudversie**. Bewaar eigen projecten bewust in afzonderlijke bestanden, bijvoorbeeld `workspaces/projectnaam.json`.
+
 ## Private broninhoud
 
 ```bash
@@ -29,6 +35,8 @@ node scripts/import-content.mjs --input /pad/naar/vragenlijst.md --out private-d
 ```
 
 Gebruik **Kennis & bronnen → Private content importeren** om het bestand te laden. De importer ondersteunt Markdown-vragenlijsten, legacy RI&E-JSON en CSV. Een Moodle-cijferexport wordt niet automatisch een vragenlijst of bewijs van praktische bekwaamheid.
+
+Voor bestaande projectdossiers is er een aparte [migratieroute](migration.md). Zij bewaart de originele bron, maakt een nieuwe private export met waarschuwingen en kent oude ratings geen nieuwe percentages toe. Lees het migratierapport voordat je de export via de browser opent.
 
 ## Lokaal ontwikkelen
 

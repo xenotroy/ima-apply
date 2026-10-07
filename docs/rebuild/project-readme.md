@@ -15,6 +15,10 @@ Een browserwerkruimte voor risico-inventarisatie, onderbouwde beheersmaatregelen
 - Historische Fine- en Kinney-justificatiecalculators met afzonderlijke kostenratings.
 - 16 thema’s, 78 eigen checkvragen, 8 contentpakketten en expliciete bronstatus.
 - Private vragen/content uit Markdown, legacy JSON en Moodle/LMS-CSV.
+- Organisaties, locaties, afdelingen en afzonderlijke RI&E-dossiers met bevroren vragen en gecontroleerde bronhashes.
+- Bewijsregister, waarnemingen, bevindingen, eigen onderwerpen en regelgevingssignalen.
+- Opgeslagen 5×Waarom-/BowTie-onderzoeken en incidentfrequenties met passende maanduren en expliciete datadekking.
+- Gecontroleerde legacy dossierexport uit Markdown en SQLite met bronbehoud en reviewwaarschuwingen.
 - Plan van aanpak met eigenaar, datum en apart resultaat van effectcontrole.
 - Incidenten/signalen gekoppeld aan scenario’s en acties.
 - Rapportage als Markdown, CSV en print/PDF; volledige JSON-overdracht.
@@ -30,6 +34,8 @@ Open **Werkruimte & synchronisatie**. Voor de persoonlijke inrichting is de priv
 
 Bekijk op een nieuwe pc de cloudversie voordat je verder werkt. Uploads met een verouderde versie worden geblokkeerd; er is geen stil overschrijven. [Volledige synchronisatiewerkwijze](docs/rebuild/multi-device.md).
 
+De aparte private bronwerkruimte is beschikbaar als `workspaces/bronwerkruimte.json`: 260 oorspronkelijke themavragen en drie lesconcepten. Kies dat bestand in de synchronisatiepagina om de echte private intake te openen. De publieke app blijft 78 eigen checkvragen leveren.
+
 ## Ontwikkelen en controleren
 
 Node 24 of nieuwer:
@@ -40,6 +46,7 @@ npm ci
 npm run dev
 npm test
 node --test ../scripts/import-content.test.mjs
+node --test ../scripts/migrate-workspace.test.mjs
 npx playwright install chromium
 npm run test:e2e
 npm run build
@@ -52,5 +59,7 @@ GitHub Actions controleert de risicokern, opslag/synchronisatie, private importe
 De vragen zijn eigen formuleringen, ontwikkeld met gericht onderzochte vaultcontext, PI Vught-vragenstructuren en opleidings-/methodiekbronnen. Het [bronregister](docs/rebuild/source-register.md) specificeert de werkelijk gelezen scope en ontbrekende bronnen. Integrale gelicentieerde publicaties, private projectinformatie en deelnemersgegevens zijn niet in de publieke app opgenomen.
 
 Moodle/LMS-intake is een bestandsimport; er is geen permanente API-verbinding. Deelname of een cijfer wordt geen bewijs van praktische beheersing. De oude Avalonia/SQLite-software blijft behouden. SQLite-dossiers zijn niet stil omgezet; oude reductieratings vereisen inhoudelijke herbeoordeling.
+
+De [volledige herbouwgoal](docs/rebuild/goal.md) blijft actief. [Functiepariteit](docs/rebuild/function-parity.md), [brondekking](docs/rebuild/source-coverage.md) en [migratiemapping](docs/rebuild/migration.md) onderscheiden gerealiseerde workflows van resterende scope. Origineel HVK/MVK-materiaal, actuele LMS-exports, complete historische revisies en een echte productieoverdracht zijn nog niet bewezen afgerond.
 
 Zie [architectuur](docs/rebuild/architecture.md) voor modulegrenzen, migratie en implementatiestatus.

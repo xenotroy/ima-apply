@@ -31,6 +31,8 @@ export interface Question {
   sourceIds: string[];
   suggestedHierarchy: HierarchyLevel[];
   roles: string[];
+  /** Original private norms/references, only present after a private import. */
+  legalReferences?: string;
 }
 
 export interface Theme {
@@ -88,10 +90,10 @@ export const sources: SourceRecord[] = [
     kind: 'questionnaire',
     status: 'partial_read',
     readScope:
-      'Projectcontext, index van tien themalijsten en delen van routes voor alleen werken, PSA en BHV.',
+      'Tien oorspronkelijke themalijsten: 260 vraagteksten, beoordelingscriteria en verificatie-aanwijzingen gelezen; kern/verdieping, bronmetadata en normverwijzingen privé geïmporteerd.',
     publication: 'private',
     notes:
-      'Alleen generieke vraagstructuur is opnieuw geformuleerd. Originele teksten, lokale feiten en operationele details zijn niet in deze catalogus opgenomen.',
+      'Private intake bevat 177 kern- en 83 verdiepingsvragen. De publieke catalogus bevat eigen generieke formuleringen. Geen projectbevindingen of oorspronkelijke private vragen gepubliceerd; normverwijzingen niet zelfstandig juridisch gevalideerd.',
   },
   {
     id: 'PGA-32489',
@@ -188,20 +190,20 @@ export const sources: SourceRecord[] = [
     kind: 'training',
     status: 'metadata_only',
     readScope:
-      'HVK-vindnotitie/indexrapport plus twee oorspronkelijke HVK-decks aangetroffen: Riskmanagement 2 (2025-06) en RI&E (2025-04).',
+      'Vindnotities plus 138 gericht geselecteerde oorspronkelijke lesbestanden en zes HVK/MVK-curriculum- of handleidingvermeldingen op beschikbaarheid gecontroleerd.',
     publication: 'private',
     notes:
-      'Lokale OneDrive-routes bestaan, maar geselecteerde oorspronkelijke lesbestanden zijn cloudplaceholders zonder lokale inhoud; lezen gaf een timeout. Geen deckinhoud geïmporteerd en geen volledige MVK-bronset gelezen.',
+      'Alle geselecteerde bestanden hebben 0 lokaal toegewezen blokken. Het lezen van Riskmanagement 2 (2025-06) gaf een timeout. Ook RI&E (2025-04) en gerichte PDF-alternatieven waren placeholders. Geen oorspronkelijke deck- of curriculumtekst geïmporteerd.',
   },
   {
     id: 'LMS-MOODLE',
     title: 'Moodle/LMS — leerroute en brongebruik',
     kind: 'lms',
     status: 'partial_read',
-    readScope: 'Moodle-modulecontext, bronwerkwijze en LMS-projectnotitie.',
+    readScope: 'Modulecontext en bronwerkwijze plus drie oorspronkelijke conceptteksten voor lesdagen: gevaarlijke stoffen; Seveso/Bal/ARIE; BHV, noodplan en gebouwveiligheid.',
     publication: 'metadata_only',
     notes:
-      'Geen live LMS-sessie, cursusback-up of deelnemers-/voortgangsexport gelezen. CSV/JSON-intake is beschikbaar voor eigen private exports.',
+      'Drie lesontwikkelingsteksten zijn privé behouden als bronrecords, zonder daaruit toetsvragen te verzinnen. Geen actuele Moodle-CSV, MBZ/XML-back-up, deelnemers- of voortgangsexport aangetroffen in de succesvol onderzochte routes; één operationele OneDrive-route bleef ontoegankelijk.',
   },
   {
     id: 'VAULT-BOWTIE',

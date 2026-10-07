@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
   ArrowDownToLine,
@@ -61,19 +61,39 @@ import type {
   WorkspaceIncident,
   WorkspaceAnswer,
   WorkspaceRecord,
+  Dossier,
+  Evidence,
+  Department,
+  Site,
 } from './data';
 import { demoWorkspace, newControl, newScenario } from './demo';
 import Hologram from './components/Hologram';
+import { Badge, Field, Modal } from './components/Primitives';
+import DossierWorkspace, { MultiSelect } from './components/DossierWorkspace';
+import { questionHash } from './data/frozen';
+import DossierReport, { dossierMarkdown } from './components/DossierReport';
+import LearningWorkspace from './components/LearningWorkspace';
 import { Waterfall, LopaChart } from './components/RiskCharts';
 
 type Page =
-  'overview' | 'risk' | 'questions' | 'actions' | 'incidents' | 'sources' | 'report' | 'settings';
+  | 'overview'
+  | 'dossiers'
+  | 'risk'
+  | 'questions'
+  | 'actions'
+  | 'incidents'
+  | 'learning'
+  | 'sources'
+  | 'report'
+  | 'settings';
 const pages: { id: Page; label: string; icon: typeof Shield }[] = [
   { id: 'overview', label: 'Overzicht', icon: LayoutDashboard },
+  { id: 'dossiers', label: 'Organisatie & dossiers', icon: FileText },
   { id: 'risk', label: 'Risicowerkbank', icon: Activity },
   { id: 'questions', label: 'Inventarisatie', icon: ClipboardCheck },
   { id: 'actions', label: 'Plan van aanpak', icon: ListChecks },
   { id: 'incidents', label: 'Incidenten & leren', icon: GitBranch },
+  { id: 'learning', label: 'Onderzoek & cijfers', icon: Search },
   { id: 'sources', label: 'Kennis & bronnen', icon: BookOpen },
   { id: 'report', label: 'Rapportage', icon: FileText },
 ];
@@ -112,53 +132,6 @@ const answerLabels: Record<WorkspaceAnswer['choice'], string> = {
   unknown: 'Onbekend',
   na: 'N.v.t.',
 };
-function Badge({ children, tone = 'green' }: { children: ReactNode; tone?: string }) {
-  return <span className={`badge ${tone}`}>{children}</span>;
-}
-function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-      {hint && <small>{hint}</small>}
-    </label>
-  );
-}
-function Modal({
-  title,
-  children,
-  onClose,
-  wide = false,
-}: {
-  title: string;
-  children: ReactNode;
-  onClose: () => void;
-  wide?: boolean;
-}) {
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <section
-        className={`modal ${wide ? 'wide' : ''}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-      >
-        <div className="section-row">
-          <h2>{title}</h2>
-          <button className="icon-button" onClick={onClose} aria-label="Sluiten">
-            <X size={20} />
-          </button>
-        </div>
-        {children}
-      </section>
-    </div>
-  );
-}
 
 export default function App() {
   const [initial] = useState(readInitial);
@@ -167,6 +140,8 @@ export default function App() {
   const versionRef = useRef(initial.version);
   const queueRef = useRef(Promise.resolve());
   const [page, setPage] = useState<Page>('overview');
+  const [inventoryDossierId, setInventoryDossierId] = useState('');
+  useEffect(() => setInventoryDossierId(''), [workspace.id]);
   const [selectedId, setSelectedId] = useState(workspace.scenarios[0]?.id ?? '');
   const [notice, setNotice] = useState(initial.error);
   const [saving, setSaving] = useState(false);
@@ -176,18 +151,32 @@ export default function App() {
     'scenario' | 'control' | 'action' | 'incident' | 'rename' | 'import' | 'new' | null
   >(null);
   const [editingControl, setEditingControl] = useState<Control | null>(null);
+  const [editingIncident, setEditingIncident] = useState<WorkspaceIncident | undefined>();
   const [editingScenario, setEditingScenario] = useState<Scenario | null>(null);
   const [globalSearch, setGlobalSearch] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const [token, setToken] = useState('');
   const [repo, setRepo] = useState('xenotroy/ima-apply-workspaces');
+  const [cloudPath, setCloudPath] = useState(() => {
+    try {
+      return (
+        JSON.parse(localStorage.getItem('ima-sync-metadata') || 'null')?.path ||
+        'workspaces/default.json'
+      );
+    } catch {
+      return 'workspaces/default.json';
+    }
+  });
   const [cloudBusy, setCloudBusy] = useState(false);
   const [remotePreview, setRemotePreview] = useState<{
     workspace: WorkspaceState;
     sha: string;
+    repo: string;
+    path: string;
   } | null>(null);
   const [sync, setSync] = useState<{
     repo: string;
+    path?: string;
     sha: string | null;
     revision: number;
     workspaceId: string;
@@ -259,7 +248,8 @@ export default function App() {
       (q) => typeof q.prompt === 'string' && typeof q.themeId === 'string',
     ) as unknown as Question[]),
   ];
-  const answered = new Set(workspace.answers.map((a) => a.questionId)).size;
+  const answered = new Set(workspace.answers.filter((a) => !a.dossierId).map((a) => a.questionId))
+    .size;
   const completion = allQuestions.length ? Math.round((answered / allQuestions.length) * 100) : 0;
   const findResults = globalSearch.trim()
     ? workspace.scenarios.filter((s) =>
@@ -285,11 +275,12 @@ export default function App() {
   };
   const saveScenario = (s: Scenario) => {
     const exists = workspace.scenarios.some((x) => x.id === s.id);
-    update({
+    const accepted = update({
       scenarios: exists
         ? workspace.scenarios.map((x) => (x.id === s.id ? s : x))
         : [...workspace.scenarios, s],
     });
+    if (!accepted) return;
     setSelectedId(s.id);
     setPage('risk');
     setModal(null);
@@ -304,8 +295,12 @@ export default function App() {
     });
     setModal(null);
   };
-  const syncMetadata = (sha: string | null, w: WorkspaceState) => {
-    const m = { repo, sha, revision: w.revision, workspaceId: w.id };
+  const syncMetadata = (
+    sha: string | null,
+    w: WorkspaceState,
+    target = { repo, path: cloudPath },
+  ) => {
+    const m = { ...target, sha, revision: w.revision, workspaceId: w.id };
     setSync(m);
     localStorage.setItem('ima-sync-metadata', JSON.stringify(m));
   };
@@ -316,14 +311,14 @@ export default function App() {
         'Vul een GitHub-token in. Het token wordt alleen in het geheugen van dit tabblad bewaard.',
       );
     if (!owner || !name || rest.length) throw new Error('Gebruik eigenaar/repository.');
-    return new GitHubWorkspaceClient({ owner, repo: name, token: token.trim() });
+    return new GitHubWorkspaceClient({ owner, repo: name, token: token.trim(), path: cloudPath });
   };
   const pull = async () => {
     setCloudBusy(true);
     try {
       const result = await cloudClient().read();
       if (result.workspace && result.sha)
-        setRemotePreview({ workspace: result.workspace, sha: result.sha });
+        setRemotePreview({ workspace: result.workspace, sha: result.sha, repo, path: cloudPath });
       else {
         syncMetadata(null, workspace);
         setNotice(
@@ -342,7 +337,10 @@ export default function App() {
       await queueRef.current;
       if (saveFailedRef.current)
         throw new Error('Los de lokale opslagfout op of exporteer eerst je werkruimte.');
-      const same = sync?.repo === repo && sync.workspaceId === workspace.id;
+      const same =
+        sync?.repo === repo &&
+        (sync.path ?? 'workspaces/default.json') === cloudPath &&
+        sync.workspaceId === workspace.id;
       const result = await cloudClient().write(workspace, same ? sync.sha : null);
       syncMetadata(result.sha, workspace);
       setNotice(
@@ -376,6 +374,16 @@ export default function App() {
         const sources = Array.isArray(parsed.sources) ? parsed.sources : [];
         const ids = new Set([...builtinQuestions, ...workspace.questions].map((q) => q.id));
         const sourceIds = new Set(workspace.sources.map((q) => q.id));
+        const recordIds = new Set(workspace.contentRecords?.map((record) => record.id));
+        const records = (Array.isArray(parsed.records) ? parsed.records : []).map(
+          (record: WorkspaceRecord, index: number) => ({
+            ...record,
+            id:
+              typeof record.id === 'string'
+                ? record.id
+                : `${String(record.sourceId)}:record:${index}`,
+          }),
+        );
         const accepted = update({
           questions: [...workspace.questions, ...qs.filter((q: Question) => !ids.has(q.id))],
           sources: [
@@ -383,6 +391,10 @@ export default function App() {
             ...sources.filter(
               (s: WorkspaceRecord) => typeof s.id === 'string' && !sourceIds.has(s.id),
             ),
+          ],
+          contentRecords: [
+            ...(workspace.contentRecords ?? []),
+            ...records.filter((record: WorkspaceRecord) => !recordIds.has(record.id)),
           ],
         });
         if (!accepted) return;
@@ -723,14 +735,40 @@ export default function App() {
               )}
             </>
           )}
+          {page === 'dossiers' && (
+            <DossierWorkspace
+              workspace={workspace}
+              questions={allQuestions}
+              onUpdate={update}
+              openInventory={(dossierId) => {
+                setInventoryDossierId(dossierId);
+                navigate('questions');
+              }}
+              openScenario={(scenarioId) => {
+                setSelectedId(scenarioId);
+                navigate('risk');
+              }}
+            />
+          )}
           {page === 'questions' && (
             <Questionnaire
-              questions={allQuestions}
-              answers={workspace.answers}
+              questions={
+                workspace.dossiers?.find((d) => d.id === inventoryDossierId)?.questions ??
+                allQuestions
+              }
+              dossierId={inventoryDossierId || undefined}
+              dossiers={workspace.dossiers ?? []}
+              onDossierChange={setInventoryDossierId}
+              evidence={workspace.evidence ?? []}
+              answers={workspace.answers.filter(
+                (a) => a.dossierId === (inventoryDossierId || undefined),
+              )}
               updateAnswer={(answer) =>
                 update({
                   answers: [
-                    ...workspace.answers.filter((a) => a.questionId !== answer.questionId),
+                    ...workspace.answers.filter(
+                      (a) => a.questionId !== answer.questionId || a.dossierId !== answer.dossierId,
+                    ),
                     answer,
                   ],
                 })
@@ -739,6 +777,7 @@ export default function App() {
                 setEditingScenario({
                   ...newScenario(),
                   title: q.prompt,
+                  dossierId: inventoryDossierId || undefined,
                   description: `Aanleiding: inventarisatievraag ${q.id}`,
                   sourceIds: q.sourceIds,
                 });
@@ -761,7 +800,14 @@ export default function App() {
               incidents={workspace.incidents}
               actions={workspace.actions}
               scenarios={workspace.scenarios}
-              add={() => setModal('incident')}
+              add={() => {
+                setEditingIncident(undefined);
+                setModal('incident');
+              }}
+              onEdit={(i) => {
+                setEditingIncident(i);
+                setModal('incident');
+              }}
               createAction={(i) => {
                 const actionId = id();
                 update({
@@ -774,6 +820,7 @@ export default function App() {
                       id: actionId,
                       title: `Onderzoek en verbeter: ${i.title}`,
                       scenarioId: i.scenarioId,
+                      dossierId: workspace.scenarios.find((s) => s.id === i.scenarioId)?.dossierId,
                       owner: '',
                       dueDate: '',
                       status: 'open',
@@ -785,6 +832,7 @@ export default function App() {
               }}
             />
           )}
+          {page === 'learning' && <LearningWorkspace workspace={workspace} onUpdate={update} />}
           {page === 'sources' && (
             <Sources
               workspace={workspace}
@@ -823,6 +871,16 @@ export default function App() {
                       value={repo}
                       onChange={(e) => setRepo(e.target.value)}
                       placeholder="eigenaar/repository"
+                    />
+                  </Field>
+                  <Field
+                    label="Werkruimtebestand in de repository"
+                    hint="Gebruik op iedere pc hetzelfde bestand. Bewaar afzonderlijke projecten bijvoorbeeld als workspaces/projectnaam.json."
+                  >
+                    <input
+                      value={cloudPath}
+                      onChange={(e) => setCloudPath(e.target.value)}
+                      placeholder="workspaces/default.json"
                     />
                   </Field>
                   <Field
@@ -951,6 +1009,9 @@ export default function App() {
       {modal === 'scenario' && editingScenario && (
         <ScenarioEditor
           scenario={editingScenario}
+          dossiers={workspace.dossiers ?? []}
+          departments={workspace.departments ?? []}
+          sites={workspace.sites ?? []}
           onClose={() => setModal(null)}
           onSave={saveScenario}
         />
@@ -974,11 +1035,13 @@ export default function App() {
       )}
       {modal === 'incident' && (
         <IncidentEditor
+          initial={editingIncident}
+          departments={workspace.departments ?? []}
           scenarios={workspace.scenarios}
           onClose={() => setModal(null)}
           onSave={(i) => {
-            update({ incidents: [...workspace.incidents, i] });
-            setModal(null);
+            if (update({ incidents: [...workspace.incidents.filter((x) => x.id !== i.id), i] }))
+              setModal(null);
           }}
         />
       )}
@@ -1043,7 +1106,12 @@ export default function App() {
               className="primary"
               onClick={() => {
                 persist(remotePreview.workspace);
-                syncMetadata(remotePreview.sha, remotePreview.workspace);
+                syncMetadata(remotePreview.sha, remotePreview.workspace, {
+                  repo: remotePreview.repo,
+                  path: remotePreview.path,
+                });
+                setRepo(remotePreview.repo);
+                setCloudPath(remotePreview.path);
                 setSelectedId(remotePreview.workspace.scenarios[0]?.id ?? '');
                 setRemotePreview(null);
                 setNotice('Cloudversie geopend. Wijzigingen worden nu weer lokaal bewaard.');
@@ -1058,7 +1126,9 @@ export default function App() {
         <Modal title="Werkruimte importeren" onClose={() => setImportPreview(null)}>
           <p>
             {importPreview.name} · {importPreview.scenarios.length} scenario’s ·{' '}
-            {importPreview.answers.length} antwoorden
+            {importPreview.answers.length} antwoorden · {importPreview.dossiers?.length ?? 0}{' '}
+            dossiers · {importPreview.evidence?.length ?? 0} bewijsrecords ·{' '}
+            {importPreview.findings?.length ?? 0} bevindingen
           </p>
           <p>
             Deze import vervangt de geopende werkruimte. Exporteer eerst als je die wilt bewaren.
@@ -2037,10 +2107,16 @@ function EstimateInput({
 }
 function ScenarioEditor({
   scenario,
+  dossiers,
+  departments,
+  sites,
   onClose,
   onSave,
 }: {
   scenario: Scenario;
+  dossiers: Dossier[];
+  departments: Department[];
+  sites: Site[];
   onClose: () => void;
   onSave: (s: Scenario) => void;
 }) {
@@ -2062,6 +2138,54 @@ function ScenarioEditor({
             onChange={(e) => set({ ...s, title: e.target.value })}
           />
         </Field>
+        <Field label="Gerelateerd RI&E-dossier">
+          <select
+            value={s.dossierId ?? ''}
+            onChange={(e) =>
+              set({ ...s, dossierId: e.target.value || undefined, departmentId: undefined })
+            }
+          >
+            <option value="">Los scenario</option>
+            {dossiers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {departments.length > 0 && (
+          <Field label="Vastgelegde afdeling">
+            <select
+              value={s.departmentId ?? ''}
+              onChange={(e) =>
+                set({
+                  ...s,
+                  departmentId: e.target.value || undefined,
+                  department:
+                    departments.find((d) => d.id === e.target.value)?.name ?? s.department,
+                })
+              }
+            >
+              <option value="">Vrije locatieomschrijving</option>
+              {departments
+                .filter((d) => {
+                  const dossier = dossiers.find((x) => x.id === s.dossierId);
+                  return (
+                    !dossier ||
+                    ((!dossier.departmentIds.length || dossier.departmentIds.includes(d.id)) &&
+                      (!dossier.organisationId ||
+                        sites.find((site) => site.id === d.siteId)?.organisationId ===
+                          dossier.organisationId))
+                  );
+                })
+                .map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+        )}
         <Field label="Afdeling / locatie">
           <input value={s.department} onChange={(e) => set({ ...s, department: e.target.value })} />
         </Field>
@@ -2374,7 +2498,15 @@ function Questionnaire({
   answers,
   updateAnswer,
   addScenario,
+  dossierId,
+  dossiers,
+  onDossierChange,
+  evidence,
 }: {
+  dossierId?: string;
+  dossiers: Dossier[];
+  onDossierChange: (id: string) => void;
+  evidence: Evidence[];
   questions: Question[];
   answers: WorkspaceAnswer[];
   updateAnswer: (a: WorkspaceAnswer) => void;
@@ -2383,6 +2515,9 @@ function Questionnaire({
   const [filter, setFilter] = useState('all'),
     [search, setSearch] = useState(''),
     [pack, setPack] = useState('all');
+  const locked = ['completed', 'archived'].includes(
+    dossiers.find((d) => d.id === dossierId)?.status ?? '',
+  );
   const themed = new Map(themes.map((t) => [t.id, t]));
   const availableThemes = [...new Set(questions.map((q) => q.themeId))];
   const packThemes = pack === 'all' ? null : contentPacks.find((p) => p.id === pack)?.themeIds;
@@ -2395,15 +2530,19 @@ function Questionnaire({
   const update = (q: Question, patch: Partial<WorkspaceAnswer>) => {
     const existing = answers.find((a) => a.questionId === q.id);
     updateAnswer({
+      ...existing,
       id: existing?.id ?? id(),
       questionId: q.id,
+      dossierId,
+      ...(dossierId ? { questionSha256: questionHash(q) } : {}),
       choice: existing?.choice ?? 'unknown',
       evidence: existing?.evidence ?? '',
       note: existing?.note ?? '',
       answeredAt: new Date().toISOString(),
       questionSnapshot: q.prompt,
       sourceIds: q.sourceIds,
-      contentVersion: '2.0.0',
+      contentVersion:
+        'version' in q && typeof q.version === 'string' ? q.version : 'IMA-catalogus-2.0.0',
       ...patch,
     });
   };
@@ -2421,6 +2560,24 @@ function Questionnaire({
           {answers.length} / {questions.length} antwoorden
         </Badge>
       </div>
+      <section className="panel inventory-scope">
+        <Field label="Beoordelingsdossier">
+          <select value={dossierId ?? ''} onChange={(e) => onDossierChange(e.target.value)}>
+            <option value="">Algemene inventarisatie</option>
+            {dossiers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.title}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {locked && (
+          <p className="info-box">
+            Dit dossier is afgerond of gearchiveerd. Heropen het via de dossierbeoordeling voordat
+            je antwoorden wijzigt.
+          </p>
+        )}
+      </section>
       <div className="question-layout">
         <aside className="panel theme-list">
           <Field label="Contentpakket">
@@ -2482,6 +2639,7 @@ function Questionnaire({
                     <button
                       key={choice}
                       className={a?.choice === choice ? `chosen ${choice}` : ''}
+                      disabled={locked}
                       onClick={() => update(q, { choice: choice as WorkspaceAnswer['choice'] })}
                     >
                       {label}
@@ -2497,11 +2655,15 @@ function Questionnaire({
                     ))}
                   </ul>
                   <p className="caption">Bronroutes: {q.sourceIds.join(', ')}</p>
+                  {q.legalReferences && (
+                    <p>Normen / verwijzingen uit de private bron: {q.legalReferences}</p>
+                  )}
                 </details>
                 <div className="form-grid">
                   <Field label="Bewijs / waarneming">
                     <textarea
                       rows={2}
+                      disabled={locked}
                       value={a?.evidence ?? ''}
                       onChange={(e) => update(q, { evidence: e.target.value })}
                       placeholder="Bron, observatie, interview of meting…"
@@ -2510,12 +2672,21 @@ function Questionnaire({
                   <Field label="Toelichting / vervolg">
                     <textarea
                       rows={2}
+                      disabled={locked}
                       value={a?.note ?? ''}
                       onChange={(e) => update(q, { note: e.target.value })}
                     />
                   </Field>
                 </div>
-                {a?.choice === 'yes' && !a.evidence && (
+                {dossierId && !locked && (
+                  <MultiSelect
+                    label="Gekoppelde bewijsrecords"
+                    items={evidence.filter((e) => !e.dossierId || e.dossierId === dossierId)}
+                    values={a?.evidenceIds ?? []}
+                    onChange={(v) => update(q, { evidenceIds: v })}
+                  />
+                )}
+                {a?.choice === 'yes' && !a.evidence && !a.evidenceIds?.length && (
                   <p className="warning-line">Antwoord ‘Ja’ is nog niet onderbouwd met bewijs.</p>
                 )}
                 <button className="text-link" onClick={() => addScenario(q)}>
@@ -2672,7 +2843,13 @@ function ActionEditor({
         <Field label="Gerelateerd scenario">
           <select
             value={a.scenarioId ?? ''}
-            onChange={(e) => set({ ...a, scenarioId: e.target.value || undefined })}
+            onChange={(e) =>
+              set({
+                ...a,
+                scenarioId: e.target.value || undefined,
+                dossierId: scenarios.find((s) => s.id === e.target.value)?.dossierId,
+              })
+            }
           >
             <option value="">Algemene verbetering</option>
             {scenarios.map((s) => (
@@ -2715,7 +2892,9 @@ function Incidents({
   scenarios,
   add,
   createAction,
+  onEdit,
 }: {
+  onEdit: (i: WorkspaceIncident) => void;
   incidents: WorkspaceIncident[];
   actions: WorkspaceAction[];
   scenarios: Scenario[];
@@ -2762,6 +2941,12 @@ function Incidents({
             </div>
             <p>{i.description}</p>
             <p className="caption">
+              Werkelijke ernst: {i.actualSeverity ?? 'Onbekend'} · Potentiële ernst:{' '}
+              {i.potentialSeverity ?? 'Onbekend'}
+            </p>
+            {i.immediateControls && <p>Direct handelen: {i.immediateControls}</p>}
+            {i.openQuestions && <p>Open vragen: {i.openQuestions}</p>}
+            <p className="caption">
               Risicoscenario:{' '}
               {scenarios.find((s) => s.id === i.scenarioId)?.title ?? 'Nog niet gekoppeld'}
             </p>
@@ -2772,6 +2957,9 @@ function Incidents({
               </p>
             )}
             <div className="button-row">
+              <button className="secondary" onClick={() => onEdit(i)}>
+                Melding beoordelen / wijzigen
+              </button>
               <button
                 className="secondary"
                 onClick={() => setAnalysis(analysis === i.id ? null : i.id)}
@@ -2816,23 +3004,29 @@ function Incidents({
 }
 function IncidentEditor({
   scenarios,
+  initial,
+  departments,
   onSave,
   onClose,
 }: {
   scenarios: Scenario[];
+  initial?: WorkspaceIncident;
+  departments: Department[];
   onSave: (i: WorkspaceIncident) => void;
   onClose: () => void;
 }) {
   const localDate = new Date().toLocaleDateString('sv-SE');
-  const [i, set] = useState<WorkspaceIncident>({
-    id: id(),
-    title: '',
-    date: localDate,
-    department: '',
-    type: 'near_miss',
-    description: '',
-    actionIds: [],
-  });
+  const [i, set] = useState<WorkspaceIncident>(
+    initial ?? {
+      id: id(),
+      title: '',
+      date: localDate,
+      department: '',
+      type: 'near_miss',
+      description: '',
+      actionIds: [],
+    },
+  );
   return (
     <Modal title="Incident of signaal vastleggen" onClose={onClose}>
       <form
@@ -2872,6 +3066,124 @@ function IncidentEditor({
         <Field label="Afdeling / locatie">
           <input value={i.department} onChange={(e) => set({ ...i, department: e.target.value })} />
         </Field>
+        <Field label="Geregistreerde afdeling">
+          <select
+            value={i.departmentId ?? ''}
+            onChange={(e) =>
+              set({
+                ...i,
+                departmentId: e.target.value || undefined,
+                department: departments.find((d) => d.id === e.target.value)?.name ?? i.department,
+              })
+            }
+          >
+            <option value="">Afdeling nog onbekend / werkruimtebreed</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="form-grid">
+          {(['actualSeverity', 'potentialSeverity'] as const).map((key) => (
+            <Field
+              key={key}
+              label={key === 'actualSeverity' ? 'Werkelijke ernst' : 'Potentiële ernst'}
+            >
+              <select
+                value={i[key] ?? ''}
+                onChange={(e) => set({ ...i, [key]: e.target.value || undefined })}
+              >
+                <option value="">Niet vastgesteld</option>
+                {[
+                  'none',
+                  'first_aid',
+                  'medical_treatment',
+                  'lost_time',
+                  'major',
+                  'permanent_injury',
+                  'fatality',
+                ].map((severity) => (
+                  <option key={severity} value={severity}>
+                    {severity}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ))}
+        </div>
+        <details>
+          <summary>Classificatie, context en direct handelen</summary>
+          <div className="form-grid">
+            {(['recordable', 'lostTime'] as const).map((key) => (
+              <Field
+                key={key}
+                label={
+                  key === 'recordable'
+                    ? 'Recordable volgens gekozen registratieafspraak'
+                    : 'Lost-time-incident'
+                }
+              >
+                <select
+                  value={i[key] === undefined ? '' : String(i[key])}
+                  onChange={(e) =>
+                    set({
+                      ...i,
+                      [key]: e.target.value === '' ? undefined : e.target.value === 'true',
+                    })
+                  }
+                >
+                  <option value="">Niet beoordeeld</option>
+                  <option value="true">Ja</option>
+                  <option value="false">Nee</option>
+                </select>
+              </Field>
+            ))}
+            <Field label="Verzuimdagen">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={i.lostTimeDays ?? ''}
+                onChange={(e) =>
+                  set({
+                    ...i,
+                    lostTimeDays: e.target.value === '' ? undefined : Number(e.target.value),
+                  })
+                }
+              />
+            </Field>
+            <Field label="Melder">
+              <input
+                value={i.reportedBy ?? ''}
+                onChange={(e) => set({ ...i, reportedBy: e.target.value })}
+              />
+            </Field>
+          </div>
+          <Field label="Activiteit">
+            <input
+              value={i.activity ?? ''}
+              onChange={(e) => set({ ...i, activity: e.target.value })}
+            />
+          </Field>
+          <Field label="Directe beheersing en eerste handelen">
+            <textarea
+              value={i.immediateControls ?? ''}
+              onChange={(e) => set({ ...i, immediateControls: e.target.value })}
+            />
+          </Field>
+          <Field label="Open onderzoeksvragen">
+            <textarea
+              value={i.openQuestions ?? ''}
+              onChange={(e) => set({ ...i, openQuestions: e.target.value })}
+            />
+          </Field>
+          <p className="caption">
+            Classificatie wordt expliciet vastgelegd. De app leidt recordable of lost time niet af
+            uit een ernstlabel of leeggemaakt veld.
+          </p>
+        </details>
         <Field label="Feiten">
           <textarea
             required
@@ -3044,6 +3356,24 @@ function Sources({ workspace, onImport }: { workspace: WorkspaceState; onImport:
           ))}
         </div>
       </section>
+      {(workspace.contentRecords?.length ?? 0) > 0 && (
+        <section className="panel">
+          <h2>Private contentrecords</h2>
+          <p className="caption">
+            Metadata of expliciet behouden brondata. Een LMS-deelname of cijfer kent geen
+            maatregelcredit toe.
+          </p>
+          {workspace.contentRecords?.map((record) => (
+            <details className="registry-item" key={record.id}>
+              <summary>
+                {String(record.sourceId ?? record.id)} · {String(record.format ?? 'content')}
+                {record.rowCount !== undefined ? ` · ${record.rowCount} rijen` : ''}
+              </summary>
+              <pre className="private-record">{JSON.stringify(record, null, 2)}</pre>
+            </details>
+          ))}
+        </section>
+      )}
       <section className="panel">
         <h2>Vault, SDU en Moodle verbinden</h2>
         <p>
@@ -3158,7 +3488,7 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
       lines.push('');
     }
     lines.push('## Inventarisatie', '');
-    for (const a of workspace.answers)
+    for (const a of workspace.answers.filter((a) => !a.dossierId))
       lines.push(
         `### ${a.questionSnapshot ?? questions.find((q) => q.id === a.questionId)?.prompt ?? a.questionId}`,
         `${answerLabels[a.choice]} | Bewijs: ${a.evidence} | Toelichting: ${a.note}`,
@@ -3170,6 +3500,7 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
       lines.push(
         `- ${a.title} | ${a.status} | ${a.owner} | ${a.dueDate || 'Geen datum'} | ${a.notes} | Effectcontrole: ${a.effectCheck ?? 'Niet vastgelegd'} | ${a.verifiedAt ?? ''}`,
       );
+    lines.push(...dossierMarkdown(workspace));
     download('ima-rie-rapport.md', lines.join('\n'), 'text/markdown');
   };
   return (
@@ -3263,20 +3594,23 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
           </p>
         ))}
         <h2>Inventarisatie</h2>
-        {workspace.answers.map((a) => (
-          <p key={a.id}>
-            <strong>
-              {a.questionSnapshot ??
-                questions.find((q) => q.id === a.questionId)?.prompt ??
-                a.questionId}
-            </strong>{' '}
-            · {answerLabels[a.choice]}
-            <br />
-            Bewijs: {a.evidence || 'Niet vastgelegd'}
-            <br />
-            {a.note}
-          </p>
-        ))}
+        {workspace.answers
+          .filter((a) => !a.dossierId)
+          .map((a) => (
+            <p key={a.id}>
+              <strong>
+                {a.questionSnapshot ??
+                  questions.find((q) => q.id === a.questionId)?.prompt ??
+                  a.questionId}
+              </strong>{' '}
+              · {answerLabels[a.choice]}
+              <br />
+              Bewijs: {a.evidence || 'Niet vastgelegd'}
+              <br />
+              {a.note}
+            </p>
+          ))}
+        <DossierReport workspace={workspace} />
         <p className="caption">
           Scorebanden zijn modelaannames, geen statistische betrouwbaarheidsintervallen. AHS-weging
           en uitvoerbaarheid veranderen de prioriteit en geven geen aanvullende fysieke

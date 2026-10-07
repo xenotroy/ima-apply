@@ -132,6 +132,7 @@ function question(item, sourceId, themeId, index) {
     route: item.route === 'verdieping' || /verdieping/i.test(text(item.route)) ? 'verdieping' : 'kern',
     evidenceHints: stringList(item.evidenceHints ?? item.verificatie ?? item.evidence),
     assessmentGuidance: plainText(item.assessmentGuidance ?? item.toetscriteria ?? item.guidance),
+    legalReferences: plainText(item.legalReferences ?? item.wetgeving),
     sourceIds: [sourceId],
     suggestedHierarchy: stringList(item.suggestedHierarchy).filter((level) => levels.has(level)),
     roles: stringList(item.roles),
@@ -140,16 +141,33 @@ function question(item, sourceId, themeId, index) {
 
 /** Parses the labelled private questionnaire format without synthesising missing questions. */
 export function parseMarkdownQuestionnaire(input, sourceId, fallbackTitle = 'Markdown bron') {
+  input = input.replace(/\r\n/g, '\n');
   const title = plainText(input.match(/^#\s+(.+)$/m)?.[1] ?? fallbackTitle);
   const themeId = `${sourceId}:${slug(title)}`;
-  const sections = [...input.matchAll(/^###\s+(?:\d+[.)]?\s+)?(.+)\r?\n([\s\S]*?)(?=^###\s|$(?![\s\S]))/gm)];
+  const sections = [...input.matchAll(/^###\s+(?:\d+[.)]?\s+)?(.+)\n([\s\S]*?)(?=^#{1,3}\s|$(?![\s\S]))/gm)];
   const questions = sections.map((section, index) => {
-    const body = section[2].replace(/\r\n/g, '\n');
+    const body = section[2];
     const prompt = fieldBlock(body, 'Vraag');
     if (!prompt) return null;
-    return question({ title: section[1], prompt, route: body.match(/^Route:\s*(.+)$/mi)?.[1], evidenceHints: fieldBlock(body, 'Verificatie'), assessmentGuidance: fieldBlock(body, 'Toetsingscriteria') }, sourceId, themeId, index);
+    return question({ title: section[1], prompt, route: body.match(/^Route:\s*(.+)$/mi)?.[1], evidenceHints: fieldBlock(body, 'Verificatie'), assessmentGuidance: fieldBlock(body, 'Toetsingscriteria'), legalReferences: fieldBlock(body, 'Wet en regelgeving of normen') }, sourceId, themeId, index);
   }).filter(Boolean);
-  return { questions, themes: questions.length ? [{ id: themeId, title, description: 'Private import van de oorspronkelijke themavragenlijst; broninhoud niet onafhankelijk gevalideerd.', sourceIds: [sourceId], questions }] : [] };
+  const sourceMetadata = {};
+  const frontmatter = input.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)?.[1];
+  if (frontmatter) for (const line of frontmatter.split('\n')) {
+    const entry = line.match(/^([a-zA-Z_][a-zA-Z_\d-]*):\s*(.*?)\s*$/);
+    if (entry && entry[2]) sourceMetadata[entry[1]] = entry[2];
+  }
+  function documentSection(heading) {
+    const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text(input.match(new RegExp(`^##\\s+${escaped}\\s*\\n([\\s\\S]*?)(?=^##\\s|$(?![\\s\\S]))`, 'gm'))?.[0]?.replace(/^##[^\n]*\n/, ''));
+  }
+  return {
+    questions,
+    themes: questions.length ? [{ id: themeId, title, description: 'Private import van de oorspronkelijke themavragenlijst; broninhoud niet onafhankelijk gevalideerd.', sourceIds: [sourceId], questions }] : [],
+    sourceMetadata,
+    documentGuidance: documentSection('Beslisregel voor afsluiten van het thema'),
+    sourceReferenceText: documentSection('Bronbasis'),
+  };
 }
 
 export function parseJsonQuestions(value, sourceId, fallbackTitle = 'JSON bron') {
@@ -243,7 +261,7 @@ export async function buildImport(files, { kind = 'vault', sourcePrefix = 'OWN',
       parsed = parseCsvQuestions(input, id, fileTitle, extension === '.tsv' ? '\t' : undefined);
       format = parsed.questions.length ? 'question-csv' : 'lms-or-table-csv';
     }
-    result.sources.push({ id, title, kind, status: 'read', readScope: `${format}; ${parsed.questions.length} herkenbare checkvragen verwerkt.`, publication: 'private', notes: `SHA-256 ${contentHash}. Oorspronkelijke broninhoud niet onafhankelijk gevalideerd. ${includeRaw ? 'Ruwe bron is op expliciete importoptie behouden.' : 'Ruwe bron en deelnemersrijen zijn niet behouden.'}` });
+    result.sources.push({ id, title, kind, status: 'read', readScope: `${format}; ${parsed.questions.length} herkenbare checkvragen verwerkt.`, publication: 'private', notes: `SHA-256 ${contentHash}. Oorspronkelijke broninhoud niet onafhankelijk gevalideerd. ${includeRaw ? 'Ruwe bron is op expliciete importoptie behouden.' : 'Ruwe bron en deelnemersrijen zijn niet behouden.'}`, ...(parsed.sourceMetadata && Object.keys(parsed.sourceMetadata).length ? { sourceMetadata: parsed.sourceMetadata } : {}), ...(parsed.documentGuidance ? { documentGuidance: parsed.documentGuidance } : {}), ...(parsed.sourceReferenceText ? { sourceReferenceText: parsed.sourceReferenceText } : {}) });
     result.themes.push(...parsed.themes);
     result.questions.push(...parsed.questions);
     if (result.questions.length > maxQuestions) throw new Error('Meer dan 10.000 vragen; verklein de bronselectie.');

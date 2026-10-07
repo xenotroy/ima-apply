@@ -1,4 +1,18 @@
 import type { Scenario } from '../domain/types';
+import type {
+  Organisation,
+  Site,
+  Department,
+  Dossier,
+  Evidence,
+  Observation,
+  Finding,
+  Topic,
+  LegalRecord,
+  Investigation,
+  Exposure,
+} from './dossier';
+export * from './dossier';
 
 export type JsonValue =
   string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -17,6 +31,9 @@ export interface WorkspaceAnswer {
   questionSnapshot?: string;
   sourceIds?: string[];
   contentVersion?: string;
+  dossierId?: string;
+  questionSha256?: string;
+  evidenceIds?: string[];
 }
 
 export interface WorkspaceAction {
@@ -29,6 +46,9 @@ export interface WorkspaceAction {
   notes: string;
   effectCheck?: string;
   verifiedAt?: string;
+  dossierId?: string;
+  findingId?: string;
+  evidenceIds?: string[];
 }
 
 export interface WorkspaceIncident {
@@ -40,6 +60,30 @@ export interface WorkspaceIncident {
   description: string;
   scenarioId?: string;
   actionIds: string[];
+  departmentId?: string;
+  actualSeverity?:
+    | 'none'
+    | 'first_aid'
+    | 'medical_treatment'
+    | 'lost_time'
+    | 'major'
+    | 'permanent_injury'
+    | 'fatality';
+  potentialSeverity?:
+    | 'none'
+    | 'first_aid'
+    | 'medical_treatment'
+    | 'lost_time'
+    | 'major'
+    | 'permanent_injury'
+    | 'fatality';
+  recordable?: boolean;
+  lostTime?: boolean;
+  lostTimeDays?: number;
+  reportedBy?: string;
+  activity?: string;
+  immediateControls?: string;
+  openQuestions?: string;
 }
 
 export interface WorkspaceState {
@@ -56,12 +100,43 @@ export interface WorkspaceState {
   actions: WorkspaceAction[];
   incidents: WorkspaceIncident[];
   sources: WorkspaceRecord[];
+  // Additive v1 collections. Missing collections in early exports mean empty.
+  organisations?: Organisation[];
+  sites?: Site[];
+  departments?: Department[];
+  dossiers?: Dossier[];
+  evidence?: Evidence[];
+  observations?: Observation[];
+  findings?: Finding[];
+  topics?: Topic[];
+  legalRecords?: LegalRecord[];
+  investigations?: Investigation[];
+  exposure?: Exposure[];
+  contentRecords?: WorkspaceRecord[];
 }
 
 export type WorkspacePatch = Partial<
   Pick<
     WorkspaceState,
-    'name' | 'scenarios' | 'questions' | 'answers' | 'actions' | 'incidents' | 'sources'
+    | 'name'
+    | 'scenarios'
+    | 'questions'
+    | 'answers'
+    | 'actions'
+    | 'incidents'
+    | 'sources'
+    | 'organisations'
+    | 'sites'
+    | 'departments'
+    | 'dossiers'
+    | 'evidence'
+    | 'observations'
+    | 'findings'
+    | 'topics'
+    | 'legalRecords'
+    | 'investigations'
+    | 'exposure'
+    | 'contentRecords'
   >
 >;
 
@@ -92,6 +167,18 @@ export function createWorkspace(name: string, initial: WorkspacePatch = {}): Wor
     actions: [],
     incidents: [],
     sources: [],
+    organisations: [],
+    sites: [],
+    departments: [],
+    dossiers: [],
+    evidence: [],
+    observations: [],
+    findings: [],
+    topics: [],
+    legalRecords: [],
+    investigations: [],
+    exposure: [],
+    contentRecords: [],
     ...initial,
   };
 }

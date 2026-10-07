@@ -67,3 +67,10 @@ npm test -- src/data/workspace.test.ts
 ```
 
 De tests controleren importgrenzen, Unicode, tokenlekken, beschermde bestaande opslag, lokale conflicten, ontbrekende rechten, publieke repositories, veilige eerste uploads, SHA-conflicten, uploadfouten en het behoud van een ingediende snapshot wanneer de gebruiker verder bewerkt.
+
+
+## Afzonderlijke werkruimtebestanden
+
+Het synchronisatieformulier laat het repositorybestand kiezen. Gebruik voor hetzelfde project op iedere pc hetzelfde pad. De private bronwerkruimte staat op `workspaces/bronwerkruimte.json`; standaard eigen projectopslag blijft `workspaces/default.json`. Andere projecten kunnen een eigen `workspaces/projectnaam.json` gebruiken. De conflictversie is gekoppeld aan repository én bestand én werkruimte-ID. Een cloudpreview bewaart de daadwerkelijk gelezen bestemming, ook wanneer het invoerveld daarna verandert.
+
+De bronwerkruimte bevat 260 oorspronkelijke private themavragen en drie gelezen conceptlesteksten. Zij bevat geen ingevulde projectoordelen, actuele deelnemersdata of beoordeelde beheersmaatregelen. Twee onafhankelijke echte API-clients hebben dezelfde volledige inhoud en blob-SHA teruggelezen. Dit verifieert repositoryoverdracht; het vervangt niet de inrichting en praktijkcontrole van ieder daadwerkelijk gebruikt apparaat.

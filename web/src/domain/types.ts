@@ -56,6 +56,8 @@ export interface Scenario {
   lopa?: LopaScenario;
   sourceIds?: string[];
   assessmentNotes?: string;
+  dossierId?: string;
+  departmentId?: string;
 }
 
 export interface LopaLayer {

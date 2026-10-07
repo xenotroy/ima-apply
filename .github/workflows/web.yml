@@ -2,9 +2,9 @@ name: IMA browser app
 on:
   push:
     branches: [main, 'codex/**']
-    paths: ['web/**', 'scripts/import*', 'docs/rebuild/**', '.github/workflows/web.yml']
+    paths: ['web/**', 'scripts/import*', 'scripts/migrate*', 'docs/rebuild/**', '.github/workflows/web.yml']
   pull_request:
-    paths: ['web/**', 'scripts/import*', 'docs/rebuild/**', '.github/workflows/web.yml']
+    paths: ['web/**', 'scripts/import*', 'scripts/migrate*', 'docs/rebuild/**', '.github/workflows/web.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,7 +23,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm test
-      - run: node --test ../scripts/import-content.test.mjs
+      - run: node --test ../scripts/import-content.test.mjs ../scripts/migrate-workspace.test.mjs
       - run: npm audit --audit-level=high
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

@@ -17,6 +17,17 @@ test('Markdown behouden vragen, route, criteria en verificatie zonder beoordelin
   assert.deepEqual(result.questions[0].evidenceHints, ['Test onder belasting.']);
   assert.equal(result.questions[1].route, 'verdieping');
   assert.notEqual(result.questions[0].id, result.questions[1].id);
+  assert.equal(result.questions[0].legalReferences, 'Controleer toepasselijkheid.');
+});
+
+test('Documentfooter blijft apart van de laatste vraag en bronmetadata blijven behouden', () => {
+  const document = '---\nversion: 1.0\nconfidentiality: vertrouwelijk\n---\n' + markdown + '\n## Bronbasis\n\nSRC-001.\n\n## Beslisregel voor afsluiten van het thema\n\nVerifieer de werking vóór afsluiten.\n';
+  const result = parseMarkdownQuestionnaire(document, 'OWN');
+  assert.equal(result.questions[1].evidenceHints[0], 'Vrijgavebewijs.');
+  assert.equal(result.sourceMetadata.version, '1.0');
+  assert.equal(result.sourceMetadata.confidentiality, 'vertrouwelijk');
+  assert.equal(result.sourceReferenceText, 'SRC-001.');
+  assert.equal(result.documentGuidance, 'Verifieer de werking vóór afsluiten.');
 });
 
 test('Legacy modules/vragen behouden onafhankelijke modulenamen en vraag-ID’s', () => {

@@ -8,9 +8,9 @@ Bouw IMA Apply opnieuw op tot een volledige, bruikbare veiligheidswerkruimte, me
 
 De concrete scope komt uit de oorspronkelijke gebruikersopdracht. `README.md`, `CONTEXT.md` en de bestaande code beschrijven de software waarvan de functies bij de volledige herbouw moeten worden beoordeeld. De bronstatus staat in `source-register.md`; de huidige implementatiegrenzen staan in `architecture.md`.
 
-## Eindcriteria en huidig bewijs
+## Eindcriteria en nulmeting bij vastlegging
 
-| Onderdeel van de opdracht | Eindcriterium | Huidige stand en bewijs |
+| Onderdeel van de opdracht | Eindcriterium | Stand en bewijs bij vastlegging |
 | --- | --- | --- |
 | Volledige herbouw | Inventariseer bestaande functies, leg de vertaling naar de nieuwe architectuur vast en bewijs de belangrijkste werkprocessen in de nieuwe software. Een verwijderde of ontbrekende functie wordt niet stil als voltooid beschouwd. | Browserkern aanwezig. `README.md` bevat ook onderwerpen, wetgevingsbeheer, aparte RI&E-dossierrecords, analyses, basisrisicofactoren, moduleversies en blootstellings-KPI’s; de nieuwe `web/src/data/model.ts` bevat hiervoor nog geen volledige overeenkomstige modellen. Functiepariteit is nog niet aangetoond. |
 | Actuele vaultkennis | Gebruik de kleinste relevante actieve bronnen; leg herkomst, versie en onderscheid tussen bron, interpretatie en projectbewijs vast. | Gericht geselecteerde vaultcontext verwerkt in catalogus en ontwerp. Het bronregister noemt de werkelijk gelezen scope. Verdere benodigde bronverwerking blijft onderdeel van dit goal. |
@@ -34,6 +34,17 @@ De concrete scope komt uit de oorspronkelijke gebruikersopdracht. `README.md`, `
 5. Verifieer de volledige werkstroom, migratie/overdracht, rapportage en gebruik vanuit afzonderlijke browsers/apparaten. Publiceer gecontroleerde verbeteringen via GitHub.
 
 Een externe toegangsbeperking voor één bron verhindert niet het doorwerken aan onafhankelijke onderdelen. Markeer het goal pas als geblokkeerd volgens de geldende herhaalde-blokkadeaudit wanneer geen betekenisvolle veilige vervolgstap meer bestaat.
+
+## Concrete voortgang na vastlegging
+
+- Functie- en datapariteitsmatrix vastgelegd in `function-parity.md`; de tabel daarvan is een expliciete nulmeting met vervolgstatus, geen afgeronde pariteitsclaim.
+- Relationele organisaties/locaties/afdelingen, afzonderlijke beoordelingsdossiers, bevroren vraag-/bronsnapshots, bewijs, waarnemingen en bevindingen toegevoegd. Dossiergrenzen, bronhashes en bewijsverificatie worden vóór opslag gecontroleerd.
+- Onderwerpen-/regelgevingsregister, opgeslagen 5×Waarom-/BowTie-onderzoeken, incidentclassificatie en maanduren/frequenties toegevoegd. Geen rate zonder passende scope, complete verstreken maanden, classificatie en urenbasis.
+- Alle tien oorspronkelijke PI Vught-themalijsten gelezen en privé ingelezen: 260 vragen met criteria, bewijsaanwijzingen en normverwijzingen. Drie werkelijk gelezen Moodle-lesconcepten behouden als private contentrecords; dit is nog geen actuele LMS-export.
+- Private bronwerkruimte geplaatst in `xenotroy/ima-apply-workspaces`, bestand `workspaces/bronwerkruimte.json`. Twee onafhankelijke echte GitHub-clients lazen identieke volledige inhoud terug. Dit is API-bewijs; het is geen claim dat ieder persoonlijk apparaat al ingericht is.
+- Read-only migratie-CLI voor geselecteerde Markdown-/SQLite-dossiers en bronbehoud ontwikkeld. Fictieve fixtures zijn gevalideerd met de daadwerkelijke browsergrens; geen echte legacy-productieoverdracht uitgevoerd.
+
+Resterende scope omvat onder meer oorspronkelijke toegankelijke HVK/MVK- en SDU-inhoud, echte LMS-brondata, aantoonbare volledige dossier-/revisiepariteit en werkelijke productieoverdracht. De stand van de volledige herbouw blijft **actief**.
 
 ## Afsluitregel
 
