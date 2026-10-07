@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { buildImport, parseCsv, parseCsvQuestions, parseJsonQuestions, parseMarkdownQuestionnaire, plainText } from './import-content.mjs';
 
 const markdown = `# Technische check\n\n### 01. Werking\n\nRoute: Kern\n\nVraag:\n\nWerkt de barrière tijdens de taak?\n\nBeoordeling:\n\nOnbekend\n\nToelichting en bewijs:\n\n\nToetsingscriteria:\n\nWerking moet worden getest.\n\nWet en regelgeving of normen:\n\nControleer toepasselijkheid.\n\nVerificatie:\n\nTest onder belasting.\n\n### 02. Herstel\n\nRoute: Verdieping\n\nVraag:\n\nHoe wordt een defect hersteld?\n\nToetsingscriteria:\n\nControleer vóór vrijgave.\n\nVerificatie:\n\nVrijgavebewijs.\n`;
@@ -88,8 +89,15 @@ test('Archief en symlinks vallen buiten intake', async () => {
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
 
-test('CLI kan private bronuitvoer niet naar web/src schrijven', () => {
-  const result = spawnSync(process.execPath, ['scripts/import-content.mjs', '--input', 'docs/questionbank.json', '--out', 'web/src/content/forbidden-output.json'], { encoding: 'utf8' });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /binnen private-data/);
+test('CLI kan private bronuitvoer niet naar web/src schrijven', async () => {
+  const repository = fileURLToPath(new URL('../', import.meta.url));
+  const script = fileURLToPath(new URL('./import-content.mjs', import.meta.url));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ima-cli-boundary-'));
+  try {
+    const source = path.join(directory, 'bron.md');
+    await fs.writeFile(source, markdown);
+    const result = spawnSync(process.execPath, [script, '--input', source, '--out', path.join(repository, 'web/src/content/forbidden-output.json')], { encoding: 'utf8', cwd: directory });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /binnen private-data/);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
