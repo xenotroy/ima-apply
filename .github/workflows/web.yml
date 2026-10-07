@@ -1,0 +1,61 @@
+name: IMA browser app
+on:
+  push:
+    branches: [main, 'codex/**']
+    paths: ['web/**', 'scripts/import*', 'docs/rebuild/**', '.github/workflows/web.yml']
+  pull_request:
+    paths: ['web/**', 'scripts/import*', 'docs/rebuild/**', '.github/workflows/web.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: node --test ../scripts/import-content.test.mjs
+      - run: npm audit --audit-level=high
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run build
+        env:
+          IMA_BASE_PATH: /ima-apply/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ima-app-build
+          path: web/dist
+  deploy:
+    if: github.repository == 'xenotroy/ima-apply' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: ima-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ima-app-build
+          path: dist
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - name: Publish IMA Apply
+        id: deployment
+        uses: actions/deploy-pages@v4
