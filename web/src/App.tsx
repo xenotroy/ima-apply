@@ -53,6 +53,7 @@ import {
   importWorkspace,
   exportWorkspace,
   GitHubWorkspaceClient,
+  departmentOrganisationId,
 } from './data';
 import type {
   WorkspaceState,
@@ -68,11 +69,21 @@ import type {
 } from './data';
 import { demoWorkspace, newControl, newScenario } from './demo';
 import Hologram from './components/Hologram';
+import MigrationReviewPanel from './components/MigrationReviewPanel';
 import { Badge, Field, Modal } from './components/Primitives';
 import DossierWorkspace, { MultiSelect } from './components/DossierWorkspace';
 import { questionHash } from './data/frozen';
 import DossierReport, { dossierMarkdown } from './components/DossierReport';
 import LearningWorkspace from './components/LearningWorkspace';
+import { ActionLifecyclePanel } from './components/ActionLifecyclePanel';
+import RiskAssessmentPanel, { riskAssessmentMarkdown } from './components/RiskAssessmentPanel';
+import {
+  actionRevision,
+  actionSnapshot,
+  actionSnapshotHash,
+  actionStage,
+  actionStageLabels,
+} from './domain/action-lifecycle';
 import { Waterfall, LopaChart } from './components/RiskCharts';
 
 type Page =
@@ -451,7 +462,7 @@ export default function App() {
               <p.icon size={18} />
               <span>{p.label}</span>
               {p.id === 'actions' && (
-                <small>{workspace.actions.filter((a) => a.status !== 'done').length}</small>
+                <small>{workspace.actions.filter(actionNeedsFollowup).length}</small>
               )}
               {p.id === 'risk' && activeRisks > 0 && <span className="nav-dot" />}
             </button>
@@ -481,7 +492,7 @@ export default function App() {
             target="_blank"
             rel="noreferrer"
           >
-            <GitBranch size={14} /> IMA Apply 2.0 <ArrowUpRight size={13} />
+            <GitBranch size={14} /> IMA Apply 2.1 <ArrowUpRight size={13} />
           </a>
         </div>
       </aside>
@@ -566,6 +577,7 @@ export default function App() {
                   </button>
                 </div>
               )}
+              <MigrationReviewPanel sources={workspace.sources} />
               <div className="stats-grid">
                 <Stat
                   title="Risicoscenario’s"
@@ -590,7 +602,7 @@ export default function App() {
                 />
                 <Stat
                   title="Verbeteracties"
-                  value={String(workspace.actions.filter((a) => a.status !== 'done').length)}
+                  value={String(workspace.actions.filter(actionNeedsFollowup).length)}
                   icon={Target}
                   description={`${workspace.actions.filter((a) => a.status === 'in_progress').length} in uitvoering`}
                   tone="amber"
@@ -716,16 +728,30 @@ export default function App() {
                 ))}
               </div>
               {selected ? (
-                <RiskWorkbench
-                  scenario={selected}
-                  changeScenario={changeScenario}
-                  editScenario={editScenario}
-                  addControl={startControl}
-                  editControl={(c) => {
-                    setEditingControl(c);
-                    setModal('control');
-                  }}
-                />
+                <>
+                  <RiskWorkbench
+                    scenario={selected}
+                    changeScenario={changeScenario}
+                    editScenario={editScenario}
+                    addControl={startControl}
+                    editControl={(c) => {
+                      setEditingControl(c);
+                      setModal('control');
+                    }}
+                  />
+                  <RiskAssessmentPanel
+                    key={selected.id}
+                    scenario={selected}
+                    records={(workspace.riskAssessments ?? []).filter(
+                      (r) => r.scenarioId === selected.id,
+                    )}
+                    onSave={(record) =>
+                      update({
+                        riskAssessments: [...(workspaceRef.current.riskAssessments ?? []), record],
+                      })
+                    }
+                  />
+                </>
               ) : (
                 <Empty
                   onAdd={startScenario}
@@ -789,9 +815,26 @@ export default function App() {
             <Actions
               actions={workspace.actions}
               scenarios={workspace.scenarios}
-              updateAction={(a) =>
-                update({ actions: workspace.actions.map((x) => (x.id === a.id ? a : x)) })
-              }
+              evidence={workspace.evidence ?? []}
+              updateAction={(a, expectedRevision) => {
+                const current = workspaceRef.current.actions.find((x) => x.id === a.id);
+                const expectedPrevious =
+                  current?.lifecycle?.history.at(-1)?.sha256 ??
+                  (current ? actionSnapshotHash(actionSnapshot(current)) : '');
+                if (
+                  !current ||
+                  actionRevision(current) !== expectedRevision ||
+                  a.lifecycle?.history.at(-1)?.previousSha256 !== expectedPrevious
+                ) {
+                  setNotice(
+                    'Deze actie heeft een nieuwere revisie. Je wijziging is niet overschreven; open de actuele revisie.',
+                  );
+                  return false;
+                }
+                return update({
+                  actions: workspaceRef.current.actions.map((x) => (x.id === a.id ? a : x)),
+                });
+              }}
               onAdd={() => setModal('action')}
             />
           )}
@@ -1619,6 +1662,10 @@ function LopaWorkbench({
   };
   const saveDraft = () => {
     try {
+      if (!lopa.assumptions.trim())
+        throw new Error(
+          'Leg de aannames en het criteriumbesluit vast voordat je deze LOPA opslaat.',
+        );
       calculateLopa(lopa);
       onChange({ ...scenario, lopa });
       setDraftError('');
@@ -1662,12 +1709,22 @@ function LopaWorkbench({
             <div>
               <small>PROJECTCRITERIUM</small>
               <strong className="amber-text">{exp(result.targetFrequency)}</strong>
-              <Badge tone={result.comparison === 'below' ? 'green' : 'rose'}>
-                {result.comparison === 'below'
-                  ? 'Gehele band onder criterium'
-                  : result.comparison === 'above'
-                    ? 'Gehele band boven criterium'
-                    : 'Band kruist criterium'}
+              <Badge
+                tone={
+                  result.comparison === 'unconfirmed'
+                    ? 'amber'
+                    : result.comparison === 'below'
+                      ? 'green'
+                      : 'rose'
+                }
+              >
+                {result.comparison === 'unconfirmed'
+                  ? 'Criteriumbasis niet vastgelegd'
+                  : result.comparison === 'below'
+                    ? 'Gehele band onder criterium'
+                    : result.comparison === 'above'
+                      ? 'Gehele band boven criterium'
+                      : 'Band kruist criterium'}
               </Badge>
             </div>
           </div>
@@ -2174,8 +2231,7 @@ function ScenarioEditor({
                     !dossier ||
                     ((!dossier.departmentIds.length || dossier.departmentIds.includes(d.id)) &&
                       (!dossier.organisationId ||
-                        sites.find((site) => site.id === d.siteId)?.organisationId ===
-                          dossier.organisationId))
+                        departmentOrganisationId(d, sites) === dossier.organisationId))
                   );
                 })
                 .map((d) => (
@@ -2704,12 +2760,14 @@ function Questionnaire({
 function Actions({
   actions,
   scenarios,
+  evidence,
   updateAction,
   onAdd,
 }: {
   actions: WorkspaceAction[];
   scenarios: Scenario[];
-  updateAction: (a: WorkspaceAction) => void;
+  evidence: Evidence[];
+  updateAction: (a: WorkspaceAction, expectedRevision: number) => boolean;
   onAdd: () => void;
 }) {
   return (
@@ -2730,7 +2788,7 @@ function Actions({
         {(['open', 'in_progress', 'done'] as const).map((status, i) => (
           <section className="kanban-column" key={status}>
             <div className="section-row">
-              <h2>{['Te doen', 'In uitvoering', 'Effect gecontroleerd'][i]}</h2>
+              <h2>{['Te doen', 'Uitvoering / controle', 'Afgesloten / beoordeeld'][i]}</h2>
               <Badge tone={['amber', 'blue', 'green'][i]}>
                 {actions.filter((a) => a.status === status).length}
               </Badge>
@@ -2743,55 +2801,7 @@ function Actions({
                     {scenarios.find((s) => s.id === a.scenarioId)?.title ?? 'Algemene verbetering'}
                   </small>
                   <h3>{a.title}</h3>
-                  <Field label="Eigenaar">
-                    <input
-                      value={a.owner}
-                      onChange={(e) => updateAction({ ...a, owner: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="Streefdatum">
-                    <input
-                      type="date"
-                      value={a.dueDate}
-                      onChange={(e) => updateAction({ ...a, dueDate: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="Voortgang / effectcheck">
-                    <textarea
-                      value={a.notes}
-                      onChange={(e) => updateAction({ ...a, notes: e.target.value })}
-                    />
-                  </Field>
-                  <Field label="Resultaat van de effectcontrole">
-                    <textarea
-                      value={a.effectCheck ?? ''}
-                      onChange={(e) => updateAction({ ...a, effectCheck: e.target.value })}
-                      placeholder="Wat is daadwerkelijk getest of gemeten, wanneer en door wie?"
-                    />
-                  </Field>
-                  <Field label="Actiestatus">
-                    <select
-                      value={a.status}
-                      onChange={(e) => {
-                        const next = e.target.value as WorkspaceAction['status'];
-                        if (next === 'done' && (!a.effectCheck?.trim() || !a.owner.trim())) {
-                          window.alert(
-                            'Leg het resultaat van de effectcontrole en een eigenaar vast voordat je de actie afrondt.',
-                          );
-                          return;
-                        }
-                        updateAction({
-                          ...a,
-                          status: next,
-                          ...(next === 'done' ? { verifiedAt: new Date().toISOString() } : {}),
-                        });
-                      }}
-                    >
-                      <option value="open">Te doen</option>
-                      <option value="in_progress">In uitvoering</option>
-                      <option value="done">Effect gecontroleerd</option>
-                    </select>
-                  </Field>
+                  <ActionLifecyclePanel action={a} evidence={evidence} onSave={updateAction} />
                 </div>
               ))}
             {!actions.some((a) => a.status === status) && (
@@ -2806,6 +2816,9 @@ function Actions({
       </p>
     </>
   );
+}
+function actionNeedsFollowup(action: WorkspaceAction): boolean {
+  return !['closed', 'cancelled', 'legacy_done'].includes(actionStage(action));
 }
 function ActionEditor({
   scenarios,
@@ -3484,6 +3497,8 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
           '',
           `LOPA: ${r.lopa.frequency.value}/jaar [${r.lopa.frequency.min}, ${r.lopa.frequency.max}]`,
           `Criterium: ${r.lopa.targetFrequency}/jaar (${r.lopa.comparison})`,
+          `Frequentiebron: ${s.lopa?.frequencyEvidence ?? ''}`,
+          `Aannames en criteriumbesluit: ${s.lopa?.assumptions || 'Niet vastgelegd; criterium onbevestigd'}`,
         );
       lines.push('');
     }
@@ -3498,9 +3513,10 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
     lines.push('## Plan van aanpak', '');
     for (const a of workspace.actions)
       lines.push(
-        `- ${a.title} | ${a.status} | ${a.owner} | ${a.dueDate || 'Geen datum'} | ${a.notes} | Effectcontrole: ${a.effectCheck ?? 'Niet vastgelegd'} | ${a.verifiedAt ?? ''}`,
+        `- ${a.title} | ${actionStageLabels[actionStage(a)]} | ${a.owner} | ${a.dueDate || 'Geen datum'} | ${a.notes} | Effectcontrole: ${a.effectCheck ?? 'Niet vastgelegd'} | ${a.verifiedAt ?? ''}`,
       );
     lines.push(...dossierMarkdown(workspace));
+    lines.push(...riskAssessmentMarkdown(workspace.riskAssessments ?? []));
     download('ima-rie-rapport.md', lines.join('\n'), 'text/markdown');
   };
   return (
@@ -3575,7 +3591,13 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
               {r.lopa && (
                 <p>
                   LOPA: {exp(r.lopa.frequency.value)}/jaar; band {exp(r.lopa.frequency.min)}–
-                  {exp(r.lopa.frequency.max)}. Projectcriterium {exp(r.lopa.targetFrequency)}/jaar.
+                  {exp(r.lopa.frequency.max)}. Projectcriterium {exp(r.lopa.targetFrequency)}/jaar (
+                  {r.lopa.comparison}).
+                  <br />
+                  Frequentiebron: {s.lopa?.frequencyEvidence}
+                  <br />
+                  Aannames en criteriumbesluit:{' '}
+                  {s.lopa?.assumptions || 'Niet vastgelegd; criterium onbevestigd'}
                 </p>
               )}
             </section>
@@ -3585,7 +3607,7 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
         {workspace.actions.map((a) => (
           <p key={a.id}>
             <strong>{a.title}</strong> · {a.owner || 'Eigenaar ontbreekt'} ·{' '}
-            {a.dueDate || 'Datum ontbreekt'} · {a.status}
+            {a.dueDate || 'Datum ontbreekt'} · {actionStageLabels[actionStage(a)]}
             <br />
             Plan/voortgang: {a.notes}
             <br />

@@ -1,6 +1,6 @@
 # Eén account, meerdere pc’s
 
-IMA Apply 2.0 gebruikt een browserapp op GitHub Pages en een afzonderlijke private repository voor je dossiers. De publieke apprepository bevat de software en openbare, zelfgeschreven voorbeeldvragen. Eigen antwoorden, incidenten, vragenpakketten en brongegevens horen in de private datarepository.
+IMA Apply 2.1 gebruikt een browserapp op GitHub Pages en een afzonderlijke private repository voor je dossiers. De publieke apprepository bevat de software en openbare, zelfgeschreven voorbeeldvragen. Eigen antwoorden, incidenten, vragenpakketten en brongegevens horen in de private datarepository.
 
 | Onderdeel | Bestemming | Inhoud |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ De lokale opslag gebruikt een afzonderlijk versiekenmerk. Een andere tab die het
 
 De JSON-import controleert schemaversie, vereiste velden, IDs, keuzes, datums, scoregrenzen en LOPA-intervallen. Verkeerde types, dubbele IDs, ongeldige scorefactoren, herkenbare toegangstokens en verboden credentialvelden worden afgewezen. Een beschadigde bestaande lokale kopie wordt bewaard en niet automatisch vervangen door een leeg dossier.
 
-De werkruimte heeft een limiet van **900.000 UTF-8 bytes**, zodat het bestand binnen de volledig ondersteunde responsgrootte van de [GitHub Contents API](https://docs.github.com/en/rest/repos/contents) blijft. De werkruimte bevat tekst en bronverwijzingen; documenten, video's, pdf’s en LMS-attachments worden niet als binaire bestanden in deze JSON opgenomen.
+De werkruimte heeft een productlimiet van **2.000.000 UTF-8 bytes**. Bij bestanden boven 1 MB levert de [GitHub Contents API](https://docs.github.com/en/rest/repos/contents) objectmetadata zonder inline inhoud. IMA haalt daarna de [onveranderlijke Git-blob](https://docs.github.com/en/rest/git/blobs#get-a-blob) voor precies die SHA op; een gelijktijdige branchwijziging vermengt daarmee geen versies. Streamingcontrole begrenst het antwoord en weigert ongeldige UTF-8 of afwijkende bytegroottes. De werkruimte bevat tekst en bronverwijzingen; documenten, video's, pdf’s en LMS-attachments worden niet als binaire bestanden in deze JSON opgenomen.
 
 ## Implementatie en verificatie
 
@@ -74,3 +74,19 @@ De tests controleren importgrenzen, Unicode, tokenlekken, beschermde bestaande o
 Het synchronisatieformulier laat het repositorybestand kiezen. Gebruik voor hetzelfde project op iedere pc hetzelfde pad. De private bronwerkruimte staat op `workspaces/bronwerkruimte.json`; standaard eigen projectopslag blijft `workspaces/default.json`. Andere projecten kunnen een eigen `workspaces/projectnaam.json` gebruiken. De conflictversie is gekoppeld aan repository én bestand én werkruimte-ID. Een cloudpreview bewaart de daadwerkelijk gelezen bestemming, ook wanneer het invoerveld daarna verandert.
 
 De bronwerkruimte bevat 260 oorspronkelijke private themavragen en drie gelezen conceptlesteksten. Zij bevat geen ingevulde projectoordelen, actuele deelnemersdata of beoordeelde beheersmaatregelen. Twee onafhankelijke echte API-clients hebben dezelfde volledige inhoud en blob-SHA teruggelezen. Dit verifieert repositoryoverdracht; het vervangt niet de inrichting en praktijkcontrole van ieder daadwerkelijk gebruikt apparaat.
+
+
+## Echte overdrachtscontrole, 7 oktober 2026
+
+Twee afzonderlijke browsercontexten gebruikten de echte private datarepository en een tijdelijk eigen testbestand. De fictieve werkruimte bevatte drie volledige beoordelingen met elk 260 bevroren private vragen, bronversies, organisaties/afdeling, antwoorden, verificatiebewijs, waarneming, bevinding, actie, incident, onderzoek, onderwerpen, regelgevingsverwijzing en uren. Omvang: **1.348.361 bytes**. A uploadde; B haalde de volledige inhoud op en wijzigde een antwoord; A haalde B’s volledige versie weer op. Alle collecties en hashes bleven gelijk aan de verzonden versies.
+
+Vervolgens wijzigden beide browsers dezelfde opgehaalde versie. Nadat A uploadde, werd B’s achterhaalde upload geweigerd. B’s lokale versie bleef ongewijzigd; de gedownloade volledige JSON-export kwam exact met B’s bewaarde inhoud overeen. Tokens ontbraken in beide persistente browseropslagen; er waren nul paginacrashmeldingen. Het tijdelijke bestand is op 7 oktober 2026 om 20:43:35 UTC verwijderd; dit tijdstip is gecontroleerd aan de GitHub-commitmetadata. Dit bewijst de browser-/API-werkstroom en de grotere overdracht, niet de configuratie van ieder persoonlijk apparaat.
+
+## Oude databank openen
+
+Kies op iedere pc hetzelfde bestand in **Werkruimte & synchronisatie**:
+
+- `workspaces/legacy-riebuilder-strict.json`: strikte migratie; dertien antwoorden blijven volledig in raw bronrecords bewaard.
+- `workspaces/legacy-riebuilder-utc-review.json`: afzonderlijke controleversie met dertien getypeerde antwoorden en zichtbare UTC-/vraagversiewaarschuwingen.
+
+Beide zijn op 9 oktober 2026 volledig teruggelezen via onafhankelijke API-clients en echte browsercontexten; vernieuwen behield exact dezelfde inhoud. Het oorspronkelijke lokale databestand bleef ongewijzigd. Beoordeel eerst de migratiewaarschuwingen op **Overzicht**. De interpretatieversie is een concept voor controle.

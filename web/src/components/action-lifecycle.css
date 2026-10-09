@@ -1,0 +1,69 @@
+.action-stage {
+  color: #96dad0;
+  font-size: 12px;
+  font-weight: 700;
+}
+.action-stage[data-stage='ineffective'],
+.action-stage[data-stage='legacy_done'] {
+  color: #e9b97b;
+}
+.action-evaluation {
+  border-left: 2px solid #638f94;
+  padding: 8px 12px;
+  margin: 14px 0;
+  font-size: 11px;
+}
+.action-evaluation p,
+.action-history p {
+  white-space: pre-wrap;
+}
+.action-revision-editor > summary,
+.action-history > summary {
+  cursor: pointer;
+  font-size: 11px;
+  padding: 12px 0;
+  color: #b2cbd4;
+}
+.action-revision-editor form {
+  margin-top: 12px;
+}
+.action-evidence {
+  border: 1px solid #304453;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.action-evidence legend {
+  color: #b2cbd4;
+  font-size: 11px;
+}
+.action-evidence label {
+  margin: 8px 0;
+}
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.action-history article {
+  padding: 14px 0;
+  border-top: 1px solid #304453;
+  font-size: 11px;
+}
+.action-history article > small {
+  display: block;
+  color: #8caab8;
+  margin-top: 5px;
+}
+.action-history article summary {
+  cursor: pointer;
+  color: #96c8c6;
+}
+.action-history pre {
+  max-height: 300px;
+  overflow: auto;
+  font-size: 10px;
+  background: #0d1922;
+  padding: 12px;
+  border-radius: 8px;
+}

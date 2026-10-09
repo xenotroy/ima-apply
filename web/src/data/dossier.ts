@@ -1,5 +1,6 @@
 import type { Question } from '../content/catalog';
 import type { WorkspaceRecord } from './model';
+import type { BasisRiskFactorSnapshot } from './brf';
 
 export interface Organisation {
   id: string;
@@ -14,9 +15,35 @@ export interface Site {
 }
 export interface Department {
   id: string;
-  siteId: string;
+  /** Exactly one parent: a known site, or a known organisation when location is unknown. */
+  siteId?: string;
+  organisationId?: string;
   name: string;
   activity: string;
+}
+
+/** Direct organisation membership does not imply an invented site or address. */
+export function departmentOrganisationId(
+  department: Department | undefined,
+  sites: readonly Site[],
+): string | undefined {
+  if (!department) return undefined;
+  return (
+    department.organisationId ?? sites.find((site) => site.id === department.siteId)?.organisationId
+  );
+}
+
+export function departmentLabel(
+  department: Department,
+  sites: readonly Site[],
+  organisations: readonly Organisation[],
+): string {
+  const organisationId = departmentOrganisationId(department, sites);
+  const organisation = organisations.find((record) => record.id === organisationId);
+  const site = sites.find((record) => record.id === department.siteId);
+  return [department.name, organisation?.name, site?.name ?? 'Locatie niet vastgelegd']
+    .filter(Boolean)
+    .join(' · ');
 }
 /** Hash covers the complete frozen question, excluding these two added fields. */
 export interface FrozenQuestion extends Question {
@@ -27,6 +54,7 @@ export interface Dossier {
   id: string;
   title: string;
   organisationId?: string;
+  projectContextId?: string;
   departmentIds: string[];
   scope: string;
   assessor: string;
@@ -57,6 +85,7 @@ export interface Observation {
   title: string;
   dossierId: string;
   departmentId?: string;
+  walkthroughId?: string;
   date: string;
   observer: string;
   facts: string;
@@ -113,6 +142,9 @@ export interface Investigation {
   recoveryBarriers: string[];
   consequences: string[];
   basisRiskFactors: string[];
+  /** Explicit local definition-version links; old free codes remain in basisRiskFactors. */
+  basisRiskFactorIds?: string[];
+  basisRiskFactorSnapshots?: BasisRiskFactorSnapshot[];
   evidenceIds: string[];
   actionIds: string[];
   conclusion: string;

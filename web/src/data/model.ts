@@ -1,4 +1,11 @@
 import type { Scenario } from '../domain/types';
+import type { RiskAssessment } from './risk-history';
+import type { ActionLifecycle } from './action';
+import type { ProjectContext, Walkthrough } from './project-context';
+export * from './project-context';
+import type { BasisRiskFactorRecord } from './brf';
+export * from './action';
+export * from './brf';
 import type {
   Organisation,
   Site,
@@ -49,6 +56,8 @@ export interface WorkspaceAction {
   dossierId?: string;
   findingId?: string;
   evidenceIds?: string[];
+  /** Absent in early v1 exports; do not infer effectiveness or historical events. */
+  lifecycle?: ActionLifecycle;
 }
 
 export interface WorkspaceIncident {
@@ -113,6 +122,10 @@ export interface WorkspaceState {
   investigations?: Investigation[];
   exposure?: Exposure[];
   contentRecords?: WorkspaceRecord[];
+  projectContexts?: ProjectContext[];
+  walkthroughs?: Walkthrough[];
+  basisRiskFactorRecords?: BasisRiskFactorRecord[];
+  riskAssessments?: RiskAssessment[];
 }
 
 export type WorkspacePatch = Partial<
@@ -137,6 +150,10 @@ export type WorkspacePatch = Partial<
     | 'investigations'
     | 'exposure'
     | 'contentRecords'
+    | 'projectContexts'
+    | 'walkthroughs'
+    | 'basisRiskFactorRecords'
+    | 'riskAssessments'
   >
 >;
 
@@ -179,6 +196,10 @@ export function createWorkspace(name: string, initial: WorkspacePatch = {}): Wor
     investigations: [],
     exposure: [],
     contentRecords: [],
+    riskAssessments: [],
+    projectContexts: [],
+    walkthroughs: [],
+    basisRiskFactorRecords: [],
     ...initial,
   };
 }

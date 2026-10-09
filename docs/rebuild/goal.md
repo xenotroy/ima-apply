@@ -2,6 +2,8 @@
 
 Status: **actief**. Vastgelegd op 7 oktober 2026 op verzoek van de gebruiker: “maak hier een goal van dus”. Dit document concretiseert de oorspronkelijke herbouwopdracht; het verkleint die opdracht niet tot de reeds gepubliceerde browserapp.
 
+Voortgang bijgewerkt op 9 oktober 2026 voor appversie `2.1.0`. De tabel hieronder blijft de oorspronkelijke nulmeting; de actuele gerealiseerde functies en voorlopige overdrachtsgrenzen staan onder **Concrete voortgang na vastlegging**. Appversie, browserdataschema (`schemaVersion: 1`) en rekenmethode (`ima-risk/2.0.0`) zijn afzonderlijke versies.
+
 ## Doel
 
 Bouw IMA Apply opnieuw op tot een volledige, bruikbare veiligheidswerkruimte, met de huidige kennis uit de actieve vault en relevante oorspronkelijke vragenlijsten, naslagwerken, opleidingsmaterialen en Moodle/LMS-data. Werk de risicobeoordeling en effectiviteit van beheersmaatregelen inhoudelijk en technisch uit, met expliciete AHS-voorkeur, justificatie en uitvoerbaarheid. Maak de maatregelwerking overtuigend zichtbaar. Publiceer en onderhoud de software op GitHub en maak dezelfde dossiers bruikbaar vanaf meerdere pc’s met één account.
@@ -42,15 +44,32 @@ Een externe toegangsbeperking voor één bron verhindert niet het doorwerken aan
 - Onderwerpen-/regelgevingsregister, opgeslagen 5×Waarom-/BowTie-onderzoeken, incidentclassificatie en maanduren/frequenties toegevoegd. Geen rate zonder passende scope, complete verstreken maanden, classificatie en urenbasis.
 - Alle tien oorspronkelijke PI Vught-themalijsten gelezen en privé ingelezen: 260 vragen met criteria, bewijsaanwijzingen en normverwijzingen. Drie werkelijk gelezen Moodle-lesconcepten behouden als private contentrecords; dit is nog geen actuele LMS-export.
 - Private bronwerkruimte geplaatst in `xenotroy/ima-apply-workspaces`, bestand `workspaces/bronwerkruimte.json`. Twee onafhankelijke echte GitHub-clients lazen identieke volledige inhoud terug. Dit is API-bewijs; het is geen claim dat ieder persoonlijk apparaat al ingericht is.
-- Read-only migratie-CLI voor geselecteerde Markdown-/SQLite-dossiers en bronbehoud ontwikkeld. Fictieve fixtures zijn gevalideerd met de daadwerkelijke browsergrens; geen echte legacy-productieoverdracht uitgevoerd.
+- Tienfasige actiecyclus toegevoegd: uitvoering, controleplan, positief/negatief effect, afsluiten, annuleren en heropenen zijn onderscheiden. Actor, tijdstip, onderbouwing en voor-/na-inhoud blijven in een gecontroleerde revisieketen behouden.
+- Afdelingen met een bekende organisatie en onbekende locatie behouden hun echte organisatie-ID zonder fictieve site. Bewerkbare projectcontext bewaart alle dertien oorspronkelijke inhoudelijke velden en contact-/beschrijvingsvelden. Rondgangrecords bewaren volledige tekst, datum/auteur, daadwerkelijke scope en geselecteerde module-identiteiten; waarnemingen verwijzen expliciet naar passende verslagen.
+- Het lokale BRF-register bewaart afzonderlijke definitieversies, bron-/eigenaarschapscontext en statusstappen. Onderzoeksreview bevriest de werkelijk gebruikte definities. Dit stelt geen externe Tripod-taxonomie of bewezen oorzaak vast.
+- De risicoruimte toont afzonderlijke berekende maatregelstappen met W/B/E- en scorebanden. Bewust vastgelegde risicobeoordelingsmomenten bewaren volledige invoer, methodeversie, resultaten, actor/motivatie en inhoudshash. Zij reconstrueren geen ontbrekende oude beoordelingshistorie.
+- Echte browseroverdracht A→B→A en concurrerende upload gecontroleerd met drie volledige 260-vragendossiers van 1,35 MB. Lokale conflictinhoud bleef exact exporteerbaar.
+- De werkruimtegrens is 2.000.000 UTF-8 bytes. GitHub-inhoud boven 1 MB wordt bij dezelfde onveranderlijke blob-SHA opgehaald; conflictcontrole en exportbehoud blijven actief.
+- Read-only migratie-CLI voor geselecteerde Markdown-/SQLite-dossiers en bronbehoud ontwikkeld. Naast fictieve regressiefixtures is een werkelijke private SQLite-projectkopie gecontroleerd en naar twee afzonderlijke browsergeldige exports omgezet. De oorspronkelijke database-, WAL- en SHM-bestanden bleven ongewijzigd. Deze kopiecontrole is geen goedgekeurde klantoverdracht of complete reconstructie van historische dossiers.
 
-Resterende scope omvat onder meer oorspronkelijke toegankelijke HVK/MVK- en SDU-inhoud, echte LMS-brondata, aantoonbare volledige dossier-/revisiepariteit en werkelijke productieoverdracht. De stand van de volledige herbouw blijft **actief**.
+### Gecontroleerde legacykopie: voorlopige overdrachtsstand
+
+| Export | Omvang | Behouden betekenis en expliciete grens |
+| --- | --- | --- |
+| Standaard zonder UTC-aanname | 761.198 UTF-8 bytes | Eén projectcontext, twee organisaties, vier afdelingen, drie conceptdossiers, vijf rondgangen en 110 vragen. Alle dertien oorspronkelijke antwoorden blijven raw; nul typed antwoorden omdat de bron geen tijdzone vastlegt. |
+| Met expliciete UTC-interpretatie | 801.985 UTF-8 bytes | Dezelfde context, organisaties, scope, verslagen en vragen; dertien typed antwoorden naast de oorspronkelijke raw records. 25 tijdzonewaarschuwingen en dertien waarschuwingen dat de bevroren vraagdefinitie de exportversie is, geen gereconstrueerde historische antwoordversie. |
+
+Zekerheid over bronbehoud en exportvalidatie: **hoog**. Zekerheid over de UTC-interpretatie: **matig**; de huidige oorspronkelijke schrijfcode gebruikt UTC, maar bewijst niet zelfstandig de herkomst van ieder historisch databaseveld. Oude 1–3 ratings blijven brongegevens en krijgen geen nieuwe Kinney-/LOPA-werking. Beide versies zijn create-only opgeslagen in de private repository: `workspaces/legacy-riebuilder-strict.json` en `workspaces/legacy-riebuilder-utc-review.json`. Op 9 oktober 2026 lazen twee onafhankelijke API-clients de volledige inhoud terug; afzonderlijke browsercontexten openden de echte cloudversies en behielden na vernieuwen exact dezelfde JSON. Tokens ontbraken in persistente opslag en er waren nul paginacrashmeldingen. Een zichtbare, gehashte migratiereview bevat alle waarschuwingen; de 248 oorspronkelijke raw bronrecords bleven ongewijzigd.
+
+Resterende scope omvat de oorspronkelijke toegankelijke HVK/MVK-lesbronnen, inhoudelijke verwerking van AI-45 en AI-61, echte Moodle/LMS-brondata, aantoonbare volledige dossier-/revisiepariteit en beoordeelde productieoverdracht. Drie lesconcepten zijn geen actuele LMS-export. Een gevalideerde private bronkopie is geen vastgestelde klantbeoordeling. De stand van de volledige herbouw blijft **actief**.
 
 ## Afsluitregel
 
 Dit goal blijft actief totdat de volledige opdracht aantoonbaar is uitgevoerd. Een werkende demo, groen testresultaat, gepubliceerd GitHub-project of gedeeltelijk gelezen bronpakket is op zichzelf geen volledige afronding.
 
 De eindcontrole herleidt ieder criterium hierboven naar actuele bestanden, concrete broninhoud, passende tests, migratiebewijs, bruikbare rapporten en daadwerkelijk runtimegedrag. Gebruik de testdekking die bij het betreffende criterium hoort; presenteer een beperkte test niet als bewijs voor een bredere integratie.
+
+Vóór afronding controleert de eindcontrole afzonderlijk: inhoudelijk gelezen oorspronkelijke HVK/MVK-bronnen; AI-45/AI-61-inhoud; werkelijke LMS-data; betekenisbehoud van ontbrekende legacyrevisies en bijzondere bronvelden; private teruglees-/herstelcontrole van de geselecteerde overdracht; en de praktijkworkflow op de daadwerkelijk gebruikte persoonlijke apparaten. Zolang deze onderdelen niet bewezen zijn, blijft dit goal actief ondanks de gerealiseerde versie `2.1.0`.
 
 ## Inspectie bij vastlegging
 

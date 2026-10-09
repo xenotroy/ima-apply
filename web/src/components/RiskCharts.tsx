@@ -1,4 +1,5 @@
 import type { KinneyResult, LopaResult } from '../domain/types';
+import { frequencyAxis } from './frequency-axis';
 const num = (n: number) => n.toLocaleString('nl-NL', { maximumFractionDigits: 1 });
 export function Waterfall({ current, target }: { current: KinneyResult; target: KinneyResult }) {
   const steps = [
@@ -42,27 +43,22 @@ export function LopaChart({ result }: { result: LopaResult }) {
     { title: 'Na modifiers', frequency: result.unmitigatedFrequency },
     ...result.steps.map((s) => ({ title: s.title, frequency: s.frequency })),
   ];
-  const exps = [
-    ...steps.flatMap((s) => [
-      Math.log10(s.frequency.min || 1e-12),
-      Math.log10(s.frequency.max || 1e-12),
-    ]),
-    Math.log10(result.targetFrequency),
-  ];
-  const min = Math.floor(Math.min(...exps)) - 1,
-    max = Math.ceil(Math.max(...exps)) + 1;
-  const y = (n: number) => 25 + ((max - Math.log10(n || 1e-12)) / (max - min)) * 180;
+  const { ticks, y, exponentY } = frequencyAxis(
+    steps.map((step) => step.frequency),
+    result.targetFrequency,
+  );
+  const hasZeroLowerBound = steps.some((step) => step.frequency.min === 0);
   return (
     <div className="lopa-chart">
       <svg
         viewBox="0 0 680 280"
         role="img"
-        aria-label="LOPA-frequentieverloop, logaritmische schaal in gebeurtenissen per jaar"
+        aria-label={`LOPA-frequentieverloop, logaritmische schaal in gebeurtenissen per jaar.${hasZeroLowerBound ? ' Een neerwaartse pijl markeert een echte nulondergrens buiten de logaritmische as.' : ''}`}
       >
-        {Array.from({ length: max - min + 1 }, (_, i) => max - i).map((e) => (
+        {ticks.map((e) => (
           <g key={e}>
-            <line x1="65" y1={y(10 ** e)} x2="645" y2={y(10 ** e)} stroke="#233644" />
-            <text x="13" y={y(10 ** e) + 4} fill="#8d9dab" fontSize="12">
+            <line x1="65" y1={exponentY(e)} x2="645" y2={exponentY(e)} stroke="#233644" />
+            <text x="13" y={exponentY(e) + 4} fill="#8d9dab" fontSize="12">
               10^{e}
             </text>
           </g>
@@ -76,7 +72,7 @@ export function LopaChart({ result }: { result: LopaResult }) {
           strokeDasharray="6 5"
         />
         <text x="65" y={y(result.targetFrequency) - 7} fill="#f7b25f" fontSize="11">
-          Projectcriterium
+          {result.comparison === 'unconfirmed' ? 'Onbevestigd criterium' : 'Projectcriterium'}
         </text>
         <polyline
           points={steps
@@ -103,6 +99,19 @@ export function LopaChart({ result }: { result: LopaResult }) {
                 opacity=".2"
               />
               <circle cx={x} cy={y(s.frequency.value)} r="5" fill="#65efd0" />
+              {s.frequency.min === 0 && (
+                <g aria-label={`${s.title}: ondergrens nul, buiten logaritmische as`}>
+                  <path
+                    d={`M ${x - 4} 209 L ${x} 216 L ${x + 4} 209`}
+                    fill="none"
+                    stroke="#a5e8d5"
+                    strokeWidth="1.5"
+                  />
+                  <text x={x + 8} y="217" fill="#a5e8d5" fontSize="10">
+                    0
+                  </text>
+                </g>
+              )}
               <text x={x} y="240" textAnchor="middle" fill="#aebfcd" fontSize="11">
                 {s.title.length > 27 ? s.title.slice(0, 24) + '…' : s.title}
               </text>
@@ -113,6 +122,8 @@ export function LopaChart({ result }: { result: LopaResult }) {
       <p className="caption">
         Frequentie per jaar · logaritmische as · bandbreedtes zijn aannames, geen statistische
         betrouwbaarheidsintervallen.
+        {hasZeroLowerBound &&
+          ' ↓ 0 markeert een echte nulondergrens buiten de logas; de zichtbare onderrand is alleen de plotafkapgrens.'}
       </p>
     </div>
   );

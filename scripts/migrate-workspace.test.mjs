@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
-import { migrateMarkdown, migrateSqlite, parseLegacyMarkdown, loadWorkspaceApi, writeMigrationOutput } from './migrate-workspace.mjs';
+import { migrateMarkdown, migrateSqlite, parseLegacyMarkdown, loadWorkspaceApi, writeMigrationOutput, canonicalMigrationReportJson } from './migrate-workspace.mjs';
 
 const NOW = '2026-10-07T09:00:00.000Z';
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -133,6 +133,46 @@ test('migrates Markdown dossier, frozen answer and evidence without inventing ef
   assert.deepEqual(await fs.readFile(path.join(root, 'rie/questions/q.md')), before);
 });
 
+test('projects only selected exact draft BRF definitions without inventing owners, historical dates or converting free research codes', async t => {
+  const { root } = await markdownFixture(t);
+  const metadata = { title: 'Fictieve systeemconditie', taxonomy: 'ima-core:taxonomy:brf', version: '1.0.0', status: 'draft', parent_id: 'source:unversioned-parent' };
+  const content = md('ima.taxonomy-term/v1', 'fixture:brf:01', metadata, '# Fictieve systeemconditie\n\nOorspronkelijke toepassingsgrens; nog geen causaal oordeel.');
+  const sourceFile = await put(root, 'taxonomies/brf/selected.md', content);
+  await put(root, 'taxonomies/brf/non-draft.md', md('ima.taxonomy-term/v1', 'fixture:brf:active', { ...metadata, status: 'active' }, '# Niet stil lokaal vastgesteld\n\nOorspronkelijke andere status.'));
+  await put(root, 'taxonomies/other.md', md('ima.taxonomy-term/v1', 'fixture:other', { ...metadata, taxonomy: 'other:taxonomy' }, '# Andere taxonomie\n\nGeen bevestigde BRF.'));
+  const analysisFile = path.join(root, 'analyses/a.md');
+  await fs.writeFile(analysisFile, (await fs.readFile(analysisFile, 'utf8')).replace('incident_id:', 'basis_risk_factor_ids: ["fixture:brf:01", "LEGACY-FREE-CODE"]\nincident_id:'));
+  const before = await fs.readFile(sourceFile);
+  const result = await migrateMarkdown(root, { now: NOW });
+  const api = await loadWorkspaceApi();
+  assert.doesNotThrow(() => api.importWorkspace(result.serialized));
+  assert.equal(result.workspace.basisRiskFactorRecords.length, 1);
+  const record = result.workspace.basisRiskFactorRecords[0];
+  assert.equal(record.factorId, 'fixture:brf:01');
+  assert.equal(record.code, 'fixture:brf:01');
+  assert.equal(record.version, '1.0.0');
+  assert.equal(record.status, 'draft');
+  assert.equal(record.description, 'Oorspronkelijke toepassingsgrens; nog geen causaal oordeel.');
+  assert.equal(record.owner, ''); assert.equal(record.createdBy, '');
+  assert.equal(record.createdAt, NOW);
+  assert.match(record.changeNote, /nieuwe projectiedatum/);
+  assert.match(record.sourceReference, /taxonomies\/brf\/selected\.md/);
+  assert.equal(record.parentRecordId, undefined); assert.equal(record.supersedesId, undefined);
+  assert.deepEqual(record.statusHistory, []);
+  assert.deepEqual(result.workspace.investigations[0].basisRiskFactors, ['fixture:brf:01', 'LEGACY-FREE-CODE']);
+  assert.equal(result.workspace.investigations[0].basisRiskFactorIds, undefined);
+  assert.equal(result.report.counts.basisRiskFactorRecords, 1);
+  assert(result.report.warnings.some(item => item.code === 'brf_parent_unversioned'));
+  assert(result.report.warnings.some(item => item.code === 'brf_raw_only'));
+  assert.deepEqual(await fs.readFile(sourceFile), before);
+  const repeated = await migrateMarkdown(root, { now: NOW });
+  assert.equal(repeated.workspace.basisRiskFactorRecords[0].id, record.id);
+  await put(root, 'taxonomies/brf/duplicate.md', content);
+  const ambiguous = await migrateMarkdown(root, { now: NOW });
+  assert.equal(ambiguous.workspace.basisRiskFactorRecords.length, 0);
+  assert(ambiguous.workspace.sources.some(source => source.raw?.text === content));
+});
+
 test('restores only known frozen answer text when current question source hash has changed', async t => {
   const { root, originalHash } = await markdownFixture(t, { changedQuestion: true });
   const result = await migrateMarkdown(root, { now: NOW });
@@ -152,7 +192,7 @@ test('missing assessments and unknown answer values remain raw without synthesiz
   const result = await migrateMarkdown(root, { now: NOW });
   assert.equal(result.workspace.dossiers.length, 0);
   assert.equal(result.workspace.answers.length, 0);
-  assert.equal(result.workspace.sources.length, 1);
+  assert.equal(result.workspace.sources.filter(source => source.format !== 'ima.migration-review/v1').length, 1);
   assert(result.report.warnings.some(warning => warning.code === 'missing_assessment'));
 });
 
@@ -163,6 +203,29 @@ test('malformed Markdown retains complete source rather than partially trusting 
   assert.equal(result.workspace.sources[0].raw.text, input);
   assert.equal(result.workspace.sources[0].format, 'legacy-markdown-unparsed');
   assert(result.report.warnings.some(warning => warning.code === 'markdown_not_projected'));
+});
+
+test('embeds the complete private review before final counting and hashes without circular output metadata', async t => {
+  const { root } = await markdownFixture(t);
+  const result = await migrateMarkdown(root, { now: NOW });
+  const reviews = result.workspace.sources.filter(source => source.format === 'ima.migration-review/v1');
+  assert.equal(reviews.length, 1);
+  const review = reviews[0];
+  assert.equal(review.title, 'Migratieconcept: menselijke controle vereist');
+  assert.equal(review.kind, 'other'); assert.equal(review.status, 'review-required'); assert.equal(review.publication, 'private');
+  assert.deepEqual(review.raw.warnings, result.report.warnings);
+  assert.deepEqual(review.raw.rules, result.report.rules);
+  assert.deepEqual(review.raw.counts, result.report.counts);
+  assert.equal(review.raw.counts.sources, result.workspace.sources.length);
+  assert.equal(review.raw.migratedAt, NOW);
+  assert.equal(review.contentSha256, hash(canonicalMigrationReportJson(review.raw)));
+  assert.equal(review.raw.workspaceSha256, undefined); assert.equal(review.raw.outputBytes, undefined);
+  assert.equal(result.report.workspaceSha256, hash(result.serialized));
+  assert.equal(result.report.outputBytes, Buffer.byteLength(result.serialized));
+  assert.deepEqual(JSON.parse(result.serialized).sources.find(source => source.id === review.id), review);
+  const repeated = await migrateMarkdown(root, { now: NOW });
+  assert.equal(repeated.workspace.sources.find(source => source.format === review.format).id, review.id);
+  assert(result.workspace.sources.some(source => source.originalSchema === 'ima.rie-risk-assessment/v1' && source.raw.text.includes('ReductieScore=3')));
 });
 
 test('rejects symlink source selection', async t => {
@@ -220,13 +283,69 @@ test('SQLite migration uses a disposable read-only copy and preserves ratings wi
   assert.equal(result.workspace.findings[0].scenarioId, undefined);
   assert.equal(result.workspace.organisations[0].name, 'Voorbeeld BV');
   assert.equal(result.workspace.sites.length, 0);
-  assert.equal(result.workspace.departments.length, 0);
+  assert.equal(result.workspace.departments.length, 1);
+  assert.equal(result.workspace.departments[0].name, 'Productie');
+  assert.equal(result.workspace.departments[0].organisationId, result.workspace.organisations[0].id);
+  assert.equal(result.workspace.departments[0].siteId, undefined);
+  const answerDossier = result.workspace.dossiers.find(dossier => dossier.id === result.workspace.answers[0].dossierId);
+  assert.deepEqual(answerDossier.departmentIds, [result.workspace.departments[0].id]);
+  assert.equal(answerDossier.organisationId, result.workspace.organisations[0].id);
   assert.equal(result.workspace.dossiers[0].assessor, '');
   assert.notEqual(result.workspace.dossiers[0].assessor, 'Een contactpersoon, geen assessor');
   assert(result.workspace.sources.some(source => source.raw?.table === 'MaatregelBeoordelingen' && source.raw.row.ReductieScore === 3 && source.raw.row.IsInPlace === 1));
   assert.equal(result.workspace.dossiers[0].questions[0].legalReferences, 'Oorspronkelijke normverwijzing, ongewijzigd.');
   assert(result.report.warnings.some(warning => warning.code === 'legacy_control_raw_only'));
   assert(result.report.warnings.some(warning => warning.code === 'unknown_table'));
+});
+
+test('SQLite uses the real department-company relation when answer CompanyId is absent and detects equivalent duplicate scopes', async t => {
+  const { filename } = await sqliteFixture(t);
+  const database = new DatabaseSync(filename);
+  database.exec('UPDATE Antwoorden SET CompanyId = NULL WHERE Id = 1');
+  database.close();
+  const result = await migrateSqlite(filename, { now: NOW });
+  assert.equal(result.workspace.answers.length, 1);
+  const department = result.workspace.departments[0];
+  const dossier = result.workspace.dossiers.find(record => record.id === result.workspace.answers[0].dossierId);
+  assert.deepEqual(dossier.departmentIds, [department.id]);
+  assert.equal(dossier.organisationId, department.organisationId);
+  assert.equal(result.workspace.sites.length, 0);
+  assert(result.workspace.sources.some(source => source.raw?.table === 'Antwoorden' && source.raw.row.CompanyId === null));
+
+  const duplicate = new DatabaseSync(filename);
+  duplicate.prepare('INSERT INTO Antwoorden VALUES (?,?,?,?,?,?,?,?)').run(2, 1, 1, 1, 1, 0, 'Tegenstrijdig antwoord binnen dezelfde werkelijke scope', '2026-10-07T10:00:00Z');
+  duplicate.close();
+  const ambiguous = await migrateSqlite(filename, { now: NOW });
+  assert.equal(ambiguous.workspace.answers.length, 0);
+  assert.equal(ambiguous.workspace.sources.filter(source => source.raw?.table === 'Antwoorden').length, 2);
+  assert(ambiguous.report.warnings.some(warning => warning.code === 'sqlite_answer_pair_ambiguous'));
+});
+
+test('SQLite never chooses a department organisation over a contradictory explicit company relationship', async t => {
+  const { filename } = await sqliteFixture(t);
+  const database = new DatabaseSync(filename);
+  database.prepare('INSERT INTO Companies VALUES (?,?,?)').run(2, 1, 'Andere echte organisatie');
+  database.exec('UPDATE Antwoorden SET CompanyId = 2 WHERE Id = 1');
+  database.close();
+  const result = await migrateSqlite(filename, { now: NOW });
+  assert.equal(result.workspace.answers.length, 0);
+  assert.equal(result.workspace.sites.length, 0);
+  assert.equal(result.workspace.departments.length, 1);
+  assert.equal(result.workspace.organisations.find(record => record.id === result.workspace.departments[0].organisationId).name, 'Voorbeeld BV');
+  assert(result.workspace.sources.some(source => source.raw?.table === 'Antwoorden' && source.raw.row.CompanyId === 2));
+  assert(result.report.warnings.some(warning => warning.code === 'sqlite_scope_conflict'));
+});
+
+test('SQLite keeps an unnamed organisation and its department raw without fabricating a usable parent', async t => {
+  const { filename } = await sqliteFixture(t);
+  const database = new DatabaseSync(filename);
+  database.exec("UPDATE Companies SET Name = '' WHERE Id = 1");
+  database.close();
+  const result = await migrateSqlite(filename, { now: NOW });
+  assert.equal(result.workspace.departments.length, 0);
+  assert.equal(result.workspace.sites.length, 0);
+  assert(result.workspace.sources.some(source => source.raw?.table === 'Departments' && source.raw.row.CompanyId === 1));
+  assert(result.report.warnings.some(warning => warning.code === 'department_raw_only'));
 });
 
 test('SQLite unknown timestamp zones stay raw unless an explicit UTC assumption was selected', async t => {
@@ -238,6 +357,19 @@ test('SQLite unknown timestamp zones stay raw unless an explicit UTC assumption 
   assert.equal(assumed.workspace.answers.length, 1);
   assert.equal(assumed.workspace.answers[0].answeredAt, '2026-10-06T10:00:00.000Z');
   assert(assumed.report.warnings.some(warning => warning.code === 'assumed_utc'));
+  const strictReview = conservative.workspace.sources.find(source => source.format === 'ima.migration-review/v1');
+  const utcReview = assumed.workspace.sources.find(source => source.format === 'ima.migration-review/v1');
+  assert.equal(strictReview.raw.warnings.filter(warning => warning.code === 'assumed_utc').length, 0);
+  assert.equal(utcReview.raw.warnings.filter(warning => warning.code === 'assumed_utc').length, assumed.report.warnings.filter(warning => warning.code === 'assumed_utc').length);
+  assert.equal(strictReview.raw.counts.answers, 0); assert.equal(utcReview.raw.counts.answers, 1);
+  for (const result of [conservative, assumed]) {
+    const review = result.workspace.sources.find(source => source.format === 'ima.migration-review/v1');
+    assert.deepEqual(review.raw.warnings, result.report.warnings);
+    assert.equal(review.raw.counts.sources, result.workspace.sources.length);
+    assert.equal(review.raw.warnings.filter(warning => warning.code === 'sqlite_question_not_historically_frozen').length, result.workspace.answers.length);
+    assert(review.raw.warnings.some(warning => warning.code === 'legacy_rating_not_kinney'));
+    assert(review.raw.warnings.some(warning => warning.code === 'legacy_control_raw_only'));
+  }
 });
 
 test('duplicate SQLite answers in one scope remain raw without latest-answer guessing', async t => {
@@ -304,4 +436,95 @@ test('credential-bearing legacy content is not silently exported and source rema
 test('CLI help is available without opening any private source or writing output', () => {
   const output = execFileSync(process.execPath, ['scripts/migrate-workspace.mjs', '--help'], { cwd: path.resolve(import.meta.dirname, '..'), encoding: 'utf8' });
   assert.match(output, /--markdown/); assert.match(output, /--sqlite/); assert.match(output, /No uploads/);
+});
+
+test('SQLite projects retain all thirteen meaningful context fields and unknown original timestamps', async t => {
+  const { filename } = await sqliteFixture(t);
+  const api = await loadWorkspaceApi();
+  const db = new DatabaseSync(filename);
+  const originalKeys = ['ActiviteitenEnProcessen', 'WerkplekkenEnSituaties', 'Personeelsopbouw', 'WerkEnRoostersystematiek', 'ArbeidsmiddelenEnInstallaties', 'GevaarlijkeStoffenEnBiologischeAgentia', 'FysiekeBelasting', 'PsychosocialeArbeidsbelasting', 'Verzuimgegevens', 'OngevallenEnIncidentgegevens', 'EerdereRieEnOpenstaandeActies', 'BhvEnNoodorganisatie', 'ToegepasteWetEnRegelgeving'];
+  for (const originalKey of originalKeys) {
+    db.exec(`ALTER TABLE RieProjecten ADD COLUMN ${originalKey} TEXT;`);
+    db.prepare(`UPDATE RieProjecten SET ${originalKey}=? WHERE Id=1`).run(`Exacte inhoud ${originalKey}\nTweede regel.`);
+  }
+  db.exec('ALTER TABLE RieProjecten ADD COLUMN ContactEmail TEXT; ALTER TABLE RieProjecten ADD COLUMN UpdatedAt TEXT;');
+  db.prepare('UPDATE RieProjecten SET ContactEmail=?, UpdatedAt=? WHERE Id=1').run('contact@example.invalid', '2026-10-06T13:00:00+02:00');
+  db.close();
+  const before = await fs.readFile(filename);
+  const result = await migrateSqlite(filename, { now: NOW });
+  const context = result.workspace.projectContexts[0];
+  assert.equal(context.title, 'Testproject');
+  assert.equal(context.contactName, 'Een contactpersoon, geen assessor');
+  assert.equal(context.contactEmail, 'contact@example.invalid');
+  assert.equal(context.locationText, 'Werkplaats');
+  assert.equal(context.createdAt, undefined);
+  assert.equal(context.updatedAt, '2026-10-06T11:00:00.000Z');
+  assert.equal(result.workspace.sites.length, 0);
+  assert.deepEqual(context.details, {
+    activities: 'Exacte inhoud ActiviteitenEnProcessen\nTweede regel.',
+    workplaces: 'Exacte inhoud WerkplekkenEnSituaties\nTweede regel.',
+    workforce: 'Exacte inhoud Personeelsopbouw\nTweede regel.',
+    schedules: 'Exacte inhoud WerkEnRoostersystematiek\nTweede regel.',
+    equipment: 'Exacte inhoud ArbeidsmiddelenEnInstallaties\nTweede regel.',
+    substances: 'Exacte inhoud GevaarlijkeStoffenEnBiologischeAgentia\nTweede regel.',
+    physicalLoad: 'Exacte inhoud FysiekeBelasting\nTweede regel.',
+    psychosocialLoad: 'Exacte inhoud PsychosocialeArbeidsbelasting\nTweede regel.',
+    absence: 'Exacte inhoud Verzuimgegevens\nTweede regel.',
+    incidents: 'Exacte inhoud OngevallenEnIncidentgegevens\nTweede regel.',
+    previousAssessments: 'Exacte inhoud EerdereRieEnOpenstaandeActies\nTweede regel.',
+    emergencyOrganisation: 'Exacte inhoud BhvEnNoodorganisatie\nTweede regel.',
+    regulations: 'Exacte inhoud ToegepasteWetEnRegelgeving\nTweede regel.',
+  });
+  assert(result.workspace.dossiers.every(dossier => dossier.projectContextId === context.id));
+  assert(result.workspace.sources.some(source => source.id === context.sourceIds[0] && source.raw.row.ContactEmail === 'contact@example.invalid'));
+  assert.deepEqual(api.importWorkspace(result.serialized).projectContexts, result.workspace.projectContexts);
+  assert.deepEqual(await fs.readFile(filename), before);
+});
+
+test('SQLite walkthroughs preserve prose, real scope and modules selected only by the report without synthesizing facts', async t => {
+  const { filename } = await sqliteFixture(t);
+  const db = new DatabaseSync(filename);
+  db.exec('CREATE TABLE WalkthroughReports (Id INTEGER PRIMARY KEY, CompanyId INTEGER, DepartmentId INTEGER, Title TEXT, Date TEXT, Author TEXT, Summary TEXT, Body TEXT, CreatedAt TEXT, UpdatedAt TEXT); CREATE TABLE WalkthroughReportModules (WalkthroughReportId INTEGER, ModuleId INTEGER);');
+  db.prepare('INSERT INTO Modules VALUES (?,?,?)').run(50, 'M50', 'Alleen rondgangmodule');
+  db.prepare('INSERT INTO WalkthroughReports VALUES (?,?,?,?,?,?,?,?,?,?)').run(1, 1, 1, 'Bronrondgang', '2026-09-23 00:00:00', 'Fictieve inspecteur', 'Complete samenvatting.', 'Volledig verslag\nMet tweede regel.', '2026-09-23T08:00:00Z', '2026-09-24T08:00:00Z');
+  db.prepare('INSERT INTO WalkthroughReports VALUES (?,?,?,?,?,?,?,?,?,?)').run(2, 1, null, 'Organisatierondgang', 'ongeldige datum', '', '', 'Auteur en datum ontbreken werkelijk.', null, null);
+  db.prepare('INSERT INTO WalkthroughReportModules VALUES (?,?)').run(1, 50);
+  db.prepare('INSERT INTO WalkthroughReportModules VALUES (?,?)').run(1, 999);
+  db.close();
+  const before = await fs.readFile(filename);
+  const result = await migrateSqlite(filename, { now: NOW });
+  const report = result.workspace.walkthroughs.find(item => item.title === 'Bronrondgang');
+  assert.equal(report.body, 'Volledig verslag\nMet tweede regel.');
+  assert.equal(report.summary, 'Complete samenvatting.');
+  assert.equal(report.date, '2026-09-23');
+  assert.equal(report.author, 'Fictieve inspecteur');
+  assert.equal(report.createdAt, '2026-09-23T08:00:00.000Z');
+  assert.equal(report.departmentId, result.workspace.departments[0].id);
+  assert.equal(report.organisationId, result.workspace.organisations[0].id);
+  assert.equal(report.projectContextId, result.workspace.projectContexts[0].id);
+  assert.deepEqual(result.workspace.dossiers.find(item => item.id === report.dossierId).departmentIds, [report.departmentId]);
+  assert.equal(report.modules.length, 1);
+  assert.equal(report.modules[0].code, 'M50');
+  assert.equal(report.modules[0].title, 'Alleen rondgangmodule');
+  assert.equal(result.workspace.observations.length, 0);
+  assert.equal(result.workspace.walkthroughs.find(item => item.title === 'Organisatierondgang').date, '');
+  assert.equal(result.workspace.walkthroughs.find(item => item.title === 'Organisatierondgang').author, '');
+  assert(result.report.warnings.some(item => item.code === 'walkthrough_module_unresolved'));
+  assert(result.workspace.sources.some(source => source.raw?.table === 'WalkthroughReports' && source.raw.row.Body === report.body));
+  assert.equal((await migrateSqlite(filename, { now: NOW })).workspace.walkthroughs[0].id, result.workspace.walkthroughs[0].id);
+  assert.deepEqual(await fs.readFile(filename), before);
+});
+
+test('SQLite walkthroughs with conflicting or unavailable department scope remain raw without widening their scope', async t => {
+  const { filename } = await sqliteFixture(t);
+  const db = new DatabaseSync(filename);
+  db.exec('CREATE TABLE WalkthroughReports (Id INTEGER PRIMARY KEY, CompanyId INTEGER, DepartmentId INTEGER, Title TEXT, Date TEXT, Author TEXT, Summary TEXT, Body TEXT);');
+  db.prepare('INSERT INTO Companies VALUES (?,?,?)').run(2, 1, 'Tweede organisatie');
+  db.prepare('INSERT INTO WalkthroughReports VALUES (?,?,?,?,?,?,?,?)').run(1, 2, 1, 'Tegenstrijdige scope', '2026-09-23', '', '', 'Niet kiezen tussen bron-FKs.');
+  db.prepare('INSERT INTO WalkthroughReports VALUES (?,?,?,?,?,?,?,?)').run(2, 1, 999, 'Ontbrekende afdeling', '2026-09-23', '', '', 'Niet verbreden naar organisatiebreed.');
+  db.close();
+  const result = await migrateSqlite(filename, { now: NOW });
+  assert.equal(result.workspace.walkthroughs.length, 0);
+  assert.equal(result.workspace.sources.filter(source => source.raw?.table === 'WalkthroughReports').length, 2);
+  assert.equal(result.report.warnings.filter(item => item.code === 'walkthrough_raw_only').length, 2);
 });

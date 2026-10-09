@@ -339,6 +339,14 @@ describe('justification and local priorities', () => {
 });
 
 describe('LOPA frequency and IPL qualification', () => {
+  it('keeps an old empty criterion basis readable but never declares its criterion confirmed', () => {
+    const input = lopa([layer()]);
+    const confirmed = calculateLopa(input);
+    const result = calculateLopa({ ...input, assumptions: '' });
+    expect(result.frequency).toEqual(confirmed.frequency);
+    expect(result.comparison).toBe('unconfirmed');
+    expect(result.warnings.join(' ')).toContain('geen vastgelegde aannames');
+  });
   it('multiplies actual PFD estimates and initiator annual frequency only for qualified IPLs', () => {
     const result = calculateLopa(lopa([layer(), layer({ id: 'relief', pfd: range(0.01) })]));
     expect(result.frequency.value).toBeCloseTo(0.0001);
@@ -403,6 +411,44 @@ describe('LOPA frequency and IPL qualification', () => {
     expect(result.frequency.max).toBeCloseTo(0.004);
     expect(result.riskReductionFactor).toEqual(range(100, 50, 200));
     expect(result.comparison).toBe('uncertain');
+  });
+  it('rejects modifier lower-bound underflow even when the nominal frequency is representable', () => {
+    const input = lopa([], [modifier({ probability: range(0.2, 1e-200, 0.2) })]);
+    input.initiatingFrequency = range(0.1, 1e-200, 0.1);
+    expect(() => calculateLopa(input)).toThrow(/Numerieke onderloop bij min/);
+  });
+  it('rejects IPL frequency lower-bound underflow without inventing physical zero', () => {
+    const input = lopa([layer({ pfd: range(0.1, 1e-200, 0.1) })]);
+    input.initiatingFrequency = range(0.1, 1e-200, 0.1);
+    expect(() => calculateLopa(input)).toThrow(/Numerieke onderloop bij min/);
+  });
+  it('rejects nominal frequency underflow for positive initiator and IPL inputs', () => {
+    const input = lopa([layer({ pfd: range(1e-20) })]);
+    input.initiatingFrequency = range(1e-310);
+    expect(() => calculateLopa(input)).toThrow(/Numerieke onderloop bij value/);
+  });
+  it('retains representable subnormal frequencies as positive rather than imposing a plotting floor', () => {
+    const input = lopa([layer({ pfd: range(1e-20) })]);
+    input.initiatingFrequency = range(1e-300, 1e-301, 1e-299);
+    const result = calculateLopa(input);
+    expect(result.frequency.value).toBe(1e-300 * 1e-20);
+    expect(
+      Object.values(result.frequency).every((value) => value > 0 && Number.isFinite(value)),
+    ).toBe(true);
+    expect(result.riskReductionFactor.value).toBe(1e20);
+  });
+  it('preserves a genuinely entered zero initiator lower bound through modifiers and IPLs', () => {
+    const input = lopa([layer({ pfd: range(0.1, 0.05, 0.2) })], [modifier()]);
+    input.initiatingFrequency = range(0.1, 0, 0.2);
+    const result = calculateLopa(input);
+    expect(result.frequency.min).toBe(0);
+    expect(result.frequency.value).toBeCloseTo(0.002);
+    expect(result.frequency.max).toBeCloseTo(0.008);
+  });
+  it('rejects an overflowing reciprocal RRF even when frequency and nominal RRF remain finite', () => {
+    const input = lopa([layer({ pfd: range(1e-200, 1e-320, 1e-200) })]);
+    input.initiatingFrequency = range(1);
+    expect(() => calculateLopa(input)).toThrow(/eindig getal vereist/);
   });
   it('rejects perfect PFD, unsupported initial frequency and shared identities', () => {
     expect(() => calculateLopa(lopa([layer({ pfd: range(0) })]))).toThrow(RangeError);

@@ -1,9 +1,11 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { BarChart3, Check, ClipboardList, Plus, Save, Search } from 'lucide-react';
-import type { Exposure, Investigation } from '../data/dossier';
+import { BarChart3, Check, ClipboardList, Layers, Plus, Save, Search } from 'lucide-react';
+import { departmentLabel, type Exposure, type Investigation } from '../data/dossier';
 import type { WorkspacePatch, WorkspaceState } from '../data/model';
 import { newId } from '../data/model';
 import { calculateSafetyAnalytics } from '../data/analytics';
+import { basisRiskFactorStatusLabels, freezeInvestigationBasisRiskFactors } from '../data/brf';
+import BasisRiskFactorRegister from './BasisRiskFactorRegister';
 
 interface Props {
   workspace: WorkspaceState;
@@ -11,7 +13,7 @@ interface Props {
 }
 
 type ExposureDraft = Omit<Exposure, 'hoursWorked'> & { hours: string };
-type Page = 'investigations' | 'exposure' | 'analytics';
+type Page = 'investigations' | 'brf' | 'exposure' | 'analytics';
 const number = (value: number | null) =>
   value === null ? 'Niet berekenbaar' : value.toLocaleString('nl-NL', { maximumFractionDigits: 2 });
 const cleanLines = (lines: string[]) => lines.map((line) => line.trim()).filter(Boolean);
@@ -101,8 +103,15 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
   const [departmentId, setDepartmentId] = useState('');
   const [asOf, setAsOf] = useState(localToday);
   const investigations = workspace.investigations ?? [];
+  const basisRiskFactorRecords = workspace.basisRiskFactorRecords ?? [];
   const exposure = workspace.exposure ?? [];
   const departments = workspace.departments ?? [];
+  const labelDepartment = (id: string) => {
+    const department = departments.find((record) => record.id === id);
+    return department
+      ? departmentLabel(department, workspace.sites ?? [], workspace.organisations ?? [])
+      : 'Onbekende afdeling';
+  };
   const analysis = useMemo(() => {
     try {
       return {
@@ -128,6 +137,7 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
             ...(contentChange && current.status === 'reviewed'
               ? { status: 'draft' as const, reviewedBy: '', reviewNote: '' }
               : {}),
+            ...(contentChange ? { basisRiskFactorSnapshots: undefined } : {}),
             ...patch,
           }
         : null,
@@ -178,6 +188,21 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
     ) {
       setError(
         'Een beoordeeld onderzoek vraagt feiten, de uitgewerkte methode, gekoppeld bewijs, een conclusie, een beoordelaar en een reviewtoelichting.',
+      );
+      return;
+    }
+    try {
+      if (saved.status === 'reviewed') {
+        if (!(current?.status === 'reviewed' && saved.basisRiskFactorSnapshots)) {
+          saved.basisRiskFactorSnapshots = freezeInvestigationBasisRiskFactors(
+            saved,
+            basisRiskFactorRecords,
+          ).basisRiskFactorSnapshots;
+        }
+      } else delete saved.basisRiskFactorSnapshots;
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : 'De BRF-versies konden niet worden bevroren.',
       );
       return;
     }
@@ -272,6 +297,7 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
         {(
           [
             ['investigations', 'Onderzoeken', Search],
+            ['brf', 'BRF-register', Layers],
             ['exposure', 'Gewerkte uren', ClipboardList],
             ['analytics', 'Trends & frequenties', BarChart3],
           ] as const
@@ -299,6 +325,7 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
           {message}
         </p>
       )}
+      {page === 'brf' && <BasisRiskFactorRegister workspace={workspace} onUpdate={onUpdate} />}
 
       {page === 'investigations' && (
         <>
@@ -463,6 +490,50 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
                 onChange={(basisRiskFactors) => patchDraft({ basisRiskFactors })}
                 hint="Gebruik eigen projectcodes met hun betekenis, één per regel. Motiveer de koppeling; deze codes zijn geen vastgestelde Tripod-taxonomie."
               />
+              <fieldset>
+                <legend>Beheerde BRF-definitieversies</legend>
+                <p className="caption">
+                  Kies expliciet de gebruikte versie uit het lokale register en motiveer de
+                  verbinding in de conclusie. Een koppeling is geen oorzaakbewijs. Bij review wordt
+                  de volledige gebruikte definitie bevroren.
+                </p>
+                {!basisRiskFactorRecords.length && (
+                  <p className="muted">
+                    Leg eigen definities vast in het BRF-register. Bestaande vrije codes blijven
+                    hierboven bewaard.
+                  </p>
+                )}
+                {basisRiskFactorRecords.map((record) => (
+                  <label className="check-row" key={record.id}>
+                    <input
+                      type="checkbox"
+                      checked={draft.basisRiskFactorIds?.includes(record.id) ?? false}
+                      onChange={() =>
+                        patchDraft({
+                          basisRiskFactorIds: toggleId(draft.basisRiskFactorIds ?? [], record.id),
+                        })
+                      }
+                    />
+                    <span>
+                      {record.code} · {record.title} @{record.version} ·{' '}
+                      {basisRiskFactorStatusLabels[record.status]}
+                    </span>
+                  </label>
+                ))}
+                {draft.basisRiskFactorSnapshots?.length ? (
+                  <details>
+                    <summary>Gebruikte definitieversies bij review</summary>
+                    {draft.basisRiskFactorSnapshots.map((snapshot) => (
+                      <p key={snapshot.record.id}>
+                        {snapshot.record.code} @{snapshot.record.version}:{' '}
+                        {snapshot.record.description}
+                        <br />
+                        Bron: {snapshot.record.sourceReference} · SHA256 {snapshot.sha256}
+                      </p>
+                    ))}
+                  </details>
+                ) : null}
+              </fieldset>
               <div
                 style={{
                   display: 'grid',
@@ -615,9 +686,7 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
                           <td>{record.period}</td>
                           <td>
                             {record.departmentId
-                              ? (departments.find(
-                                  (department) => department.id === record.departmentId,
-                                )?.name ?? 'Onbekende afdeling')
+                              ? labelDepartment(record.departmentId)
                               : 'Hele werkruimte'}
                           </td>
                           <td>{number(record.hoursWorked)}</td>
@@ -665,7 +734,7 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
                     <option value="">Hele werkruimte</option>
                     {departments.map((department) => (
                       <option key={department.id} value={department.id}>
-                        {department.name}
+                        {labelDepartment(department.id)}
                       </option>
                     ))}
                   </select>
@@ -745,7 +814,7 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
                   <option value="">Hele werkruimte</option>
                   {departments.map((department) => (
                     <option key={department.id} value={department.id}>
-                      {department.name}
+                      {labelDepartment(department.id)}
                     </option>
                   ))}
                 </select>

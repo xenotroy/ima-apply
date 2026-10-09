@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
+import { evidenceHash } from '../src/data/frozen';
+import type { Evidence } from '../src/data/dossier';
 
 const storageKey = 'ima-apply.workspace.v1';
 async function stored(page: Page) {
@@ -133,58 +135,177 @@ test('inventory answer, supporting evidence and note survive a reload', async ({
   ).toHaveValue('E2E: ontbrekend onderdeel op locatie beoordelen.');
 });
 
-test('finishing an action requires effect-check text and does not automatically credit a control', async ({
+test('implementation, negative effect check and reopening preserve history without automatic control credit', async ({
   page,
 }) => {
-  const baseline = (await stored(page)).scenarios[0];
+  const before = await stored(page);
+  const baseline = before.scenarios[0];
+  const now = new Date().toISOString();
+  const proof: Evidence = {
+    id: 'e2e-effect-proof',
+    title: 'E2E fictief controlebewijs',
+    kind: 'measurement',
+    reference: 'Fictieve softwaretest',
+    description: 'Alleen een softwarefixture',
+    recordedAt: now,
+    status: 'verified',
+    verifiedBy: 'E2E test',
+    verifiedAt: now,
+    verificationNote: 'Fictieve bewijsbeoordeling',
+  };
+  proof.verifiedContentSha256 = evidenceHash(proof);
+  await page.evaluate(
+    ({ key, proof }) => {
+      const envelope = JSON.parse(localStorage.getItem(key)!);
+      envelope.workspace.evidence = [proof];
+      localStorage.setItem(key, JSON.stringify(envelope));
+    },
+    { key: storageKey, proof },
+  );
+  await page.reload();
   await page.getByRole('button', { name: /Plan van aanpak/ }).click();
-  const card = page.locator('.action-card').first();
-  await card
-    .getByRole('textbox', { name: 'Voortgang / effectcheck', exact: true })
-    .fill('E2E: ontwerpcontrole staat gepland; er is nog geen effectresultaat.');
-  page.once('dialog', (dialog) => dialog.accept());
-  await card.getByRole('combobox', { name: 'Actiestatus', exact: true }).selectOption('done');
-  await expect(card.getByRole('combobox', { name: 'Actiestatus', exact: true })).toHaveValue(
-    'open',
-  );
-  await card
-    .getByRole('textbox', { name: 'Resultaat van de effectcontrole', exact: true })
-    .fill('E2E: functionele test afgerond; resultaat gecontroleerd en vastgelegd.');
-  await card.getByRole('textbox', { name: 'Eigenaar', exact: true }).fill('');
-  page.once('dialog', (dialog) => dialog.accept());
-  await card.getByRole('combobox', { name: 'Actiestatus', exact: true }).selectOption('done');
-  await expect(card.getByRole('combobox', { name: 'Actiestatus', exact: true })).toHaveValue(
-    'open',
-  );
-  await card
-    .getByRole('textbox', { name: 'Eigenaar', exact: true })
-    .fill('E2E: beoordelaar werking');
-  await card.getByRole('combobox', { name: 'Actiestatus', exact: true }).selectOption('done');
-  await saved(page);
+  const card = page
+    .locator('.action-card')
+    .filter({
+      has: page.getByRole('heading', {
+        name: 'Isolatievoorziening ontwerpen en verifiëren',
+        exact: true,
+      }),
+    });
+  async function editor() {
+    const details = card.locator('.action-revision-editor');
+    if (!(await details.evaluate((node) => (node as HTMLDetailsElement).open)))
+      await details.locator('summary').click();
+  }
+  async function step(stage: string) {
+    await editor();
+    await card
+      .getByRole('combobox', { name: 'Volgende actiestap', exact: true })
+      .selectOption(stage);
+    await card
+      .getByRole('textbox', { name: 'Actor van deze wijziging', exact: true })
+      .fill('E2E actiebeheerder');
+    await card
+      .getByRole('textbox', { name: /Redenering bij deze revisie|Reden voor heropening/ })
+      .fill(`E2E onderbouwing: ${stage}`);
+  }
+  async function save() {
+    await card.getByRole('button', { name: 'Revisie vastleggen', exact: true }).click();
+    await saved(page);
+  }
+  await editor();
   await expect(
-    page
-      .locator('.kanban-column')
-      .filter({ has: page.getByRole('heading', { name: 'Effect gecontroleerd', exact: true }) }),
-  ).toContainText('Isolatievoorziening ontwerpen en verifiëren');
-  expect((await stored(page)).scenarios[0].controls).toEqual(baseline.controls);
-  const action = (await stored(page)).actions.find(
-    (item: { title: string }) => item.title === 'Isolatievoorziening ontwerpen en verifiëren',
+    card
+      .getByRole('combobox', { name: 'Volgende actiestap', exact: true })
+      .locator('option[value=effective]'),
+  ).toHaveCount(0);
+  await card
+    .getByRole('textbox', { name: 'Verificatieplan / voortgang', exact: true })
+    .fill('E2E functietest onder afwijkende bedrijfscondities.');
+  await step('in_progress');
+  await save();
+  await step('implemented');
+  await save();
+  let action = (await stored(page)).actions.find(
+    (a: { id: string }) => a.id === before.actions[0].id,
   );
-  expect(action.effectCheck).toContain('functionele test afgerond');
-  expect(Number.isFinite(Date.parse(action.verifiedAt))).toBe(true);
-  expect(action.owner).toBe('E2E: beoordelaar werking');
+  expect(action.lifecycle.stage).toBe('implemented');
+  expect(action.verifiedAt).toBeUndefined();
+  expect(action.lifecycle.effectiveness).toBe('pending');
+  await step('verification_due');
+  await card
+    .getByLabel('Geplande effectcontrole', { exact: true })
+    .fill(new Date(Date.now() + 86400000).toISOString().slice(0, 16));
+  await save();
+  await step('ineffective');
+  await card.getByLabel('Verificateur', { exact: true }).fill('E2E effectbeoordelaar');
+  await card
+    .getByLabel('Resultaat van de effectcontrole', { exact: true })
+    .fill('E2E onvoldoende: foutconditie blijft mogelijk.');
+  await save();
+  await expect(card.getByRole('alert')).toContainText('geverifieerd bewijs');
+  await card.getByRole('checkbox', { name: /E2E fictief controlebewijs/ }).check();
+  await save();
+  action = (await stored(page)).actions.find((a: { id: string }) => a.id === before.actions[0].id);
+  expect(action.lifecycle.stage).toBe('ineffective');
+  expect(action.status).toBe('in_progress');
+  expect(action.lifecycle.history).toHaveLength(4);
+  await step('reopened');
+  await save();
+  action = (await stored(page)).actions.find((a: { id: string }) => a.id === before.actions[0].id);
+  expect(action.effectCheck).toBeUndefined();
+  expect(action.verifiedAt).toBeUndefined();
+  expect(action.lifecycle.history.at(-1).before.effectCheck).toContain('E2E onvoldoende');
+  expect((await stored(page)).scenarios[0].controls).toEqual(baseline.controls);
+  await page.reload();
+  await page.getByRole('button', { name: /Plan van aanpak/ }).click();
+  await expect(card).toContainText('Heropend');
+  await card.locator('.action-history > summary').click();
+  await expect(card.locator('.action-history')).toContainText('E2E actiebeheerder');
+  await page.getByRole('button', { name: 'Rapportage', exact: true }).click();
+  await expect(page.locator('.dossier-report')).toContainText('E2E onvoldoende');
+  await expect(page.locator('.dossier-report')).toContainText('Revisie-SHA256');
+});
+
+test('a deliberate assessment checkpoint keeps its historical inputs after later edits', async ({
+  page,
+}) => {
+  await createScenario(page, 'E2E historische beoordeling');
+  const history = page.locator('.risk-assessment-history');
+  await history.getByLabel('Beoordelaar van dit moment', { exact: true }).fill('E2E beoordelaar');
+  await history
+    .getByLabel('Onderbouwing van deze vastlegging', { exact: true })
+    .fill('E2E uitgangssituatie vóór wijziging.');
+  await history.getByRole('button', { name: 'Beoordelingsmoment vastleggen', exact: true }).click();
+  await expect.poll(async () => (await stored(page)).riskAssessments.length).toBe(1);
+  const recorded = (await stored(page)).riskAssessments[0];
+  await page.getByRole('combobox', { name: 'Waarschijnlijkheid W', exact: true }).selectOption('1');
+  await saved(page);
+  await page.reload();
+  expect((await stored(page)).riskAssessments[0]).toEqual(recorded);
+  expect(
+    (await stored(page)).scenarios.find((s: { id: string }) => s.id === recorded.scenarioId)
+      .probability,
+  ).toBe(1);
+  await page.getByRole('button', { name: 'Rapportage', exact: true }).click();
+  await expect(page.locator('.dossier-report')).toContainText(
+    'E2E uitgangssituatie vóór wijziging.',
+  );
+  await expect(page.locator('.dossier-report')).toContainText(recorded.sha256);
+});
+
+test('clearing the LOPA criterion basis removes confirmation and cannot replace the saved assessment', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: 'Risicowerkbank', exact: true }).click();
+  await page
+    .locator('.scenario-tabs')
+    .getByRole('button', { name: 'Overvullen van een procesvat', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'LOPA', exact: true }).click();
+  const basis = page.getByRole('textbox', { name: 'Aannames en criteriumbesluit', exact: true });
+  const savedBasis = await basis.inputValue();
+  await basis.fill('');
+  await expect(page.locator('.lopa-summary')).toContainText('Criteriumbasis niet vastgelegd');
+  await page.getByRole('button', { name: 'LOPA opslaan', exact: true }).click();
+  await expect(page.locator('.lopa-draft-bar')).toContainText(
+    'Leg de aannames en het criteriumbesluit vast',
+  );
+  expect(
+    (await stored(page)).scenarios.find(
+      (s: { title: string }) => s.title === 'Overvullen van een procesvat',
+    ).lopa.assumptions,
+  ).toBe(savedBasis);
 });
 
 test('malformed import leaves the existing persisted dossier intact', async ({ page }) => {
   await createScenario(page, 'E2E: dossier behouden bij ongeldige import');
   const before = await page.evaluate((key) => localStorage.getItem(key), storageKey);
-  await page
-    .locator('input[type=file]')
-    .setInputFiles({
-      name: 'invalid.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from('{"schemaVersion":1,"scenarios":"broken"}'),
-    });
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'invalid.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{"schemaVersion":1,"scenarios":"broken"}'),
+  });
   await expect(page.getByRole('status')).toContainText('Import gestopt');
   const after = await page.evaluate((key) => localStorage.getItem(key), storageKey);
   expect(after).toBe(before);

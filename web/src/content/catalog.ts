@@ -200,7 +200,8 @@ export const sources: SourceRecord[] = [
     title: 'Moodle/LMS — leerroute en brongebruik',
     kind: 'lms',
     status: 'partial_read',
-    readScope: 'Modulecontext en bronwerkwijze plus drie oorspronkelijke conceptteksten voor lesdagen: gevaarlijke stoffen; Seveso/Bal/ARIE; BHV, noodplan en gebouwveiligheid.',
+    readScope:
+      'Modulecontext en bronwerkwijze plus drie oorspronkelijke conceptteksten voor lesdagen: gevaarlijke stoffen; Seveso/Bal/ARIE; BHV, noodplan en gebouwveiligheid.',
     publication: 'metadata_only',
     notes:
       'Drie lesontwikkelingsteksten zijn privé behouden als bronrecords, zonder daaruit toetsvragen te verzinnen. Geen actuele Moodle-CSV, MBZ/XML-back-up, deelnemers- of voortgangsexport aangetroffen in de succesvol onderzochte routes; één operationele OneDrive-route bleef ontoegankelijk.',

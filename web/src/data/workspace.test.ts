@@ -361,9 +361,76 @@ describe('GitHub private-data synchronization', () => {
     const fetcher = mockFetch([...privateRepo(), content(ws)]);
     const client = new GitHubWorkspaceClient(config, fetcher);
     expect(await client.read()).toEqual({ workspace: ws, sha: SHA });
-    expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({ Authorization: `Bearer ${TOKEN}` });
+    expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('Authorization')).toBe(
+      `Bearer ${TOKEN}`,
+    );
     expect(fetcher.mock.calls[0][1]?.credentials).toBe('omit');
     expect(JSON.stringify(client)).not.toContain(TOKEN);
+  });
+
+  it('reads a workspace above 1 MB using the immutable metadata blob, preserving Unicode', async () => {
+    const ws = workspace();
+    ws.sources = Array.from({ length: 18 }, (_, i) => ({
+      id: `large-${i}`,
+      text: 'é'.repeat(32_000),
+    }));
+    const raw = exportWorkspace(ws);
+    const size = new TextEncoder().encode(raw).byteLength;
+    expect(size).toBeGreaterThan(1_048_576);
+    const fetcher = mockFetch([
+      ...privateRepo(),
+      response({ type: 'file', encoding: 'none', content: '', size, sha: SHA }),
+      new Response(raw),
+    ]);
+    expect(await new GitHubWorkspaceClient(config, fetcher).read()).toEqual({
+      workspace: ws,
+      sha: SHA,
+    });
+    const [url, init] = fetcher.mock.calls[4];
+    expect(url).toBe(`https://api.github.com/repos/xenotroy/ima-apply-workspaces/git/blobs/${SHA}`);
+    expect(new Headers(init?.headers).get('Accept')).toBe('application/vnd.github.raw+json');
+    expect(init?.redirect).toBe('error');
+  });
+
+  it('stops an oversized raw stream even when metadata understates its size', async () => {
+    const fetcher = mockFetch([
+      ...privateRepo(),
+      response({ type: 'file', encoding: 'none', content: '', size: 1, sha: SHA }),
+      new Response('x'.repeat(MAX_WORKSPACE_BYTES + 1)),
+    ]);
+    await expect(new GitHubWorkspaceClient(config, fetcher).read()).rejects.toThrow(/te groot/);
+  });
+
+  it('rejects invalid raw UTF-8 and mismatching metadata without accepting a workspace', async () => {
+    for (const raw of [
+      new Response(Uint8Array.from([0xc3, 0x28])),
+      new Response(exportWorkspace(workspace())),
+    ]) {
+      const fetcher = mockFetch([
+        ...privateRepo(),
+        response({ type: 'file', encoding: 'none', content: '', size: 2, sha: SHA }),
+        raw,
+      ]);
+      await expect(new GitHubWorkspaceClient(config, fetcher).read()).rejects.toBeInstanceOf(
+        GitHubSyncError,
+      );
+    }
+  });
+
+  it('rejects unknown encodings and oversized metadata before any raw download', async () => {
+    for (const metadata of [
+      { encoding: 'zip', size: 10 },
+      { encoding: 'none', size: MAX_WORKSPACE_BYTES + 1 },
+    ]) {
+      const fetcher = mockFetch([
+        ...privateRepo(),
+        response({ type: 'file', content: '', sha: SHA, ...metadata }),
+      ]);
+      await expect(new GitHubWorkspaceClient(config, fetcher).read()).rejects.toBeInstanceOf(
+        GitHubSyncError,
+      );
+      expect(fetcher).toHaveBeenCalledTimes(4);
+    }
   });
 
   it('refuses a public data repository before reading or writing content', async () => {

@@ -1,12 +1,20 @@
-import type { WorkspaceState } from './model';
+import type { WorkspaceState, WorkspaceAction } from './model';
+import { assertRiskAssessment, type RiskAssessment } from './risk-history';
 import type { Scenario } from '../domain/types';
 import { evaluateRisk } from '../domain/risk';
 import type { Question } from '../content/catalog';
 import { questionHash, evidenceHash } from './frozen';
-import type { Evidence } from './dossier';
+import { departmentOrganisationId, type Evidence } from './dossier';
+import { projectContextFields } from './project-context';
+import { assertActionHistory, MAX_ACTION_REVISIONS } from '../domain/action-lifecycle';
+import {
+  assertBasisRiskFactorHistory,
+  assertBasisRiskFactorRelations,
+  type BasisRiskFactorRecord,
+} from './brf';
 
-// Keep below the GitHub Contents API's 1 MB complete-response limit.
-export const MAX_WORKSPACE_BYTES = 900_000;
+// Product guard for browser storage. GitHub files above 1 MB use an immutable raw blob.
+export const MAX_WORKSPACE_BYTES = 2_000_000;
 const MAX_RECORDS = 5_000;
 const MAX_TEXT_LENGTH = 100_000;
 const credentialPattern = /\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})\b/;
@@ -361,7 +369,73 @@ function answer(value: unknown, path: string): void {
   if (item.evidenceIds !== undefined) strings(item.evidenceIds, `${path}.evidenceIds`);
 }
 
-function action(value: unknown, path: string): void {
+function actionCycle(value: unknown, path: string, withHistory: boolean): void {
+  const item = object(value, path, [
+    'stage',
+    'effectiveness',
+    'implementedAt',
+    'verificationDueAt',
+    'verifier',
+    'evaluatedAt',
+    'evidenceSnapshots',
+    ...(withHistory ? ['revision', 'history'] : []),
+  ]);
+  choice(
+    item.stage,
+    [
+      'proposed',
+      'planned',
+      'in_progress',
+      'implemented',
+      'verification_due',
+      'effective',
+      'ineffective',
+      'closed',
+      'reopened',
+      'cancelled',
+    ],
+    `${path}.stage`,
+  );
+  choice(item.effectiveness, ['pending', 'effective', 'ineffective'], `${path}.effectiveness`);
+  for (const key of ['implementedAt', 'verificationDueAt', 'evaluatedAt'])
+    if (item[key] !== undefined) timestamp(item[key], `${path}.${key}`);
+  if (item.verifier !== undefined) text(item.verifier, `${path}.verifier`, true, 1_000);
+  list(item.evidenceSnapshots, `${path}.evidenceSnapshots`, evidence);
+  if (withHistory) {
+    number(item.revision, `${path}.revision`, 0, MAX_ACTION_REVISIONS);
+    if (!Number.isInteger(item.revision)) fail(path, 'gehele actierevisie verwacht.');
+    list(
+      item.history,
+      `${path}.history`,
+      (value, historyPath) => {
+        const event = object(value, historyPath, [
+          'revision',
+          'kind',
+          'actor',
+          'at',
+          'reason',
+          'before',
+          'after',
+          'previousSha256',
+          'sha256',
+        ]);
+        number(event.revision, `${historyPath}.revision`, 1, MAX_ACTION_REVISIONS);
+        choice(event.kind, ['edit', 'transition'], `${historyPath}.kind`);
+        text(event.actor, `${historyPath}.actor`, true, 1_000);
+        timestamp(event.at, `${historyPath}.at`);
+        text(event.reason, `${historyPath}.reason`, true);
+        digest(event.previousSha256, `${historyPath}.previousSha256`);
+        digest(event.sha256, `${historyPath}.sha256`);
+        action(event.before, `${historyPath}.before`, true);
+        action(event.after, `${historyPath}.after`, true);
+        if (object(event.after, historyPath).lifecycle === undefined)
+          fail(historyPath, 'nieuwe revisie vereist een lifecycle.');
+      },
+      false,
+    );
+  }
+}
+function action(value: unknown, path: string, snapshot = false): void {
   const item = object(value, path, [
     'id',
     'title',
@@ -375,6 +449,7 @@ function action(value: unknown, path: string): void {
     'dossierId',
     'findingId',
     'evidenceIds',
+    'lifecycle',
   ]);
   id(item.id, `${path}.id`);
   text(item.title, `${path}.title`, true, 1_000);
@@ -388,10 +463,18 @@ function action(value: unknown, path: string): void {
   optionalId(item, 'dossierId', path);
   optionalId(item, 'findingId', path);
   if (item.evidenceIds !== undefined) strings(item.evidenceIds, `${path}.evidenceIds`);
-  if (item.status === 'done') {
+  if (item.status === 'done' && object(item.lifecycle ?? {}, path).stage !== 'cancelled') {
     text(item.owner, `${path}.owner`, true, 1_000);
     text(item.effectCheck, `${path}.effectCheck`, true);
     timestamp(item.verifiedAt, `${path}.verifiedAt`);
+  }
+  if (item.lifecycle !== undefined) actionCycle(item.lifecycle, `${path}.lifecycle`, !snapshot);
+  if (!snapshot && item.lifecycle !== undefined) {
+    try {
+      assertActionHistory(item as unknown as WorkspaceAction);
+    } catch (error) {
+      fail(path, error instanceof Error ? error.message : 'ongeldige actiehistorie.');
+    }
   }
 }
 
@@ -475,9 +558,12 @@ function site(value: unknown, path: string): void {
   text(item.address, `${path}.address`);
 }
 function department(value: unknown, path: string): void {
-  const item = baseRecord(value, path, ['name', 'siteId', 'activity']);
+  const item = baseRecord(value, path, ['name', 'siteId', 'organisationId', 'activity']);
   text(item.name, `${path}.name`, true);
-  id(item.siteId, `${path}.siteId`);
+  optionalId(item, 'siteId', path);
+  optionalId(item, 'organisationId', path);
+  if ((item.siteId !== undefined) === (item.organisationId !== undefined))
+    fail(path, 'afdeling vraagt precies één locatie of rechtstreekse organisatie.');
   text(item.activity, `${path}.activity`);
 }
 function frozenQuestion(value: unknown, path: string): void {
@@ -490,10 +576,68 @@ function frozenQuestion(value: unknown, path: string): void {
   if (questionHash(item as unknown as Question) !== item.sha256)
     fail(path, 'bevroren vraaginhoud wijkt af van de bronhash.');
 }
+function projectContext(value: unknown, path: string): void {
+  const item = baseRecord(value, path, [
+    'title',
+    'organisationText',
+    'locationText',
+    'contactName',
+    'contactEmail',
+    'organisationIds',
+    'details',
+    'createdAt',
+    'updatedAt',
+    'sourceIds',
+  ]);
+  text(item.title, `${path}.title`, true);
+  for (const key of ['organisationText', 'locationText', 'contactName', 'contactEmail'])
+    text(item[key], `${path}.${key}`);
+  strings(item.organisationIds, `${path}.organisationIds`);
+  const details = object(
+    item.details,
+    `${path}.details`,
+    projectContextFields.map(([key]) => key),
+  );
+  for (const [key] of projectContextFields) text(details[key], `${path}.details.${key}`);
+  for (const key of ['createdAt', 'updatedAt'])
+    if (item[key] !== undefined) timestamp(item[key], `${path}.${key}`);
+  strings(item.sourceIds, `${path}.sourceIds`);
+}
+function walkthrough(value: unknown, path: string): void {
+  const item = baseRecord(value, path, [
+    'title',
+    'organisationId',
+    'departmentId',
+    'dossierId',
+    'projectContextId',
+    'date',
+    'author',
+    'summary',
+    'body',
+    'modules',
+    'createdAt',
+    'updatedAt',
+    'sourceIds',
+  ]);
+  text(item.title, `${path}.title`, true);
+  id(item.organisationId, `${path}.organisationId`);
+  for (const key of ['departmentId', 'dossierId', 'projectContextId']) optionalId(item, key, path);
+  date(item.date, `${path}.date`, true);
+  for (const key of ['author', 'summary', 'body']) text(item[key], `${path}.${key}`);
+  list(item.modules, `${path}.modules`, (value, itemPath) => {
+    const module = baseRecord(value, itemPath, ['code', 'title']);
+    text(module.code, `${itemPath}.code`);
+    text(module.title, `${itemPath}.title`);
+  });
+  for (const key of ['createdAt', 'updatedAt'])
+    if (item[key] !== undefined) timestamp(item[key], `${path}.${key}`);
+  strings(item.sourceIds, `${path}.sourceIds`);
+}
 function dossier(value: unknown, path: string): void {
   const item = baseRecord(value, path, [
     'title',
     'organisationId',
+    'projectContextId',
     'departmentIds',
     'scope',
     'assessor',
@@ -507,6 +651,7 @@ function dossier(value: unknown, path: string): void {
   ]);
   text(item.title, `${path}.title`, true);
   optionalId(item, 'organisationId', path);
+  optionalId(item, 'projectContextId', path);
   strings(item.departmentIds, `${path}.departmentIds`);
   text(item.scope, `${path}.scope`, item.status !== 'draft');
   text(item.assessor, `${path}.assessor`, item.status !== 'draft');
@@ -568,6 +713,7 @@ function observation(value: unknown, path: string): void {
     'title',
     'dossierId',
     'departmentId',
+    'walkthroughId',
     'date',
     'observer',
     'facts',
@@ -576,6 +722,7 @@ function observation(value: unknown, path: string): void {
   text(item.title, `${path}.title`, true);
   id(item.dossierId, `${path}.dossierId`);
   optionalId(item, 'departmentId', path);
+  optionalId(item, 'walkthroughId', path);
   date(item.date, `${path}.date`);
   text(item.observer, `${path}.observer`, true);
   text(item.facts, `${path}.facts`, true);
@@ -656,6 +803,50 @@ function legalRecord(value: unknown, path: string): void {
   text(item.impact, `${path}.impact`);
   strings(item.topicIds, `${path}.topicIds`);
 }
+function basisRiskFactorRecord(value: unknown, path: string): void {
+  const item = baseRecord(value, path, [
+    'factorId',
+    'taxonomy',
+    'code',
+    'title',
+    'version',
+    'status',
+    'description',
+    'sourceReference',
+    'owner',
+    'createdBy',
+    'createdAt',
+    'changeNote',
+    'supersedesId',
+    'parentRecordId',
+    'statusHistory',
+  ]);
+  for (const key of ['factorId', 'taxonomy', 'code', 'version']) id(item[key], `${path}.${key}`);
+  for (const key of ['title', 'description', 'changeNote']) text(item[key], `${path}.${key}`, true);
+  for (const key of ['sourceReference', 'owner', 'createdBy']) text(item[key], `${path}.${key}`);
+  choice(item.status, ['draft', 'local', 'retired'], `${path}.status`);
+  timestamp(item.createdAt, `${path}.createdAt`);
+  optionalId(item, 'supersedesId', path);
+  optionalId(item, 'parentRecordId', path);
+  list(
+    item.statusHistory,
+    `${path}.statusHistory`,
+    (value, eventPath) => {
+      const event = object(value, eventPath, ['from', 'to', 'actor', 'at', 'reason']);
+      choice(event.from, ['draft', 'local', 'retired'], `${eventPath}.from`);
+      choice(event.to, ['draft', 'local', 'retired'], `${eventPath}.to`);
+      text(event.actor, `${eventPath}.actor`, true);
+      timestamp(event.at, `${eventPath}.at`);
+      text(event.reason, `${eventPath}.reason`, true);
+    },
+    false,
+  );
+  try {
+    assertBasisRiskFactorHistory(item as unknown as BasisRiskFactorRecord);
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'ongeldige BRF-status.');
+  }
+}
 function investigation(value: unknown, path: string): void {
   const item = baseRecord(value, path, [
     'title',
@@ -671,6 +862,8 @@ function investigation(value: unknown, path: string): void {
     'recoveryBarriers',
     'consequences',
     'basisRiskFactors',
+    'basisRiskFactorIds',
+    'basisRiskFactorSnapshots',
     'evidenceIds',
     'actionIds',
     'conclusion',
@@ -695,6 +888,19 @@ function investigation(value: unknown, path: string): void {
     'actionIds',
   ])
     strings(item[key], `${path}.${key}`);
+  if (item.basisRiskFactorIds !== undefined)
+    strings(item.basisRiskFactorIds, `${path}.basisRiskFactorIds`);
+  if (item.basisRiskFactorSnapshots !== undefined)
+    list(
+      item.basisRiskFactorSnapshots,
+      `${path}.basisRiskFactorSnapshots`,
+      (value, snapshotPath) => {
+        const snapshot = object(value, snapshotPath, ['record', 'sha256']);
+        basisRiskFactorRecord(snapshot.record, `${snapshotPath}.record`);
+        digest(snapshot.sha256, `${snapshotPath}.sha256`);
+      },
+      false,
+    );
   if (item.status === 'reviewed') {
     for (const key of ['facts', 'conclusion', 'reviewedBy', 'reviewNote'])
       text(item[key], `${path}.${key}`, true);
@@ -750,8 +956,10 @@ function relations(workspace: WorkspaceState): void {
     if (dossier.departmentIds.length && !dossier.departmentIds.includes(departmentId))
       fail(path, 'afdeling valt buiten de dossierscope.');
     const dep = workspace.departments?.find((d) => d.id === departmentId);
-    const site = workspace.sites?.find((s) => s.id === dep?.siteId);
-    if (dossier.organisationId && site?.organisationId !== dossier.organisationId)
+    if (
+      dossier.organisationId &&
+      departmentOrganisationId(dep, workspace.sites ?? []) !== dossier.organisationId
+    )
       fail(path, 'afdeling valt buiten de dossierorganisatie.');
   };
   const scenarioInDossier = (
@@ -765,15 +973,67 @@ function relations(workspace: WorkspaceState): void {
       fail(path, 'scenario hoort bij een ander dossier.');
   };
   workspace.sites?.forEach((s) => ref(s.organisationId, organisations, 'Locatie.organisatie'));
-  workspace.departments?.forEach((d) => ref(d.siteId, sites, 'Afdeling.locatie'));
+  workspace.departments?.forEach((d) => {
+    ref(d.siteId, sites, 'Afdeling.locatie');
+    ref(d.organisationId, organisations, 'Afdeling.organisatie');
+  });
+  const contextIds = lookup(workspace.projectContexts),
+    walkthroughIds = lookup(workspace.walkthroughs),
+    sourceIds = lookup(workspace.sources);
+  const contextInOrganisation = (
+    contextId: string | undefined,
+    organisationId: string | undefined,
+    path: string,
+  ) => {
+    ref(contextId, contextIds, path);
+    const context = workspace.projectContexts?.find((item) => item.id === contextId);
+    if (
+      context?.organisationIds.length &&
+      organisationId &&
+      !context.organisationIds.includes(organisationId)
+    )
+      fail(path, 'organisatie valt buiten de projectcontext.');
+  };
+  workspace.projectContexts?.forEach((context) => {
+    refs(context.organisationIds, organisations, 'Projectcontext.organisaties');
+    refs(context.sourceIds, sourceIds, 'Projectcontext.bronnen');
+  });
+  workspace.walkthroughs?.forEach((report) => {
+    ref(report.organisationId, organisations, 'Rondgang.organisatie');
+    ref(report.dossierId, dossierIds, 'Rondgang.dossier');
+    refs(report.sourceIds, sourceIds, 'Rondgang.bronnen');
+    contextInOrganisation(
+      report.projectContextId,
+      report.organisationId,
+      'Rondgang.projectcontext',
+    );
+    departmentInDossier(report.departmentId, report.dossierId, 'Rondgang.afdeling');
+    const department = workspace.departments?.find((item) => item.id === report.departmentId);
+    if (
+      department &&
+      departmentOrganisationId(department, workspace.sites ?? []) !== report.organisationId
+    )
+      fail('Rondgang', 'afdeling valt buiten de organisatie.');
+    const dossier = dossiers.get(report.dossierId ?? '');
+    if (dossier?.organisationId && dossier.organisationId !== report.organisationId)
+      fail('Rondgang', 'organisatie verschilt van het dossier.');
+    if (dossier?.departmentIds.length && !report.departmentId)
+      fail('Rondgang', 'organisatiebrede rondgang valt buiten een afgebakend afdelingsdossier.');
+    if (
+      dossier?.projectContextId &&
+      report.projectContextId &&
+      dossier.projectContextId !== report.projectContextId
+    )
+      fail('Rondgang', 'projectcontext verschilt van het dossier.');
+  });
   workspace.dossiers?.forEach((d) => {
     ref(d.organisationId, organisations, 'Dossier.organisatie');
+    contextInOrganisation(d.projectContextId, d.organisationId, 'Dossier.projectcontext');
     refs(d.departmentIds, departments, 'Dossier.afdelingen');
     if (d.organisationId)
       for (const departmentId of d.departmentIds) {
         const dep = workspace.departments?.find((entry) => entry.id === departmentId);
-        const site = workspace.sites?.find((entry) => entry.id === dep?.siteId);
-        if (site?.organisationId !== d.organisationId)
+        if (departmentOrganisationId(dep, workspace.sites ?? []) !== d.organisationId)
           fail('Dossier', 'afdeling valt buiten de gekozen organisatie.');
       }
   });
@@ -809,6 +1069,17 @@ function relations(workspace: WorkspaceState): void {
   });
   workspace.evidence?.forEach((e) => ref(e.dossierId, dossierIds, 'Bewijs.dossier'));
   workspace.observations?.forEach((o) => {
+    ref(o.walkthroughId, walkthroughIds, 'Waarneming.rondgang');
+    const report = workspace.walkthroughs?.find((item) => item.id === o.walkthroughId);
+    if (report) {
+      const dossier = dossiers.get(o.dossierId);
+      if (report.dossierId && report.dossierId !== o.dossierId)
+        fail('Waarneming', 'rondgang hoort bij een ander dossier.');
+      if (dossier?.organisationId && dossier.organisationId !== report.organisationId)
+        fail('Waarneming', 'rondgang valt buiten de dossierorganisatie.');
+      if (report.departmentId && report.departmentId !== o.departmentId)
+        fail('Waarneming', 'afdeling verschilt van de gekoppelde rondgang.');
+    }
     ref(o.dossierId, dossierIds, 'Waarneming.dossier');
     departmentInDossier(o.departmentId, o.dossierId, 'Waarneming.afdeling');
     evidenceInDossier(o.evidenceIds, o.dossierId, 'Waarneming.bewijs');
@@ -837,6 +1108,13 @@ function relations(workspace: WorkspaceState): void {
     scenarioInDossier(a.scenarioId, a.dossierId, 'Actie.scenario');
     ref(a.findingId, findings, 'Actie.bevinding');
     evidenceInDossier(a.evidenceIds, a.dossierId, 'Actie.bewijs');
+    if (a.lifecycle) {
+      try {
+        assertActionHistory(a, workspace.evidence ?? []);
+      } catch (error) {
+        fail('Actie', error instanceof Error ? error.message : 'ongeldige actiehistorie.');
+      }
+    }
     if (
       a.findingId &&
       workspace.findings?.find((f) => f.id === a.findingId)?.dossierId !== a.dossierId
@@ -850,6 +1128,15 @@ function relations(workspace: WorkspaceState): void {
     refs(i.actionIds, actions, 'Onderzoek.acties');
   });
   workspace.incidents.forEach((i) => ref(i.departmentId, departments, 'Incident.afdeling'));
+  workspace.riskAssessments?.forEach((record) => {
+    ref(record.scenarioId, scenarios, 'Beoordelingsmoment.scenario');
+    ref(record.input.dossierId, dossierIds, 'Beoordelingsmoment.historisch dossier');
+    departmentInDossier(
+      record.input.departmentId,
+      record.input.dossierId,
+      'Beoordelingsmoment.historische afdeling',
+    );
+  });
   const periods = new Set<string>();
   workspace.exposure?.forEach((e) => {
     if (e.departmentId) ref(e.departmentId, departments, 'Blootstelling.afdeling');
@@ -858,12 +1145,61 @@ function relations(workspace: WorkspaceState): void {
       fail('Blootstelling', 'dubbele maand binnen dezelfde scope; werk het bestaande record bij.');
     periods.add(key);
   });
+  try {
+    assertBasisRiskFactorRelations(workspace);
+  } catch (error) {
+    fail('BRF-register', error instanceof Error ? error.message : 'ongeldige BRF-relatie.');
+  }
 }
 
 function genericRecord(value: unknown, path: string): void {
   id(object(value, path).id, `${path}.id`);
 }
 
+function riskAssessment(value: unknown, path: string): void {
+  const item = baseRecord(value, path, [
+    'scenarioId',
+    'recordedAt',
+    'assessor',
+    'rationale',
+    'methodVersion',
+    'input',
+    'result',
+    'sha256',
+  ]);
+  id(item.scenarioId, `${path}.scenarioId`);
+  timestamp(item.recordedAt, `${path}.recordedAt`);
+  text(item.assessor, `${path}.assessor`, true);
+  text(item.rationale, `${path}.rationale`, true);
+  text(item.methodVersion, `${path}.methodVersion`, true, 160);
+  digest(item.sha256, `${path}.sha256`);
+  scenario(item.input, `${path}.input`);
+  const result = object(item.result, `${path}.result`, [
+    'current',
+    'target',
+    'currentCredited',
+    'targetCredited',
+    'lopaFrequency',
+    'lopaComparison',
+  ]);
+  estimate(result.current, `${path}.result.current`, Number.MAX_VALUE);
+  estimate(result.target, `${path}.result.target`, Number.MAX_VALUE);
+  strings(result.currentCredited, `${path}.result.currentCredited`);
+  strings(result.targetCredited, `${path}.result.targetCredited`);
+  if (result.lopaFrequency !== undefined)
+    estimate(result.lopaFrequency, `${path}.result.lopaFrequency`, Number.MAX_VALUE);
+  if (result.lopaComparison !== undefined)
+    choice(
+      result.lopaComparison,
+      ['below', 'above', 'uncertain', 'unconfirmed'],
+      `${path}.result.lopaComparison`,
+    );
+  try {
+    assertRiskAssessment(item as unknown as RiskAssessment);
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'Beoordelingsmoment is inconsistent.');
+  }
+}
 function question(value: unknown, path: string): void {
   const item = object(value, path);
   id(item.id, `${path}.id`);
@@ -911,6 +1247,10 @@ export function validateWorkspace(value: unknown): asserts value is WorkspaceSta
     'investigations',
     'exposure',
     'contentRecords',
+    'projectContexts',
+    'walkthroughs',
+    'basisRiskFactorRecords',
+    'riskAssessments',
   ]);
   if (item.schemaVersion !== 1)
     fail('Werkruimte', 'niet-ondersteunde schemaversie; verwacht versie 1.');
@@ -922,6 +1262,8 @@ export function validateWorkspace(value: unknown): asserts value is WorkspaceSta
   number(item.revision, 'Werkruimte.revision', 0, Number.MAX_SAFE_INTEGER);
   if (!Number.isInteger(item.revision)) fail('Werkruimte.revision', 'geheel getal verwacht.');
   list(item.scenarios, 'Scenario’s', scenario);
+  if (item.riskAssessments !== undefined)
+    list(item.riskAssessments, 'Beoordelingsmomenten', riskAssessment);
   list(item.questions, 'Vragen', question);
   list(item.answers, 'Antwoorden', answer);
   list(item.actions, 'Acties', action);
@@ -939,6 +1281,9 @@ export function validateWorkspace(value: unknown): asserts value is WorkspaceSta
     legalRecords: legalRecord,
     investigations: investigation,
     exposure,
+    projectContexts: projectContext,
+    walkthroughs: walkthrough,
+    basisRiskFactorRecords: basisRiskFactorRecord,
   };
   for (const [key, validator] of Object.entries(extra))
     if (item[key] !== undefined) list(item[key], key, validator);

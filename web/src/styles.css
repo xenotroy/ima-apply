@@ -133,6 +133,10 @@ small {
   display: flex;
   flex-direction: column;
   z-index: 30;
+  overflow-y: auto;
+}
+.sidebar > * {
+  flex-shrink: 0;
 }
 .brand {
   display: flex;
@@ -2035,6 +2039,17 @@ select option {
   }
 }
 @media (max-width: 780px) {
+  .panel-heading {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .panel-heading > div {
+    min-width: 0;
+  }
+  .panel-heading > button {
+    max-width: 100%;
+    white-space: normal;
+  }
   .sidebar {
     width: 65px;
     padding: 24px 8px;

@@ -168,7 +168,7 @@ export interface LopaResult {
   warnings: string[];
   steps: LopaStep[];
   targetFrequency: number;
-  comparison: 'below' | 'above' | 'uncertain';
+  comparison: 'below' | 'above' | 'uncertain' | 'unconfirmed';
 }
 export interface RiskEvaluation {
   initial: number;

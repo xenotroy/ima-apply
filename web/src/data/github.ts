@@ -125,18 +125,18 @@ export class GitHubWorkspaceClient {
   async #request(url: string, init: RequestInit = {}): Promise<Response> {
     if (!this.#token)
       throw new GitHubSyncError('De GitHub-verbinding is gesloten. Vul het token opnieuw in.');
+    const headers = new Headers(init.headers);
+    if (!headers.has('Accept')) headers.set('Accept', 'application/vnd.github+json');
+    headers.set('Authorization', `Bearer ${this.#token}`);
+    headers.set('X-GitHub-Api-Version', '2022-11-28');
+    if (init.body) headers.set('Content-Type', 'application/json');
     try {
       return await this.#fetch(url, {
         ...init,
         credentials: 'omit',
         cache: 'no-store',
         redirect: 'error',
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${this.#token}`,
-          'X-GitHub-Api-Version': '2022-11-28',
-          ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-        },
+        headers,
         signal: AbortSignal.timeout(20_000),
       });
     } catch {
@@ -165,17 +165,38 @@ export class GitHubWorkspaceClient {
     );
   }
 
-  async #json(response: Response): Promise<Record<string, unknown>> {
-    let input: string;
+  async #text(response: Response, limit: number): Promise<string> {
+    const reader = response.body?.getReader();
+    if (!reader) throw new GitHubSyncError('GitHub retourneerde een leeg antwoord.');
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    let total = 0;
+    const parts: string[] = [];
     try {
-      input = await response.text();
-    } catch {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > limit) {
+          await reader.cancel();
+          throw new GitHubSyncError('GitHub-antwoord is te groot.');
+        }
+        parts.push(decoder.decode(value, { stream: true }));
+      }
+      parts.push(decoder.decode());
+      return parts.join('');
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      if (error instanceof GitHubSyncError) throw error;
       throw new GitHubSyncError(
-        'GitHub-antwoord kon niet volledig worden gelezen. Controleer de GitHub-versie voordat je opnieuw uploadt.',
+        'GitHub-antwoord kon niet als volledige UTF-8 worden gelezen. Controleer de GitHub-versie voordat je opnieuw uploadt.',
       );
+    } finally {
+      reader.releaseLock();
     }
-    if (input.length > MAX_WORKSPACE_BYTES * 2 + 20_000)
-      throw new GitHubSyncError('GitHub-antwoord is te groot.');
+  }
+
+  async #json(response: Response): Promise<Record<string, unknown>> {
+    const input = await this.#text(response, MAX_WORKSPACE_BYTES * 2 + 20_000);
     let result: unknown;
     try {
       result = JSON.parse(input);
@@ -214,6 +235,7 @@ export class GitHubWorkspaceClient {
   async #readFile(branch: string): Promise<GitHubWorkspaceSnapshot> {
     const response = await this.#request(
       `${this.#base}/contents/${this.#path}?ref=${encodeURIComponent(branch)}`,
+      { headers: { Accept: 'application/vnd.github.object+json' } },
     );
     if (response.status === 404) {
       // Access may have been revoked between the metadata and contents requests.
@@ -227,16 +249,31 @@ export class GitHubWorkspaceClient {
     const result = await this.#json(response);
     if (
       result.type !== 'file' ||
-      result.encoding !== 'base64' ||
-      typeof result.content !== 'string' ||
       typeof result.size !== 'number' ||
-      !Number.isFinite(result.size) ||
+      !Number.isInteger(result.size) ||
       result.size > MAX_WORKSPACE_BYTES ||
       result.size < 0
     ) {
       throw new GitHubSyncError('GitHub-bestand heeft een ongeldig of te groot formaat.');
     }
-    return { workspace: importWorkspace(fromBase64(result.content)), sha: sha(result.sha) };
+    const fileSha = sha(result.sha);
+    let input: string;
+    if (result.encoding === 'base64' && typeof result.content === 'string') {
+      input = fromBase64(result.content);
+    } else if (result.encoding === 'none' && result.content === '') {
+      // Fetch the immutable blob selected by metadata, never a second read of a
+      // mutable branch or an expiring external download URL.
+      const raw = await this.#request(`${this.#base}/git/blobs/${fileSha}`, {
+        headers: { Accept: 'application/vnd.github.raw+json' },
+      });
+      this.#checkStatus(raw);
+      input = await this.#text(raw, MAX_WORKSPACE_BYTES);
+    } else {
+      throw new GitHubSyncError('GitHub-bestand heeft een onbekende inhoudscodering.');
+    }
+    if (new TextEncoder().encode(input).byteLength !== result.size)
+      throw new GitHubSyncError('GitHub-bestand wijkt af van de opgehaalde bestandsmetadata.');
+    return { workspace: importWorkspace(input), sha: fileSha };
   }
 
   async read(): Promise<GitHubWorkspaceSnapshot> {

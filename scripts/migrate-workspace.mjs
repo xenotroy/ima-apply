@@ -16,6 +16,14 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const string = value => typeof value === 'string' ? value : '';
 const strings = value => Array.isArray(value) ? value.filter(item => typeof item === 'string' && item.trim()) : [];
 const stableId = (kind, value) => `legacy-${kind}:${hash(String(value)).slice(0, 24)}`;
+/** Stable report JSON: object keys sorted by code point, array order retained. */
+export function canonicalMigrationReportJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalMigrationReportJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalMigrationReportJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
 const severities = ['none', 'first_aid', 'medical_treatment', 'lost_time', 'major', 'permanent_injury', 'fatality'];
 
 const usage = `IMA legacy dossier migration (Node.js 24+)
@@ -184,6 +192,7 @@ async function contextFor(name, now) {
       'Geen omzetting van legacy 1–3 ratings naar Kinney, LOPA of reductiepercentages.',
       'Oude bronhash en nieuw snapshot-JSON-hash zijn verschillende provenancevelden.',
       'Gemigreerde dossiers zijn concepten voor menselijke controle.',
+      'De migratiedatum is een nieuwe projectiedatum, geen oorspronkelijk beoordelingstijdstip.',
     ] } };
 }
 
@@ -239,6 +248,32 @@ export async function migrateMarkdown(root, options = {}) {
     ...(record.sections.wetgeving !== undefined ? { legalReferences: record.sections.wetgeving } : {}) });
   const workspaceRecord = bySchema('ima.workspace/v1')[0];
   if (!options.name && string(workspaceRecord?.metadata.title)) workspace.name = workspaceRecord.metadata.title;
+  const brfProjectedSources = new Set();
+  for (const record of bySchema('ima.taxonomy-term/v1')) {
+    const m = record.metadata;
+    // Only the actually selected, explicitly draft local BRF namespace is known.
+    // This does not seed the browser or convert free investigation codes.
+    const description = record.body.trimStart().replace(/^# [^\n]*(?:\n|$)/, '').trim();
+    const identifiers = [m.id, m.taxonomy, m.version].map(string);
+    const duplicates = bySchema('ima.taxonomy-term/v1').filter(item => string(item.metadata.id).toLowerCase() === string(m.id).toLowerCase() && item.metadata.version === m.version);
+    if (m.taxonomy !== 'ima-core:taxonomy:brf' || m.status !== 'draft' || identifiers.some(value => !value.trim() || value.length > 160) || !string(m.title).trim() || !description || duplicates.length !== 1) {
+      warning(context, 'brf_raw_only', record.sourceId, 'Alleen exact herkenbare unieke draft-BRF-definities worden geprojecteerd; onbekende taxonomie/status, ontbrekende betekenis of dubbele identiteit/versie blijft volledig raw.');
+      continue;
+    }
+    const source = workspace.sources.find(item => item.id === record.sourceId);
+    workspace.basisRiskFactorRecords.push({
+      id: stableId('brf-version', `${m.id}|${m.version}|${record.legacySha256}`),
+      factorId: m.id, taxonomy: m.taxonomy, code: m.id, title: m.title, version: m.version,
+      status: 'draft', description,
+      sourceReference: `Oorspronkelijke Markdown: ${source.raw.relativePath} [${record.sourceId}] | bron-SHA256 ${record.legacySha256}`,
+      owner: '', createdBy: '', createdAt: workspace.createdAt,
+      changeNote: 'Structurele migratieprojectie van de geselecteerde draft-bron. Vastleggingstijd is de nieuwe projectiedatum; oorspronkelijke auteur, eigenaar en historische vastleggingstijd zijn onbekend.',
+      statusHistory: [],
+    });
+    brfProjectedSources.add(record.sourceId);
+    warning(context, 'brf_draft_projection', record.sourceId, 'BRF-ID, versie en betekenis exact uit draft-bron behouden. Nieuwe createdAt is expliciet migratieprojectiedatum; geen eigenaar, oude actor, bronvalidatie of causaal oordeel afgeleid.');
+    if (string(m.parent_id)) warning(context, 'brf_parent_unversioned', record.sourceId, 'Oorspronkelijke parent_id bevat geen concrete definitieversie; relatie blijft raw, geen bovenliggende versie gekozen.');
+  }
   for (const record of bySchema('ima.rie-question-definition/v1')) {
     if (record.sections.vraag) workspace.questions.push(projectedQuestion(record));
     else warning(context, 'question_raw_only', record.sourceId, 'Vraagdefinitie zonder afzonderlijke Vraag-sectie blijft raw.');
@@ -432,7 +467,7 @@ export async function migrateMarkdown(root, options = {}) {
         if (candidates.length !== 1) warning(context, 'legacy_reference_unresolved', record.sourceId, `Oorspronkelijke ${key}-relatie ontbreekt of is dubbel; alleen raw bewaard.`);
       }
     }
-    if (!['ima.workspace/v1', 'ima.topic/v1', 'ima.legal-update/v1', 'ima.rie-question-definition/v1', 'ima.rie-assessment/v1', 'ima.rie-evidence/v1', 'ima.rie-response/v1', 'ima.rie-observation/v1', 'ima.rie-finding/v2', 'ima.action/v1', 'ima.action/v2', 'ima.incident/v1', 'ima.exposure/v1', 'ima.rie-risk-assessment/v1', 'ima.analysis/v1'].includes(record.metadata.schema)) {
+    if (!brfProjectedSources.has(record.sourceId) && !['ima.workspace/v1', 'ima.topic/v1', 'ima.legal-update/v1', 'ima.rie-question-definition/v1', 'ima.rie-assessment/v1', 'ima.rie-evidence/v1', 'ima.rie-response/v1', 'ima.rie-observation/v1', 'ima.rie-finding/v2', 'ima.action/v1', 'ima.action/v2', 'ima.incident/v1', 'ima.exposure/v1', 'ima.rie-risk-assessment/v1', 'ima.analysis/v1'].includes(record.metadata.schema)) {
       warning(context, 'unsupported_record_raw_only', record.sourceId, 'Dit legacy schema is uitsluitend als compleet raw record overgedragen; geen typed functiepariteit geclaimd.');
     }
   }
@@ -492,7 +527,7 @@ export async function migrateSqlite(filename, options = {}) {
   rows.WalkthroughReports = (rows.WalkthroughReports ?? []).filter(row => companyIds.has(row.CompanyId));
   const walkthroughIds = new Set(rows.WalkthroughReports.map(row => row.Id));
   rows.WalkthroughReportModules = (rows.WalkthroughReportModules ?? []).filter(row => walkthroughIds.has(row.WalkthroughReportId));
-  const moduleIds = new Set([...(rows.GeselecteerdeModules ?? []).map(row => row.ModuleId), ...rows.DepartmentModules.map(row => row.ModuleId)]);
+  const moduleIds = new Set([...(rows.GeselecteerdeModules ?? []).map(row => row.ModuleId), ...rows.DepartmentModules.map(row => row.ModuleId), ...rows.WalkthroughReportModules.map(row => row.ModuleId)]);
   const answeredQuestionIds = new Set((rows.Antwoorden ?? []).map(row => row.VraagId));
   rows.Vragen = (rows.Vragen ?? []).filter(row => moduleIds.has(row.ModuleId) || answeredQuestionIds.has(row.Id));
   for (const row of rows.Vragen) moduleIds.add(row.ModuleId);
@@ -514,28 +549,63 @@ export async function migrateSqlite(filename, options = {}) {
   } else if (string(project.Organisatie)) {
     workspace.organisations.push({ id: targetFor('ProjectOrganisation', project), name: project.Organisatie, description: '' });
   }
+  const originalTimes = (row, sourceId) => {
+    const result = {};
+    for (const [sourceKey, targetKey] of [['CreatedAt', 'createdAt'], ['UpdatedAt', 'updatedAt']]) {
+      const value = timestamp(row[sourceKey], context, sourceId, options.assumeUtc);
+      if (value) result[targetKey] = value;
+      else if (string(row[sourceKey])) warning(context, 'legacy_time_unresolved', sourceId, `${sourceKey} heeft geen ondubbelzinnige tijdzone; oorspronkelijke waarde blijft raw, geen migratietijd ingevuld.`);
+    }
+    return result;
+  };
+  const projectContextId = string(project.Naam).trim() ? targetFor('RieProjecten', project) : undefined;
+  if (projectContextId) workspace.projectContexts.push({
+    id: projectContextId, title: project.Naam, organisationText: string(project.Organisatie), locationText: string(project.Locatie),
+    contactName: string(project.ContactNaam), contactEmail: string(project.ContactEmail), organisationIds: workspace.organisations.map(item => item.id),
+    details: Object.fromEntries(context.api.projectContextFields.map(([key, , originalKey]) => [key, string(project[originalKey])])),
+    ...originalTimes(project, sourceFor('RieProjecten', project)), sourceIds: [sourceFor('RieProjecten', project)],
+  });
+  else warning(context, 'project_context_raw_only', sourceFor('RieProjecten', project), 'Project zonder naam blijft raw; geen titel of contextidentiteit gegokt.');
   for (const department of rows.Departments) {
-    // SQLite Departments has CompanyId, but no site entity/address. Do not invent a site.
-    departmentMap.set(department.Id, null);
-    warning(context, 'department_site_unknown', sourceFor('Departments', department), 'Legacy department/company-koppeling raw behouden. Geen nieuwe site verzonnen voor verplichte siteId.');
+    // CompanyId is an actual source relationship. A missing site is not a missing organisation.
+    const organisationId = organisationByCompany.get(department.CompanyId);
+    if (!organisationId || !string(department.Name).trim()) {
+      warning(context, 'department_raw_only', sourceFor('Departments', department), 'Afdeling mist een bekende benoemde organisatie of afdelingsnaam; oorspronkelijke relatie blijft raw.');
+      continue;
+    }
+    const id = targetFor('Departments', department);
+    departmentMap.set(department.Id, id);
+    workspace.departments.push({ id, organisationId, name: department.Name, activity: '' });
+    warning(context, 'department_site_unknown', sourceFor('Departments', department), 'Afdeling rechtstreeks gekoppeld aan haar oorspronkelijke organisatie; locatie blijft onbekend, geen site verzonnen.');
   }
+  const resolveScope = row => {
+    const department = rows.Departments.find(item => item.Id === row.DepartmentId);
+    const companyId = row.CompanyId ?? department?.CompanyId;
+    const company = rows.Companies?.find(item => item.Id === companyId);
+    const organisationId = organisationByCompany.get(companyId) ?? (companyId == null && workspace.organisations.length === 1 ? workspace.organisations[0]?.id : undefined);
+    const departmentId = departmentMap.get(row.DepartmentId);
+    const conflict = department && row.CompanyId != null && row.CompanyId !== department.CompanyId;
+    return { department, companyId, company, organisationId, departmentId, conflict };
+  };
   const dossiers = new Map();
-  const getDossier = row => {
-    const key = `${row.CompanyId ?? 'project'}:${row.DepartmentId ?? 'all'}`;
+  const getDossier = (row, sourceId = '') => {
+    const { department, companyId, company, organisationId, departmentId, conflict } = resolveScope(row);
+    if (conflict) {
+      warning(context, 'sqlite_scope_conflict', sourceId, 'CompanyId en DepartmentId verwijzen naar verschillende organisaties; oorspronkelijke rij blijft raw, geen dossierprojectie gekozen.');
+      return null;
+    }
+    const key = `${companyId ?? 'project'}:${row.DepartmentId ?? 'all'}`;
     if (!dossiers.has(key)) {
-      const company = rows.Companies?.find(item => item.Id === row.CompanyId);
-      const department = rows.Departments.find(item => item.Id === row.DepartmentId);
       const scope = [string(project.Organisatie), string(project.Locatie), string(company?.Name), string(department?.Name)].filter(Boolean).join(' / ');
-      const organisationId = organisationByCompany.get(row.CompanyId) ?? (row.CompanyId == null && workspace.organisations.length === 1 ? workspace.organisations[0]?.id : undefined);
-      const dossier = newDossier(context, stableId('sqlite-dossier', `${project.Id}|${key}`), [string(project.Naam), string(department?.Name)].filter(Boolean).join(' — ') || 'Legacy dossier', { scope, ...(organisationId ? { organisationId } : {}) });
+      const dossier = newDossier(context, stableId('sqlite-dossier', `${project.Id}|${key}`), [string(project.Naam), string(department?.Name)].filter(Boolean).join(' — ') || 'Legacy dossier', { scope, ...(organisationId ? { organisationId } : {}), ...(projectContextId ? { projectContextId } : {}), departmentIds: departmentId ? [departmentId] : [] });
       dossiers.set(key, dossier);
-      if (row.CompanyId != null && !company || row.DepartmentId != null && !department) warning(context, 'sqlite_scope_unresolved', '', 'Antwoordscope verwijst naar ontbrekende company/department; bron-FKs blijven raw behouden.');
+      if (companyId != null && !company || row.DepartmentId != null && !department) warning(context, 'sqlite_scope_unresolved', sourceId, 'Antwoordscope verwijst naar ontbrekende company/department; bron-FKs blijven raw behouden.');
     }
     return dossiers.get(key);
   };
   const baseDossier = getDossier({});
   const answerPairs = new Map();
-  const sqlitePair = answer => JSON.stringify([answer.CompanyId ?? null, answer.DepartmentId ?? null, answer.VraagId]);
+  const sqlitePair = answer => JSON.stringify([resolveScope(answer).companyId ?? null, answer.DepartmentId ?? null, answer.VraagId]);
   for (const answer of rows.Antwoorden ?? []) answerPairs.set(sqlitePair(answer), (answerPairs.get(sqlitePair(answer)) ?? 0) + 1);
   for (const answer of rows.Antwoorden ?? []) {
     const sourceId = sourceFor('Antwoorden', answer);
@@ -544,7 +614,8 @@ export async function migrateSqlite(filename, options = {}) {
     const time = timestamp(answer.UpdatedAt, context, sourceId, options.assumeUtc === true);
     const choice = new Map([[0, 'yes'], [1, 'no'], [2, 'na'], [null, 'unknown']]).get(answer.Keuze);
     if (!original || !time || !choice || !string(original.Vraagtekst)) { warning(context, 'sqlite_answer_raw_only', sourceId, 'Antwoord mist leesbare vraag, exacte datumtijdzone of bekend enum; raw behouden.'); continue; }
-    const dossier = getDossier(answer);
+    const dossier = getDossier(answer, sourceId);
+    if (!dossier) continue;
     const q = question({ id: targetFor('Vragen', original), title: string(original.Titel), prompt: original.Vraagtekst, themeId: string(original.ModuleCode) || String(original.ModuleId),
       assessmentGuidance: string(original.Toetscriteria), sourceIds: [sourceFor('Vragen', original)], legalReferences: string(original.Wetgeving) });
     const frozen = addFrozen(context, dossier, q, 'legacy-import/1.0.0');
@@ -566,7 +637,8 @@ export async function migrateSqlite(filename, options = {}) {
     const sourceId = sourceFor('RisicofactorBeoordelingen', rating);
     warning(context, 'legacy_rating_not_kinney', sourceId, '1–3 E/B/W- en relevantieratings zijn oorspronkelijke lokale prioritering, geen Kinney-factoren of gevalideerde percentagewerking.');
     if (!factor || !risk || !string(factor.Titel)) continue;
-    const dossier = getDossier(rating);
+    const dossier = getDossier(rating, sourceId);
+    if (!dossier) continue;
     workspace.findings.push({ id: targetFor('RisicofactorBeoordelingen', rating), title: factor.Titel, dossierId: dossier.id,
       description: `Legacy risicofactor: ${string(factor.Omschrijving)}\nLegacy risico: ${string(risk.Titel)}\nOorspronkelijke beoordeling: ${string(rating.Toelichting)}\nNumerieke ratings staan uitsluitend in het raw bronrecord; herbeoordeling vereist.`,
       status: 'open', observationIds: [], evidenceIds: [], topicIds: [], legalIds: [], decisionBy: '', decisionNote: '' });
@@ -574,14 +646,45 @@ export async function migrateSqlite(filename, options = {}) {
   for (const rating of rows.MaatregelBeoordelingen ?? []) warning(context, 'legacy_control_raw_only', sourceFor('MaatregelBeoordelingen', rating), 'ReductieScore/KostenNiveau/IsInPlace raw behouden. Geen procenten, bewijsstatus, AHS-broncredit of nieuwe actie-inspanning uit ratings gegokt.');
   for (const walkthrough of rows.WalkthroughReports) {
     const sourceId = sourceFor('WalkthroughReports', walkthrough);
-    warning(context, 'walkthrough_raw_only', sourceId, 'Rondgangrapport en modulekoppelingen raw behouden; samenvatting is niet automatisch een feitelijke waarneming of bevinding.');
+    const scope = resolveScope(walkthrough);
+    if (!string(walkthrough.Title).trim() || !scope.organisationId || scope.conflict || walkthrough.DepartmentId != null && !scope.departmentId) {
+      warning(context, 'walkthrough_raw_only', sourceId, 'Rondgang mist een benoemde titel of heeft geen eenduidige echte organisatie/afdeling; bronrapport blijft volledig raw.');
+      continue;
+    }
+    const dossier = getDossier(walkthrough, sourceId);
+    if (!dossier) continue;
+    const links = rows.WalkthroughReportModules.filter(link => link.WalkthroughReportId === walkthrough.Id);
+    const modules = links.flatMap(link => {
+      const module = rows.Modules.find(item => item.Id === link.ModuleId);
+      if (!module) { warning(context, 'walkthrough_module_unresolved', sourceFor('WalkthroughReportModules', link), 'Geselecteerde module bestaat niet in de bronselectie; oorspronkelijke module-FK blijft raw.'); return []; }
+      return [{ id: targetFor('Modules', module), code: string(module.Code), title: string(module.Titel) }];
+    });
+    const date = calendarDate(string(walkthrough.Date).slice(0, 10));
+    if (!date) warning(context, 'walkthrough_date_unknown', sourceId, 'Rondgangdatum niet geldig; datum blijft onbekend zonder migratiedatum in te vullen.');
+    workspace.walkthroughs.push({ id: targetFor('WalkthroughReports', walkthrough), title: walkthrough.Title,
+      organisationId: scope.organisationId, ...(scope.departmentId ? { departmentId: scope.departmentId } : {}), dossierId: dossier.id,
+      ...(projectContextId ? { projectContextId } : {}), date, author: string(walkthrough.Author), summary: string(walkthrough.Summary), body: string(walkthrough.Body),
+      modules: [...new Map(modules.map(module => [module.id, module])).values()], ...originalTimes(walkthrough, sourceId),
+      sourceIds: [sourceId, ...links.map(link => sourceFor('WalkthroughReportModules', link))],
+    });
   }
   return finish(context);
 }
 
 function finish(context) {
+  const selectedSources = context.workspace.sources.map(source => ({ id: source.id, contentSha256: source.contentSha256 })).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const review = { id: stableId('migration-review', canonicalMigrationReportJson(selectedSources)),
+    title: 'Migratieconcept: menselijke controle vereist', kind: 'other', status: 'review-required',
+    readScope: 'migration-review', publication: 'private', format: 'ima.migration-review/v1',
+    notes: 'Migratieregels en alle waarschuwingen. Raw bronrecords blijven afzonderlijk volledig behouden.',
+    contentSha256: '', raw: {} };
+  // Count this summary source too; never put a self-referential workspace digest inside it.
+  context.workspace.sources.push(review);
+  context.report.counts = Object.fromEntries(['scenarios', 'questions', 'answers', 'actions', 'incidents', 'sources', 'organisations', 'sites', 'departments', 'dossiers', 'evidence', 'observations', 'findings', 'topics', 'legalRecords', 'investigations', 'exposure', 'projectContexts', 'walkthroughs', 'basisRiskFactorRecords'].map(key => [key, context.workspace[key]?.length ?? 0]));
+  review.raw = JSON.parse(canonicalMigrationReportJson(context.report));
+  review.contentSha256 = hash(canonicalMigrationReportJson(review.raw));
   const serialized = context.api.exportWorkspace(context.workspace);
-  context.report.counts = Object.fromEntries(['scenarios', 'questions', 'answers', 'actions', 'incidents', 'sources', 'organisations', 'sites', 'departments', 'dossiers', 'evidence', 'observations', 'findings', 'topics', 'legalRecords', 'investigations', 'exposure'].map(key => [key, context.workspace[key]?.length ?? 0]));
+  // These file metadata fields belong only to the external report, after final export.
   context.report.workspaceSha256 = hash(serialized);
   context.report.outputBytes = Buffer.byteLength(serialized);
   return { workspace: context.workspace, report: context.report, serialized };
@@ -639,7 +742,7 @@ async function main() {
   const result = options.markdown ? await migrateMarkdown(options.markdown, options) : await migrateSqlite(options.sqlite, options);
   const output = await writeMigrationOutput(result, options.out);
   process.stdout.write(`Private migratie-export gereed: ${result.report.counts.sources} bronrecords, ${result.report.counts.dossiers} dossiers, ${result.report.counts.answers} antwoorden.\n`);
-  process.stdout.write(`${result.report.warnings.length} waarschuwingen staan uitsluitend in het private migratierapport.\n`);
+  process.stdout.write(`${result.report.warnings.length} waarschuwingen staan in de private werkruimte en het private migratierapport.\n`);
   process.stdout.write(`Uitvoer: ${path.relative(repositoryRoot, output.output)}\n`);
 }
 

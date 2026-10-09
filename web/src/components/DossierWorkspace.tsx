@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Building2, ClipboardCheck, FileCheck2, Plus, ArrowRight } from 'lucide-react';
 import { sources as builtinSources, type Question } from '../content/catalog';
 import { freezeQuestion, evidenceHash } from '../data/frozen';
+import { departmentOrganisationId, departmentLabel } from '../data/dossier';
 import type {
   WorkspaceState,
   WorkspacePatch,
@@ -14,6 +15,7 @@ import type {
   WorkspaceRecord,
 } from '../data';
 import { Badge, Field, Modal } from './Primitives';
+import ProjectContextWorkspace from './ProjectContextWorkspace';
 
 const id = () => crypto.randomUUID();
 const today = () => new Date().toLocaleDateString('sv-SE');
@@ -70,7 +72,7 @@ export default function DossierWorkspace({
   openInventory: (dossierId: string) => void;
   openScenario: (scenarioId: string) => void;
 }) {
-  const [tab, setTab] = useState<'dossiers' | 'organisation' | 'knowledge'>('dossiers');
+  const [tab, setTab] = useState<'dossiers' | 'organisation' | 'knowledge' | 'context'>('dossiers');
   const [selectedId, setSelectedId] = useState('');
   const [modal, setModal] = useState<
     | 'organisation'
@@ -122,6 +124,7 @@ export default function DossierWorkspace({
           [
             ['dossiers', 'Dossiers & bewijs'],
             ['organisation', 'Organisatie'],
+            ['context', 'Projectcontext & rondgangen'],
             ['knowledge', 'Onderwerpen & regelgeving'],
           ] as const
         ).map(([key, label]) => (
@@ -130,6 +133,13 @@ export default function DossierWorkspace({
           </button>
         ))}
       </div>
+      {tab === 'context' && (
+        <ProjectContextWorkspace
+          workspace={workspace}
+          onUpdate={onUpdate}
+          selectedDossier={selected}
+        />
+      )}
       {tab === 'organisation' && (
         <div className="registry-grid">
           <section className="panel">
@@ -174,7 +184,7 @@ export default function DossierWorkspace({
               <h2>Afdelingen</h2>
               <button
                 className="secondary"
-                disabled={!sites.length}
+                disabled={!organisations.length}
                 onClick={() => setModal('department')}
               >
                 <Plus size={14} /> Afdeling
@@ -184,7 +194,7 @@ export default function DossierWorkspace({
               <div className="registry-item" key={d.id}>
                 <h3>{d.name}</h3>
                 <p>
-                  {sites.find((s) => s.id === d.siteId)?.name} · {d.activity}
+                  {departmentLabel(d, sites, organisations)} · {d.activity}
                 </p>
               </div>
             ))}
@@ -528,12 +538,32 @@ function ScopeForm({
 }) {
   const [name, setName] = useState(''),
     [description, setDescription] = useState('');
-  const options = kind === 'site' ? (workspace.organisations ?? []) : (workspace.sites ?? []);
-  const [parent, setParent] = useState(options[0]?.id ?? '');
+  const options: { value: string; title: string; siteId?: string; organisationId?: string }[] =
+    kind === 'department'
+      ? [
+          ...(workspace.sites ?? []).map((site) => ({
+            value: `site:${site.id}`,
+            title: `Locatie ${site.name} · ${workspace.organisations?.find((record) => record.id === site.organisationId)?.name ?? ''}`,
+            siteId: site.id,
+          })),
+          ...(workspace.organisations ?? []).map((organisation) => ({
+            value: `organisation:${organisation.id}`,
+            title: `${organisation.name} · locatie niet vastgelegd`,
+            organisationId: organisation.id,
+          })),
+        ]
+      : (workspace.organisations ?? []).map((organisation) => ({
+          value: organisation.id,
+          title: organisation.name,
+          organisationId: organisation.id,
+        }));
+  const [parent, setParent] = useState(options[0]?.value ?? '');
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        const selectedParent = options.find((option) => option.value === parent);
+        if (kind !== 'organisation' && !selectedParent) return;
         if (kind === 'organisation')
           onSave({
             organisations: [...(workspace.organisations ?? []), { id: id(), name, description }],
@@ -542,14 +572,26 @@ function ScopeForm({
           onSave({
             sites: [
               ...(workspace.sites ?? []),
-              { id: id(), name, address: description, organisationId: parent },
+              {
+                id: id(),
+                name,
+                address: description,
+                organisationId: selectedParent!.organisationId!,
+              },
             ],
           });
         if (kind === 'department')
           onSave({
             departments: [
               ...(workspace.departments ?? []),
-              { id: id(), name, activity: description, siteId: parent },
+              {
+                id: id(),
+                name,
+                activity: description,
+                ...(selectedParent!.siteId
+                  ? { siteId: selectedParent!.siteId }
+                  : { organisationId: selectedParent!.organisationId! }),
+              },
             ],
           });
       }}
@@ -558,11 +600,11 @@ function ScopeForm({
         <input required autoFocus value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       {kind !== 'organisation' && (
-        <Field label={kind === 'site' ? 'Organisatie' : 'Locatie'}>
+        <Field label={kind === 'site' ? 'Organisatie' : 'Locatie of organisatie'}>
           <select required value={parent} onChange={(e) => setParent(e.target.value)}>
             {options.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
+              <option key={o.value} value={o.value}>
+                {o.title}
               </option>
             ))}
           </select>
@@ -596,14 +638,13 @@ function DossierForm({
     [scope, setScope] = useState(''),
     [assessor, setAssessor] = useState(''),
     [organisationId, setOrganisation] = useState(''),
+    [projectContextId, setProjectContext] = useState(''),
     [departmentIds, setDepartments] = useState<string[]>([]),
     [theme, setTheme] = useState('all'),
     [selection, setSelection] = useState<string[]>([]);
   const available = questions.filter((q) => theme === 'all' || q.themeId === theme);
   const allowedDepartments = (workspace.departments ?? []).filter(
-    (d) =>
-      !organisationId ||
-      (workspace.sites ?? []).find((s) => s.id === d.siteId)?.organisationId === organisationId,
+    (d) => !organisationId || departmentOrganisationId(d, workspace.sites ?? []) === organisationId,
   );
   return (
     <form
@@ -642,6 +683,7 @@ function DossierForm({
           scope,
           assessor,
           ...(organisationId ? { organisationId } : {}),
+          ...(projectContextId ? { projectContextId } : {}),
           departmentIds,
           status: 'active',
           createdAt: new Date().toISOString(),
@@ -671,6 +713,7 @@ function DossierForm({
             onChange={(e) => {
               setOrganisation(e.target.value);
               setDepartments([]);
+              setProjectContext('');
             }}
           >
             <option value="">Werkruimtebreed</option>
@@ -682,9 +725,31 @@ function DossierForm({
           </select>
         </Field>
       </div>
+      <Field label="Projectcontext">
+        <select
+          value={projectContextId}
+          onChange={(event) => setProjectContext(event.target.value)}
+        >
+          <option value="">Niet gekoppeld</option>
+          {(workspace.projectContexts ?? [])
+            .filter(
+              (context) =>
+                !context.organisationIds.length ||
+                (!!organisationId && context.organisationIds.includes(organisationId)),
+            )
+            .map((context) => (
+              <option key={context.id} value={context.id}>
+                {context.title}
+              </option>
+            ))}
+        </select>
+      </Field>
       <MultiSelect
         label="Afdelingen binnen scope"
-        items={allowedDepartments.map((d) => ({ id: d.id, title: d.name }))}
+        items={allowedDepartments.map((d) => ({
+          id: d.id,
+          title: departmentLabel(d, workspace.sites ?? [], workspace.organisations ?? []),
+        }))}
         values={departmentIds}
         onChange={setDepartments}
       />
@@ -894,7 +959,9 @@ function ObservationForm({
       <Field label="Afdeling">
         <select
           value={record.departmentId ?? ''}
-          onChange={(e) => set({ ...record, departmentId: e.target.value || undefined })}
+          onChange={(e) =>
+            set({ ...record, departmentId: e.target.value || undefined, walkthroughId: undefined })
+          }
         >
           <option value="">Dossierbreed</option>
           {workspace.departments
@@ -902,12 +969,31 @@ function ObservationForm({
               (d) =>
                 (!dossier.departmentIds.length || dossier.departmentIds.includes(d.id)) &&
                 (!dossier.organisationId ||
-                  workspace.sites?.find((s) => s.id === d.siteId)?.organisationId ===
-                    dossier.organisationId),
+                  departmentOrganisationId(d, workspace.sites ?? []) === dossier.organisationId),
             )
             .map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name}
+                {departmentLabel(d, workspace.sites ?? [], workspace.organisations ?? [])}
+              </option>
+            ))}
+        </select>
+      </Field>
+      <Field label="Afkomstig uit rondgangverslag">
+        <select
+          value={record.walkthroughId ?? ''}
+          onChange={(event) => set({ ...record, walkthroughId: event.target.value || undefined })}
+        >
+          <option value="">Geen gekoppeld verslag</option>
+          {(workspace.walkthroughs ?? [])
+            .filter(
+              (report) =>
+                (!report.dossierId || report.dossierId === dossier.id) &&
+                (!dossier.organisationId || report.organisationId === dossier.organisationId) &&
+                (!report.departmentId || report.departmentId === record.departmentId),
+            )
+            .map((report) => (
+              <option key={report.id} value={report.id}>
+                {report.title}
               </option>
             ))}
         </select>

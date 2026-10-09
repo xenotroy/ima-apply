@@ -97,10 +97,15 @@ function probability(estimate: Estimate, name: string): void {
   validateEstimate(estimate, name, { min: 0, max: 1 });
 }
 function product(a: Estimate, b: Estimate): Estimate {
-  const value = a.value * b.value;
-  if (a.value > 0 && b.value > 0 && value === 0)
-    throw new RangeError('Numerieke onderloop; model kan deze niet-nulkans niet weergeven.');
-  return range(value, a.min * b.min, a.max * b.max);
+  const multiply = (bound: keyof Estimate) => {
+    const value = a[bound] * b[bound];
+    if (a[bound] > 0 && b[bound] > 0 && value === 0)
+      throw new RangeError(
+        `Numerieke onderloop bij ${bound}; model kan dit strikt positieve product niet weergeven.`,
+      );
+    return value;
+  };
+  return range(multiply('value'), multiply('min'), multiply('max'));
 }
 function remaining(reduction: Estimate): Estimate {
   return range(1 - reduction.value, 1 - reduction.max, 1 - reduction.min);
@@ -613,12 +618,17 @@ export function calculateLopa(scenario: LopaScenario): LopaResult {
     1 / combinedPfd.max,
     1 / combinedPfd.min,
   );
-  const comparison =
-    frequency.max <= scenario.targetFrequency
+  const comparison = !scenario.assumptions?.trim()
+    ? 'unconfirmed'
+    : frequency.max <= scenario.targetFrequency
       ? 'below'
       : frequency.min > scenario.targetFrequency
         ? 'above'
         : 'uncertain';
+  if (comparison === 'unconfirmed')
+    warnings.push(
+      'Het frequentiecriterium heeft geen vastgelegde aannames en besluitbasis. Er volgt geen vergelijking met een vastgesteld criterium.',
+    );
   return {
     initiatingFrequency: { ...scenario.initiatingFrequency },
     unmitigatedFrequency,
