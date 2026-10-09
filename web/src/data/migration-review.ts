@@ -13,6 +13,9 @@ export interface MigrationReport {
   warnings: MigrationWarning[];
   rules: string[];
   counts: Record<string, number>;
+  sourceFormat?: 'sqlite';
+  projectId?: number;
+  databaseSha256?: string;
 }
 export type MigrationReview =
   | { sourceId: string; report: MigrationReport; error?: never }
@@ -42,9 +45,19 @@ function text(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= 100_000;
 }
 function isReport(value: unknown): value is MigrationReport {
+  if (!object(value)) return false;
+  const core = ['counts', 'migratedAt', 'rules', 'schema', 'target', 'warnings'];
+  const metadata = ['databaseSha256', 'projectId', 'sourceFormat'];
+  const hasMetadata = metadata.some((key) => Object.hasOwn(value, key));
+  const keys = hasMetadata ? [...core, ...metadata] : core;
+  if (Object.keys(value).sort().join(',') !== keys.sort().join(',')) return false;
   if (
-    !object(value) ||
-    Object.keys(value).sort().join(',') !== 'counts,migratedAt,rules,schema,target,warnings'
+    hasMetadata &&
+    (value.sourceFormat !== 'sqlite' ||
+      !Number.isSafeInteger(value.projectId) ||
+      (value.projectId as number) <= 0 ||
+      typeof value.databaseSha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(value.databaseSha256))
   )
     return false;
   return (

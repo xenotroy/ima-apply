@@ -69,7 +69,7 @@ Dit goal blijft actief totdat de volledige opdracht aantoonbaar is uitgevoerd. E
 
 De eindcontrole herleidt ieder criterium hierboven naar actuele bestanden, concrete broninhoud, passende tests, migratiebewijs, bruikbare rapporten en daadwerkelijk runtimegedrag. Gebruik de testdekking die bij het betreffende criterium hoort; presenteer een beperkte test niet als bewijs voor een bredere integratie.
 
-Vóór afronding controleert de eindcontrole afzonderlijk: inhoudelijk gelezen oorspronkelijke HVK/MVK-bronnen; AI-45/AI-61-inhoud; werkelijke LMS-data; betekenisbehoud van ontbrekende legacyrevisies en bijzondere bronvelden; private teruglees-/herstelcontrole van de geselecteerde overdracht; en de praktijkworkflow op de daadwerkelijk gebruikte persoonlijke apparaten. Zolang deze onderdelen niet bewezen zijn, blijft dit goal actief ondanks de gerealiseerde versie `2.1.0`.
+Vóór afronding controleert de eindcontrole afzonderlijk: inhoudelijk gelezen oorspronkelijke HVK/MVK-bronnen; AI-45/AI-61-inhoud; werkelijke LMS-data; betekenisbehoud van ontbrekende legacyrevisies en bijzondere bronvelden; private teruglees-/herstelcontrole van de geselecteerde overdracht; en de praktijkworkflow op de daadwerkelijk gebruikte persoonlijke apparaten. Zolang deze onderdelen niet bewezen zijn, blijft dit goal actief ondanks de gerealiseerde versie `2.1.1`.
 
 ## Inspectie bij vastlegging
 

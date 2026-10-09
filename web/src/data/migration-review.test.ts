@@ -66,6 +66,40 @@ function fixture(): { source: WorkspaceRecord; report: MigrationReport } {
   return { source, report };
 }
 describe('private migration review', () => {
+  it('accepts complete real SQLite report metadata and carries its warnings into reports', () => {
+    const { source, report } = fixture();
+    const sqlite: MigrationReport = {
+      ...report,
+      sourceFormat: 'sqlite',
+      projectId: 1,
+      databaseSha256: 'a'.repeat(64),
+    };
+    const sqliteSource = {
+      ...source,
+      raw: JSON.parse(JSON.stringify(sqlite)),
+      contentSha256: migrationReportHash(sqlite),
+    };
+    expect(readMigrationReviews([sqliteSource])[0].report).toEqual(sqlite);
+    const markdown = dossierMarkdown(
+      createWorkspace('SQLite fixture', { sources: [sqliteSource] }),
+    ).join('\n');
+    for (const warning of sqlite.warnings) expect(markdown).toContain(warning.message);
+    expect(
+      renderToStaticMarkup(createElement(MigrationReviewPanel, { sources: [sqliteSource] })),
+    ).toContain('6 waarschuwingen');
+    for (const invalid of [
+      { ...sqlite, projectId: 0 },
+      { ...sqlite, databaseSha256: 'bad' },
+      { ...report, sourceFormat: 'sqlite' },
+      { ...sqlite, sourceFormat: 'invented' },
+    ]) {
+      const raw = JSON.parse(JSON.stringify(invalid));
+      expect(
+        readMigrationReviews([{ ...source, raw, contentSha256: migrationReportHash(raw) }])[0]
+          .error,
+      ).toBeTruthy();
+    }
+  });
   it('carries all interpretation warnings into readable reports without raw source text', () => {
     const { source, report } = fixture();
     const workspace = createWorkspace('Migration review fixture', {

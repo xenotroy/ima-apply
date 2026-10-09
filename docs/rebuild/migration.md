@@ -124,6 +124,8 @@ De fixtures toetsen de daadwerkelijke browservalidatie, nieuwe canonieke snapsho
 
 ## Daadwerkelijke private kopiecontrole, 9 oktober 2026
 
+Versie 2.1.1 herkent ook de volledige oorspronkelijke SQLite-rapportmetadata (`sourceFormat`, `projectId`, `databaseSha256`). Deze velden blijven bij dezelfde gecontroleerde rapporthash horen. Een gerichte regressie en de werkelijke private browserroute controleren dat alle waarschuwingen in de app en het gedownloade Markdown-rapport verschijnen.
+
 De aangetroffen lokale SQLite-database is via een gecontroleerde private bytekopie verwerkt. Integriteitscontrole en foreign-keycontrole waren goed; de oorspronkelijke DB/WAL/SHM behielden hun hashes, grootte en wijzigingstijden. Alleen kopieën zijn met SQLite geopend. De oorspronkelijke projectstatus als echt klantdossier is onbekend.
 
 De strikte versie bevat drie conceptdossiers, vier afdelingen, vijf rondgangen en 110 vragen; dertien antwoorden blijven raw vanwege ontbrekende tijdzones. De afzonderlijke UTC-controleversie bevat dertien getypeerde antwoorden, 25 expliciete UTC-waarschuwingen en dertien waarschuwingen over ontbrekende historische vraagversies. De huidige oorspronkelijke schrijfcode gebruikt UTC; zekerheid over iedere historische veldherkomst is matig. Oude ratings blijven oorspronkelijk.
