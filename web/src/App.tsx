@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { version as appVersion } from '../package.json';
 import {
   Activity,
   ArrowDownToLine,
@@ -621,7 +622,7 @@ export default function App() {
               target="_blank"
               rel="noreferrer"
             >
-              <GitBranch size={14} /> IMA Apply 2.3.1 <ArrowUpRight size={13} />
+              <GitBranch size={14} /> IMA Apply {appVersion} <ArrowUpRight size={13} />
             </a>
           </div>
         </aside>
