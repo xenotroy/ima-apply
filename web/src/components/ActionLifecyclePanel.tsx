@@ -1,9 +1,11 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { WorkspaceAction } from '../data/model';
 import type { Evidence } from '../data/dossier';
 import type { ActionStage } from '../data/action';
 import {
   actionRevision,
+  actionSnapshot,
+  actionSnapshotHash,
   actionStage,
   actionStageLabels,
   nextActionStages,
@@ -11,6 +13,9 @@ import {
 } from '../domain/action-lifecycle';
 import { evidenceHash } from '../data/frozen';
 import { MAX_WORKSPACE_BYTES } from '../data/validation';
+import { draftBase } from '../data/local-drafts';
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import DraftNotice from './DraftNotice';
 import './action-lifecycle.css';
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -21,56 +26,162 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </label>
   );
 }
+type EditableAction = Pick<
+  WorkspaceAction,
+  'title' | 'owner' | 'dueDate' | 'notes' | 'evidenceIds'
+>;
+interface RevisionDraft {
+  actionId: string;
+  sourceBasis: string;
+  sourceRevision: number;
+  fields: EditableAction;
+  evidenceBasis: string;
+  actor: string;
+  reason: string;
+  target: ActionStage | '';
+  verificationDue: string;
+  verifier: string;
+  evaluation: string;
+}
+function actionBasis(action: WorkspaceAction): string {
+  return draftBase({
+    revision: actionRevision(action),
+    snapshot: actionSnapshotHash(actionSnapshot(action)),
+    previous: action.lifecycle?.history.at(-1)?.sha256 ?? null,
+  });
+}
+function selectedEvidenceBasis(ids: string[] | undefined, evidence: Evidence[]): string {
+  return draftBase(
+    (ids ?? [])
+      .slice()
+      .sort()
+      .map((id) => {
+        const record = evidence.find((item) => item.id === id);
+        return record
+          ? {
+              id,
+              hash: evidenceHash(record),
+              status: record.status,
+              verifiedHash: record.verifiedContentSha256 ?? null,
+              verifiedBy: record.verifiedBy ?? null,
+              verifiedAt: record.verifiedAt ?? null,
+              verificationNote: record.verificationNote ?? null,
+            }
+          : { id, missing: true };
+      }),
+  );
+}
+function initialDraft(action: WorkspaceAction, evidence: Evidence[], basis: string): RevisionDraft {
+  const { title, owner, dueDate, notes, evidenceIds } = action;
+  return {
+    actionId: action.id,
+    sourceBasis: basis,
+    sourceRevision: actionRevision(action),
+    fields: {
+      title,
+      owner,
+      dueDate,
+      notes,
+      ...(evidenceIds !== undefined ? { evidenceIds: [...evidenceIds] } : {}),
+    },
+    evidenceBasis: selectedEvidenceBasis(evidenceIds, evidence),
+    actor: '',
+    reason: '',
+    target: '',
+    verificationDue: '',
+    verifier: '',
+    evaluation: '',
+  };
+}
+function validDraft(value: RevisionDraft, action: WorkspaceAction, basis: string): boolean {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    value.actionId === action.id &&
+    value.sourceBasis === basis &&
+    value.sourceRevision === actionRevision(action) &&
+    !!value.fields &&
+    typeof value.fields === 'object' &&
+    ['title', 'owner', 'dueDate', 'notes'].every(
+      (key) => typeof value.fields[key as keyof EditableAction] === 'string',
+    ) &&
+    (value.fields.evidenceIds === undefined ||
+      (Array.isArray(value.fields.evidenceIds) &&
+        value.fields.evidenceIds.every((id) => typeof id === 'string'))) &&
+    ['evidenceBasis', 'actor', 'reason', 'verificationDue', 'verifier', 'evaluation'].every(
+      (key) => typeof value[key as keyof RevisionDraft] === 'string',
+    ) &&
+    (value.target === '' || nextActionStages(action).includes(value.target))
+  );
+}
 export interface ActionLifecyclePanelProps {
+  workspaceId: string;
   action: WorkspaceAction;
   evidence: Evidence[];
   /** Parent compares expectedRevision with its latest state before applying this revision. */
-  onSave: (next: WorkspaceAction, expectedRevision: number) => void | boolean;
+  onSave: (next: WorkspaceAction, expectedRevision: number) => boolean;
 }
-export function ActionLifecyclePanel({ action, evidence, onSave }: ActionLifecyclePanelProps) {
-  const [draft, setDraft] = useState(action);
-  const [actor, setActor] = useState('');
-  const [reason, setReason] = useState('');
-  const [target, setTarget] = useState<ActionStage | ''>('');
-  const [verificationDue, setVerificationDue] = useState('');
-  const [verifier, setVerifier] = useState('');
-  const [evaluation, setEvaluation] = useState('');
+export function ActionLifecyclePanel(props: ActionLifecyclePanelProps) {
+  const basis = actionBasis(props.action);
+  // A new revision gets a new editor; pending input of its predecessor stays in its own slot.
+  return (
+    <ActionRevisionEditor
+      key={`${props.workspaceId}/${props.action.id}/${basis}`}
+      {...props}
+      basis={basis}
+    />
+  );
+}
+function ActionRevisionEditor({
+  workspaceId,
+  action,
+  evidence,
+  onSave,
+  basis,
+}: ActionLifecyclePanelProps & { basis: string }) {
+  const [session, setSession, draftStatus] = usePersistentDraft<RevisionDraft>(
+    `${workspaceId}/action-lifecycle/${action.id}/${basis}`,
+    () => initialDraft(action, evidence, basis),
+    basis,
+    (value) => validDraft(value, action, basis),
+  );
+  const { fields: draft, actor, reason, target, verificationDue, verifier, evaluation } = session;
   const [error, setError] = useState('');
-  const [stale, setStale] = useState(false);
-  const [dirty, setDirty] = useState(false);
   const revision = actionRevision(action);
-  const draftRevision = actionRevision(draft);
-  useEffect(() => {
-    if (actionRevision(action) !== actionRevision(draft)) {
-      if (dirty) setStale(true);
-      else {
-        setDraft(action);
-        setTarget('');
-        setError('');
-      }
-    }
-  }, [action, draft, dirty]);
-  function reset() {
-    setDraft(action);
-    setReason('');
-    setTarget('');
-    setVerificationDue('');
-    setVerifier('');
-    setEvaluation('');
-    setDirty(false);
-    setStale(false);
+  const draftRevision = session.sourceRevision;
+  const stale =
+    session.sourceBasis !== actionBasis(action) ||
+    session.evidenceBasis !== selectedEvidenceBasis(draft.evidenceIds, evidence);
+  function input<
+    K extends 'actor' | 'reason' | 'target' | 'verificationDue' | 'verifier' | 'evaluation',
+  >(key: K, value: RevisionDraft[K]) {
+    setSession((previous) => ({ ...previous, [key]: value }));
+  }
+  const setActor = (value: string) => input('actor', value);
+  const setReason = (value: string) => input('reason', value);
+  const setTarget = (value: ActionStage | '') => input('target', value);
+  const setVerificationDue = (value: string) => input('verificationDue', value);
+  const setVerifier = (value: string) => input('verifier', value);
+  const setEvaluation = (value: string) => input('evaluation', value);
+  function confirmCurrentEvidence() {
+    setSession((previous) => ({
+      ...previous,
+      evidenceBasis: selectedEvidenceBasis(previous.fields.evidenceIds, evidence),
+    }));
     setError('');
   }
-  function field<K extends 'title' | 'owner' | 'dueDate' | 'notes' | 'evidenceIds'>(
-    key: K,
-    value: WorkspaceAction[K],
-  ) {
-    setDraft({ ...draft, [key]: value });
-    setDirty(true);
+  function field<K extends keyof EditableAction>(key: K, value: EditableAction[K]) {
+    setSession((previous) => ({
+      ...previous,
+      fields: { ...previous.fields, [key]: value },
+      ...(key === 'evidenceIds'
+        ? { evidenceBasis: selectedEvidenceBasis(value as string[] | undefined, evidence) }
+        : {}),
+    }));
   }
   const scopedEvidence = evidence.filter((item) => item.dossierId === action.dossierId);
   const assessed = target === 'effective' || target === 'ineffective';
-  const stages = nextActionStages(draft);
+  const stages = nextActionStages(action);
   const history = action.lifecycle?.history ?? [];
   const bytes = new TextEncoder().encode(JSON.stringify(action)).byteLength;
   return (
@@ -106,6 +217,11 @@ export function ActionLifecyclePanel({ action, evidence, onSave }: ActionLifecyc
           </small>
         </div>
       )}
+      <DraftNotice status={draftStatus} />
+      <p className="caption">
+        Een revisieconcept hoort bij deze actieversie. Concepten van eerdere versies blijven via
+        Rapportage exporteerbaar.
+      </p>
       <details className="action-revision-editor">
         <summary>Actie wijzigen of volgende stap vastleggen</summary>
         <form
@@ -115,7 +231,7 @@ export function ActionLifecyclePanel({ action, evidence, onSave }: ActionLifecyc
             try {
               if (stale || revision !== draftRevision)
                 throw new Error(
-                  'Deze actie is op een ander scherm gewijzigd. Je invoer blijft staan; open de actuele revisie voordat je bewaart.',
+                  'Deze actie of het geselecteerde bewijs is gewijzigd. Je invoer blijft staan; beoordeel de actuele bronbasis voordat je bewaart.',
                 );
               const next = reviseAction(
                 action,
@@ -143,13 +259,7 @@ export function ActionLifecyclePanel({ action, evidence, onSave }: ActionLifecyc
                 throw new Error(
                   'Deze revisie kon niet worden opgeslagen. Je invoer blijft beschikbaar.',
                 );
-              setDraft(next);
-              setReason('');
-              setTarget('');
-              setVerificationDue('');
-              setVerifier('');
-              setEvaluation('');
-              setDirty(false);
+              draftStatus.clear();
             } catch (caught) {
               setError(
                 caught instanceof Error ? caught.message : 'Deze stap kon niet worden vastgelegd.',
@@ -206,7 +316,6 @@ export function ActionLifecyclePanel({ action, evidence, onSave }: ActionLifecyc
               value={target}
               onChange={(e) => {
                 setTarget(e.target.value as ActionStage | '');
-                setDirty(true);
               }}
             >
               <option value="">Alleen inhoudsrevisie bewaren</option>
@@ -225,7 +334,6 @@ export function ActionLifecyclePanel({ action, evidence, onSave }: ActionLifecyc
                 value={verificationDue}
                 onChange={(e) => {
                   setVerificationDue(e.target.value);
-                  setDirty(true);
                 }}
               />
             </Field>
@@ -238,7 +346,6 @@ export function ActionLifecyclePanel({ action, evidence, onSave }: ActionLifecyc
                   value={verifier}
                   onChange={(e) => {
                     setVerifier(e.target.value);
-                    setDirty(true);
                   }}
                 />
               </Field>
@@ -248,7 +355,6 @@ export function ActionLifecyclePanel({ action, evidence, onSave }: ActionLifecyc
                   value={evaluation}
                   onChange={(e) => {
                     setEvaluation(e.target.value);
-                    setDirty(true);
                   }}
                   placeholder="Wat is getest of gemeten, tegen welk criterium en met welk resultaat?"
                 />
@@ -261,7 +367,6 @@ export function ActionLifecyclePanel({ action, evidence, onSave }: ActionLifecyc
               value={actor}
               onChange={(e) => {
                 setActor(e.target.value);
-                setDirty(true);
               }}
               autoComplete="name"
             />
@@ -274,22 +379,24 @@ export function ActionLifecyclePanel({ action, evidence, onSave }: ActionLifecyc
               value={reason}
               onChange={(e) => {
                 setReason(e.target.value);
-                setDirty(true);
               }}
             />
           </Field>
           {(error || stale) && (
             <p className="warning-line" role="alert">
-              {error || 'De actie heeft een nieuwere revisie. Je invoer is behouden.'}
+              {error ||
+                'Het geselecteerde bewijs is gewijzigd. Je invoer is behouden; beoordeel de nieuwe broninhoud voordat je verdergaat.'}
             </p>
           )}
           <div className="action-buttons">
             <button className="primary" type="submit" disabled={stale}>
               Revisie vastleggen
             </button>
-            <button className="secondary" type="button" onClick={reset}>
-              Actuele revisie openen
-            </button>
+            {stale && (
+              <button className="secondary" type="button" onClick={confirmCurrentEvidence}>
+                Concept bij actueel bewijs herbevestigen
+              </button>
+            )}
           </div>
         </form>
       </details>

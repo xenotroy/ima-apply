@@ -14,7 +14,7 @@ export interface DraftStatus {
   error: string;
   recovered: boolean;
   savedAt: string;
-  clear: () => void;
+  clear: (savedWorkspaceId?: string) => void;
   candidates: LocalDraft[];
   restore: (writer: string) => void;
 }
@@ -89,9 +89,9 @@ export function usePersistentDraft<T>(
       window.dispatchEvent(new Event(DRAFT_CHANGE_EVENT));
     }
   };
-  const clear = () => {
+  const clear = (savedWorkspaceId = key.split('/')[0]) => {
     const committedValueHash = draftBase(valueRef.current);
-    afterWorkspaceSaved(key.split('/')[0], () => {
+    afterWorkspaceSaved(savedWorkspaceId, () => {
       try {
         const store = new LocalDraftStore(localStorage);
         for (const candidate of store.list(key).filter((draft) => draft.writer === loaded.writer)) {

@@ -2,7 +2,7 @@
 
 Status: **actief**. Vastgelegd op 7 oktober 2026 op verzoek van de gebruiker: “maak hier een goal van dus”. Dit document concretiseert de oorspronkelijke herbouwopdracht; het verkleint die opdracht niet tot de reeds gepubliceerde browserapp.
 
-Voortgang bijgewerkt op 11 oktober 2026 voor appversie `2.3.0`. De tabel hieronder blijft de oorspronkelijke nulmeting; de actuele gerealiseerde functies en voorlopige overdrachtsgrenzen staan onder **Concrete voortgang na vastlegging**. Appversie, browserdataschema (`schemaVersion: 1`) en rekenmethode (`ima-risk/2.0.0`) zijn afzonderlijke versies.
+Voortgang bijgewerkt op 11 oktober 2026 voor appversie `2.3.1`. De tabel hieronder blijft de oorspronkelijke nulmeting; de actuele gerealiseerde functies en voorlopige overdrachtsgrenzen staan onder **Concrete voortgang na vastlegging**. Appversie, browserdataschema (`schemaVersion: 1`) en rekenmethode (`ima-risk/2.0.0`) zijn afzonderlijke versies.
 
 ## Doel
 
@@ -83,6 +83,18 @@ De nieuwe private parity-exports zijn 1.152.872 bytes met nul typed antwoorden e
 De nieuwe PI-overdracht is gelezen vanuit de twee onderscheiden bronlocaties. Een private bronmomentopname bewaart 1.300 oorspronkelijke vraagvoorkomens en twaalf eigen onderzoeksvragen. De bibliotheek scheidt algemene vakkennis, documentclaims, bestaande bevindingen en verificatiehypotheses. De router gebruikt vier ingangen en afzonderlijke centrale/afdelings/lokale onderzoekslagen. Incidenten verhogen onderzoeksprioriteit; zij leveren geen automatische score. Een niet geselecteerd onderwerp is onbekend. Exacte kandidaatmapping vraagt deskundige controle van scope en procesblokdekking.
 
 Interviewinvoer krijgt een gevalideerde herstelkopie vóór de gewone opslag; onafgemaakte kernformulieren bewaren concepten per tabblad. Markdown neemt de nog niet vastgelegde concepten mee. De browserproeven controleren onderbroken opslag, dubbele tabbladen, bronwijzigingen, oude record-ID's, complete LOPA/onderzoeksinvoer en echte exports. GitHub-synchronisatie blijft bewust en versiegecontroleerd; lokale concepten zijn geen automatische cloudbackup.
+
+### Herstelconcepten, aanvullende bronlezing en oude actiearchieven, versie 2.3.1
+
+Administratieve formulieren, werkruimtenamen en actierevisies bewaren nu hun exacte invulvelden en relevante bronbasis bij sluiten, herladen en Markdown-export. W/B/E- en LOPA-intervallen bewaren ook onvolledige of ongeldige numerieke tekst; zij veranderen de actuele risicobeoordeling pas na geldige vastlegging. Het wissen van een concept wacht op de daadwerkelijke opslag van de bedoelde werkruimte en verwijdert geen andere schrijver of nieuwere invoer.
+
+Dertig aanvullende beschikbare PDF-pagina's zijn gelezen. Negentien bestaande eigen publieke vraagcriteria zijn aangescherpt onder inhoudsversie `2.4.0`; oudere bevroren dossiers behouden hun oorspronkelijke inhoud. De afzonderlijke private bronwerkruimte bevat de bestaande 260 vragen en zes oude contentrecords ongewijzigd, aangevuld met dertig paginatekstrecords, 21 nog te beoordelen criteriumvoorstellen en drie reviewrecords. Acht aanvullende private artefacten zijn create-only opgeslagen en elk tweemaal volledig teruggelezen. De bronwerkruimte is 595.111 bytes; de PI-bank bleef ongewijzigd.
+
+De migrator behoudt nu de exact bekende oorspronkelijke `.history/actions/`-structuur, bronbytes, teksthashes en een afzonderlijk inspecteerbaar manifest. Ontbrekende, strijdige of onbevestigde revisies blijven zichtbaar. Zij worden geen nieuwe actorgebeurtenissen of effectgoedkeuringen. Dit sluit het selectiegat E03 uit de [volledigheidsaudit](completion-audit-2026-10-11.md) binnen de beschreven parserondersteuning; een werkelijke geselecteerde productiearchiefoverdracht is nog niet uitgevoerd.
+
+Verificatie: 291 unittests, 66 import-/migratietests, 61 lokale Chrome-proeven, geslaagde TypeScript/productiebuild en nul dependencykwetsbaarheden. Een onafhankelijke review bevestigt de herstelde revisielexemen, voorgangerwaarden en Unicode-ID-vergelijking met vijf afzonderlijke fixtures. Tests en private bytebehoud bewijzen uitsluitend de beschreven gevallen.
+
+De volledige goal blijft actief. De concrete vervolgbouw betreft bewijsversies gekoppeld aan maatregelen/IPL's en acties, binaire bewijsintegriteit, bijzondere actie-/incidentvelden en directe wettelijke impactrelaties. Oorspronkelijke AI-45/AI-61-, HVK/MVK- en werkelijke LMS-bronnen blijven een afzonderlijke brontaak. Zie [2.3.1](release-2.3.1.md), [brondekking](source-coverage.md) en de [volledigheidsaudit](completion-audit-2026-10-11.md).
 
 ## Afsluitregel
 

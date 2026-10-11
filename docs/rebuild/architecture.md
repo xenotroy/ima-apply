@@ -28,7 +28,7 @@ Het schrijfjournaal valideert een volledige werkruimte vóór iedere gequeue-de 
 
 Alle projectmutaties worden vóór vervanging van de UI-state gevalideerd. De lokale opslagschrijver serialiseert wijzigingen met Web Locks en controleert de verwachte opslagversie. Een storageconflict laat de oude opgeslagen versie intact; de gebruiker kan de nieuwe werkversie exporteren.
 
-LOPA-bewerkingen blijven een lokaal formulierconcept totdat expliciet opslaan slaagt. Ongeldige conceptinvoer verandert geen opgeslagen scenario; de grafiek toont dan de laatste opgeslagen beoordeling met een foutmelding. Maatregelcredit vergt geschikte status, onderbouwing en expliciete beoordeling van afhankelijkheid.
+LOPA-bewerkingen blijven een lokaal formulierconcept totdat expliciet opslaan slaagt. Ongeldige conceptinvoer verandert geen opgeslagen scenario; de grafiek toont dan de laatst geldige waarden met een foutmelding. Maatregelcredit vergt geschikte status, onderbouwing en expliciete beoordeling van afhankelijkheid.
 
 Afgeronde acties hebben een eigenaar, een afzonderlijk resultaat van de effectcontrole en een controletijdstip. Afronden verandert geen maatregelcredit automatisch. Een incident kan een actie en scenario koppelen; feiten en onderzoeksconclusies blijven onderscheiden.
 
@@ -54,3 +54,9 @@ Een werkruimte heeft een productgrens van 2.000.000 UTF-8 bytes. GitHub-bestande
 De graphische risicoruimte gebruikt een log(1 + factor)-projectie en getallen uit de rekenkern. Zij is geen fysisch simulatiemodel. FTA/ETA, volledige FMEA/HAZOP, automatische bronactualisering, AI-generatie, SIL-verificatie en juridische acceptatiebesluiten zijn geen geïmplementeerde engines.
 
 Bij chronische blootstellingsrisico’s blijven vakspecifieke blootstellingsmodellen en inhoudelijke criteria noodzakelijk; een Kinney-score vervangt deze niet. Zie de volledige risicomethodiek en het bronregister.
+
+### Herstelbare administratieve en numerieke invoer, 2.3.1
+
+Organisatie-, locatie-, afdelings-, onderwerp-, regelgeving- en dossierreviewinvoer gebruikt eveneens het afzonderlijke conceptjournaal. De geselecteerde bronbasis, gegenereerde record-ID en invulkeuzes blijven bij elkaar. Werkruimtenamen volgen de daadwerkelijke opslag van de juiste doelwerkruimte.
+
+Numerieke intervallen bewaren ruwe tekst naast de laatst geldige getalswaarden. Deze tijdelijke buffers staan uitsluitend in formulierconcepten, komen als concept mee in Markdown en worden nooit in een vastgelegde LOPA of Control opgeslagen. Invaliditeit blokkeert vastleggen; wetenschappelijke notatie en gedeeltelijke invoer blijven herstelbaar. De rekenengine en eenheden veranderen hierdoor niet.

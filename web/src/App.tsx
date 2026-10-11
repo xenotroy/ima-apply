@@ -36,6 +36,7 @@ import {
   KINNEY_SCALES,
 } from './domain/risk';
 import type { Control, Estimate, Scenario, LopaLayer } from './domain/types';
+import { estimateDraft, parseEstimateDraft, type EstimateDraft } from './data/estimate-draft';
 import {
   contentPacks,
   themes,
@@ -577,7 +578,7 @@ export default function App() {
             target="_blank"
             rel="noreferrer"
           >
-            <GitBranch size={14} /> IMA Apply 2.3 <ArrowUpRight size={13} />
+            <GitBranch size={14} /> IMA Apply 2.3.1 <ArrowUpRight size={13} />
           </a>
         </div>
       </aside>
@@ -925,6 +926,7 @@ export default function App() {
           )}
           {page === 'actions' && (
             <Actions
+              workspaceId={workspace.id}
               actions={workspace.actions}
               scenarios={workspace.scenarios}
               evidence={workspace.evidence ?? []}
@@ -1230,11 +1232,13 @@ export default function App() {
       )}
       {modal === 'rename' && (
         <NameEditor
+          workspaceId={workspace.id}
           initial={workspace.name}
           onClose={() => setModal(null)}
           onSave={(name) => {
-            update({ name });
-            setModal(null);
+            const accepted = update({ name });
+            if (accepted) setModal(null);
+            return accepted ? { workspaceId: workspace.id } : false;
           }}
         />
       )}
@@ -1251,14 +1255,19 @@ export default function App() {
             Huidige werkruimte exporteren
           </button>
           <NameEditorContent
+            key={`${workspace.id}/new-workspace`}
+            workspaceId={workspace.id}
+            purpose="new"
             initial="Mijn veiligheidswerkruimte"
             onSave={(name) => {
-              persist(createWorkspace(name));
+              const next = createWorkspace(name);
+              if (!persist(next)) return false;
               setSelectedId('');
               setSync(null);
               localStorage.removeItem('ima-sync-metadata');
               setModal(null);
               navigate('overview');
+              return { workspaceId: next.id };
             }}
           />
         </Modal>
@@ -1764,7 +1773,13 @@ function LopaWorkbench({
   scenario: Scenario;
   onChange: (s: Scenario) => boolean;
 }) {
-  const [lopa, setDraft, draftStatus] = usePersistentDraft<NonNullable<Scenario['lopa']> | null>(
+  const [lopa, setDraft, draftStatus] = usePersistentDraft<
+    | (NonNullable<Scenario['lopa']> & {
+        rawEstimates?: Record<string, EstimateDraft>;
+        rawTargetFrequency?: string;
+      })
+    | null
+  >(
     `${workspaceId}/lopa-workbench/${scenario.id}`,
     scenario.lopa ?? null,
     draftBase(scenario.lopa ?? null),
@@ -1806,17 +1821,51 @@ function LopaWorkbench({
   }
   if (!result) return <p>Vul de LOPA-invoer volledig in.</p>;
   const set = (patch: Partial<typeof lopa>) => {
-    setDraft({ ...lopa, ...patch });
+    setDraft((current) => (current ? { ...current, ...patch } : current));
     setDraftError('');
   };
+  const setEstimateText = (key: string, raw: EstimateDraft) => {
+    setDraft((current) =>
+      current ? { ...current, rawEstimates: { ...current.rawEstimates, [key]: raw } } : current,
+    );
+    setDraftError('');
+  };
+  const targetRaw = lopa.rawTargetFrequency;
+  const targetParsed =
+    targetRaw === undefined
+      ? lopa.targetFrequency
+      : parseEstimateDraft(
+          { min: targetRaw, value: targetRaw, max: targetRaw },
+          { min: Number.MIN_VALUE, max: Number.MAX_VALUE },
+        )?.value;
+  const incompleteEstimates =
+    !targetParsed ||
+    Object.entries(lopa.rawEstimates ?? {}).some(([key, raw]) => {
+      if (key === 'initiator') return !parseEstimateDraft(raw, { max: 1e6 });
+      if (
+        lopa.layers.some((layer) => key === `layer/${layer.id}`) ||
+        lopa.modifiers.some((modifier) => key === `modifier/${modifier.id}`)
+      )
+        return !parseEstimateDraft(raw, { min: 1e-12 });
+      return false;
+    });
   const saveDraft = () => {
     try {
+      if (incompleteEstimates)
+        throw new Error(
+          'Corrigeer de onvolledige of omgekeerde intervallen voordat je deze LOPA vastlegt. De exacte getalinvoer blijft als concept behouden.',
+        );
       if (!lopa.assumptions.trim())
         throw new Error(
           'Leg de aannames en het criteriumbesluit vast voordat je deze LOPA opslaat.',
         );
       calculateLopa(lopa);
-      if (onChange({ ...scenario, lopa })) {
+      const {
+        rawEstimates: _rawEstimates,
+        rawTargetFrequency: _rawTargetFrequency,
+        ...record
+      } = lopa;
+      if (onChange({ ...scenario, lopa: record })) {
         draftStatus.clear();
         setDraftError('');
       } else {
@@ -1834,8 +1883,10 @@ function LopaWorkbench({
       <div className="lopa-draft-bar">
         <span>
           {draftError
-            ? `Onvolledig concept: ${draftError} De grafiek toont de laatst opgeslagen beoordeling.`
-            : 'LOPA-wijzigingen zijn een concept totdat je ze opslaat.'}
+            ? `Onvolledig concept: ${draftError} De grafiek toont de laatst geldige waarden.`
+            : incompleteEstimates
+              ? 'Onvolledige intervalinvoer: de grafiek toont de laatst geldige waarden. De huidige getalinvoer is nog niet toegepast.'
+              : 'LOPA-wijzigingen zijn een concept totdat je ze opslaat.'}
         </span>
         <button className="primary" onClick={saveDraft}>
           <Check size={15} /> LOPA opslaan
@@ -1900,6 +1951,8 @@ function LopaWorkbench({
           <EstimateInput
             label="Initiatorfrequentie per jaar"
             estimate={lopa.initiatingFrequency}
+            raw={lopa.rawEstimates?.initiator}
+            onRawChange={(raw) => setEstimateText('initiator', raw)}
             onChange={(v) => set({ initiatingFrequency: v })}
             max={1e6}
           />
@@ -1920,13 +1973,19 @@ function LopaWorkbench({
             hint="Geen universele acceptatiegrens. Leg herkomst en besluit vast."
           >
             <input
-              type="number"
-              min="0.000000000001"
-              step="any"
-              value={lopa.targetFrequency}
+              type="text"
+              inputMode="decimal"
+              value={lopa.rawTargetFrequency ?? String(lopa.targetFrequency)}
               onChange={(e) => {
-                const v = Number(e.target.value);
-                if (v > 0) set({ targetFrequency: v });
+                const raw = e.target.value;
+                const parsed = parseEstimateDraft(
+                  { min: raw, value: raw, max: raw },
+                  { min: Number.MIN_VALUE, max: Number.MAX_VALUE },
+                );
+                set({
+                  rawTargetFrequency: raw,
+                  ...(parsed ? { targetFrequency: parsed.value } : {}),
+                });
               }}
             />
           </Field>
@@ -2016,6 +2075,8 @@ function LopaWorkbench({
             <EstimateInput
               label="PFD (faalkans op aanvraag)"
               estimate={layer.pfd}
+              raw={lopa.rawEstimates?.[`layer/${layer.id}`]}
+              onRawChange={(raw) => setEstimateText(`layer/${layer.id}`, raw)}
               onChange={(v) => setLayer({ ...layer, pfd: v })}
               max={1}
               min={0.000000000001}
@@ -2139,6 +2200,8 @@ function LopaWorkbench({
             <EstimateInput
               label="Voorwaardelijke kans"
               estimate={m.probability}
+              raw={lopa.rawEstimates?.[`modifier/${m.id}`]}
+              onRawChange={(raw) => setEstimateText(`modifier/${m.id}`, raw)}
               max={1}
               min={0.000000000001}
               onChange={(v) =>
@@ -2235,6 +2298,8 @@ function EstimateInput({
   label,
   estimate,
   onChange,
+  raw,
+  onRawChange,
   max = 1,
   min = 0,
   percent = false,
@@ -2242,49 +2307,26 @@ function EstimateInput({
   label: string;
   estimate: Estimate;
   onChange: (v: Estimate) => void;
+  raw?: EstimateDraft;
+  onRawChange?: (raw: EstimateDraft) => void;
   max?: number;
   min?: number;
   percent?: boolean;
 }) {
-  const multiplier = percent ? 100 : 1;
-  const [draft, setDraft] = useState({
-    min: String(estimate.min * multiplier),
-    value: String(estimate.value * multiplier),
-    max: String(estimate.max * multiplier),
-  });
-  useEffect(
-    () =>
-      setDraft({
-        min: String(estimate.min * multiplier),
-        value: String(estimate.value * multiplier),
-        max: String(estimate.max * multiplier),
-      }),
-    [estimate.min, estimate.value, estimate.max, multiplier],
-  );
+  const [local, setLocal] = useState(() => estimateDraft(estimate, percent));
+  const draft = raw ?? local;
+  useEffect(() => {
+    if (!raw) setLocal(estimateDraft(estimate, percent));
+  }, [estimate.min, estimate.value, estimate.max, percent, raw]);
   const change = (key: keyof Estimate, value: string) => {
     const next = { ...draft, [key]: value };
-    setDraft(next);
-    const n = {
-      min: Number(next.min) / multiplier,
-      value: Number(next.value) / multiplier,
-      max: Number(next.max) / multiplier,
-    };
-    if (
-      Object.values(next).every((v) => v !== '') &&
-      [n.min, n.value, n.max].every(Number.isFinite) &&
-      n.min >= min &&
-      n.max <= max &&
-      n.min <= n.value &&
-      n.value <= n.max
-    )
-      onChange(n);
+    setLocal(next);
+    onRawChange?.(next);
+    const parsed = parseEstimateDraft(next, { min, max, percent });
+    if (parsed) onChange(parsed);
   };
-  const valid =
-    Object.values(draft).every((v) => v !== '' && Number.isFinite(Number(v))) &&
-    Number(draft.min) <= Number(draft.value) &&
-    Number(draft.value) <= Number(draft.max) &&
-    Number(draft.min) >= min * multiplier &&
-    Number(draft.max) <= max * multiplier;
+  const valid = parseEstimateDraft(draft, { min, max, percent }) !== null;
+  const multiplier = percent ? 100 : 1;
   return (
     <div className="estimate-field">
       <span>
@@ -2292,17 +2334,15 @@ function EstimateInput({
         {percent ? ' (%)' : ''}
       </span>
       <div>
-        {(['min', 'value', 'max'] as const).map((k, i) => (
-          <label key={k}>
+        {(['min', 'value', 'max'] as const).map((key, i) => (
+          <label key={key}>
             <small>{['Ondergrens', 'Verwachting', 'Bovengrens'][i]}</small>
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
               aria-label={`${label} ${['ondergrens', 'verwachting', 'bovengrens'][i]}`}
-              min={min * multiplier}
-              max={max * multiplier}
-              step="any"
-              value={draft[k]}
-              onChange={(e) => change(k, e.target.value)}
+              value={draft[key]}
+              onChange={(event) => change(key, event.target.value)}
             />
           </label>
         ))}
@@ -2310,7 +2350,7 @@ function EstimateInput({
       {!valid && (
         <small className="rose-text">
           Gebruik ondergrens ≤ verwachting ≤ bovengrens binnen {min * multiplier}–{max * multiplier}
-          . Ongeldige invoer wordt niet toegepast.
+          . Ongeldige invoer blijft bewaard en wordt niet toegepast.
         </small>
       )}
     </div>
@@ -2467,6 +2507,7 @@ function ControlEditor({
     draftKey,
     {
       control,
+      estimates: {} as Record<string, EstimateDraft>,
       helper: {
         conditionalBasis: '',
         conditionsConfirmed: false,
@@ -2480,6 +2521,9 @@ function ControlEditor({
     (candidate) => canRestore(candidate.control),
   );
   const c = session.control;
+  const [estimateError, setEstimateError] = useState('');
+  const setEstimateText = (key: string, raw: EstimateDraft) =>
+    setSession((current) => ({ ...current, estimates: { ...current.estimates, [key]: raw } }));
   const set = (control: Control) => setSession((current) => ({ ...current, control }));
   const { conditionalBasis, conditionsConfirmed, potential, coverage, availability, use } =
     session.helper;
@@ -2505,11 +2549,19 @@ function ControlEditor({
       correctUse: estimate(use),
       conditionalBasis,
     });
-    set({
-      ...c,
-      [key]: { ...result, min: 0 },
-      rationale:
-        `${c.rationale}\nInschalingshulp voor ${key}: potentieel ${potential}%, bereik ${coverage}%, conditionele beschikbaarheid ${availability}%, conditioneel gebruik ${use}%. Noemers/overlap: ${conditionalBasis}`.trim(),
+    setSession((current) => {
+      const estimates = { ...current.estimates };
+      delete estimates[key];
+      return {
+        ...current,
+        estimates,
+        control: {
+          ...current.control,
+          [key]: { ...result, min: 0 },
+          rationale:
+            `${current.control.rationale}\nInschalingshulp voor ${key}: potentieel ${potential}%, bereik ${coverage}%, conditionele beschikbaarheid ${availability}%, conditioneel gebruik ${use}%. Noemers/overlap: ${conditionalBasis}`.trim(),
+        },
+      };
     });
   };
   return (
@@ -2517,10 +2569,26 @@ function ControlEditor({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (
+            Object.values(session.estimates ?? {}).some(
+              (raw) => !parseEstimateDraft(raw, { percent: true }),
+            )
+          ) {
+            setEstimateError(
+              'Corrigeer de onvolledige of omgekeerde factorintervallen. Je getalinvoer blijft als concept behouden; de maatregel is niet gewijzigd.',
+            );
+            return;
+          }
+          setEstimateError('');
           if (onSave(c)) draftStatus.clear();
         }}
       >
         <DraftNotice status={draftStatus} />
+        {estimateError && (
+          <p role="alert" className="error">
+            {estimateError}
+          </p>
+        )}
         <Field label="Maatregel">
           <input
             autoFocus
@@ -2589,18 +2657,24 @@ function ControlEditor({
         <EstimateInput
           label="Waarschijnlijkheid W"
           estimate={c.probabilityReduction}
+          raw={session.estimates?.probabilityReduction}
+          onRawChange={(raw) => setEstimateText('probabilityReduction', raw)}
           percent
           onChange={(v) => set({ ...c, probabilityReduction: v })}
         />
         <EstimateInput
           label="Blootstelling B"
           estimate={c.exposureReduction}
+          raw={session.estimates?.exposureReduction}
+          onRawChange={(raw) => setEstimateText('exposureReduction', raw)}
           percent
           onChange={(v) => set({ ...c, exposureReduction: v })}
         />
         <EstimateInput
           label="Effect E"
           estimate={c.effectReduction}
+          raw={session.estimates?.effectReduction}
+          onRawChange={(raw) => setEstimateText('effectReduction', raw)}
           percent
           onChange={(v) => set({ ...c, effectReduction: v })}
         />
@@ -2893,12 +2967,14 @@ function Questionnaire({
   );
 }
 function Actions({
+  workspaceId,
   actions,
   scenarios,
   evidence,
   updateAction,
   onAdd,
 }: {
+  workspaceId: string;
   actions: WorkspaceAction[];
   scenarios: Scenario[];
   evidence: Evidence[];
@@ -2936,7 +3012,12 @@ function Actions({
                     {scenarios.find((s) => s.id === a.scenarioId)?.title ?? 'Algemene verbetering'}
                   </small>
                   <h3>{a.title}</h3>
-                  <ActionLifecyclePanel action={a} evidence={evidence} onSave={updateAction} />
+                  <ActionLifecyclePanel
+                    workspaceId={workspaceId}
+                    action={a}
+                    evidence={evidence}
+                    onSave={updateAction}
+                  />
                 </div>
               ))}
             {!actions.some((a) => a.status === status) && (
@@ -3379,28 +3460,57 @@ function IncidentEditor({
     </Modal>
   );
 }
+type NameSaveResult = false | { workspaceId: string };
 function NameEditorContent({
+  workspaceId,
+  purpose,
   initial,
   onSave,
 }: {
+  workspaceId: string;
+  purpose: 'new' | 'rename';
   initial: string;
-  onSave: (name: string) => void;
+  onSave: (name: string) => NameSaveResult;
 }) {
-  const [name, set] = useState(initial);
+  const base = purpose === 'rename' ? draftBase(initial) : 'new/v1';
+  const [draft, set, draftStatus] = usePersistentDraft(
+    `${workspaceId}/${purpose}-workspace-name/${base}`,
+    { name: initial, sourceWorkspaceId: workspaceId },
+    base,
+    (candidate) =>
+      typeof candidate?.name === 'string' && candidate.sourceWorkspaceId === workspaceId,
+  );
+  const [error, setError] = useState('');
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave(name.trim());
+        try {
+          if (!draft.name.trim()) throw new Error('Vul een naam voor de werkruimte in.');
+          const result = onSave(draft.name.trim());
+          if (result) draftStatus.clear(result.workspaceId);
+          else setError('Opslaan geweigerd. De naam blijft als concept bewaard.');
+        } catch (error) {
+          setError(String(error));
+        }
       }}
     >
+      <DraftNotice status={draftStatus} />
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
       <Field label="Naam van de werkruimte">
         <input
           autoFocus
           required
-          value={name}
+          value={draft.name}
           maxLength={160}
-          onChange={(e) => set(e.target.value)}
+          onChange={(e) => {
+            set((current) => ({ ...current, name: e.target.value }));
+            setError('');
+          }}
         />
       </Field>
       <button className="primary" type="submit">
@@ -3410,17 +3520,25 @@ function NameEditorContent({
   );
 }
 function NameEditor({
+  workspaceId,
   initial,
   onClose,
   onSave,
 }: {
+  workspaceId: string;
   initial: string;
   onClose: () => void;
-  onSave: (name: string) => void;
+  onSave: (name: string) => NameSaveResult;
 }) {
   return (
     <Modal title="Naam van je werkruimte" onClose={onClose}>
-      <NameEditorContent initial={initial} onSave={onSave} />
+      <NameEditorContent
+        key={`${workspaceId}/${draftBase(initial)}`}
+        workspaceId={workspaceId}
+        purpose="rename"
+        initial={initial}
+        onSave={onSave}
+      />
     </Modal>
   );
 }

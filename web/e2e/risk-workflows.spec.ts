@@ -350,10 +350,10 @@ test('creating an incomplete LOPA draft does not crash or invent a qualified res
   const before = (await stored(page)).scenarios.find(
     (item: { title: string }) => item.title === 'E2E: LOPA-invoer',
   ).lopa;
-  await page.getByRole('spinbutton', { name: /Lokaal vastgesteld criterium/ }).fill('0.00001');
+  await page.getByRole('textbox', { name: /Lokaal vastgesteld criterium/ }).fill('0.00001');
   await page.getByRole('textbox', { name: 'Initiërende gebeurtenis', exact: true }).fill('');
   await expect(page.locator('.lopa-draft-bar')).toContainText(/Onvolledig/);
-  await expect(page.locator('.lopa-draft-bar')).toContainText('laatst opgeslagen');
+  await expect(page.locator('.lopa-draft-bar')).toContainText('laatst geldige waarden');
   await expect(page.locator('.lopa-summary .amber-text')).toHaveText(
     before.targetFrequency.toExponential(2),
   );

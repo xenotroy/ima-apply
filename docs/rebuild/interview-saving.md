@@ -1,6 +1,6 @@
 # Interviewinvoer bewaren en herstellen
 
-IMA Apply 2.3 bewaart vastgelegde invoer automatisch in de browser. De status in de zijbalk bevestigt de normale lokale opslag. Vóór die opslag staat een gevalideerde herstelkopie klaar; een mislukte of onderbroken schrijfoperatie kan daardoor bij herladen worden hersteld. Alleen een herstelkopie met de passende opslagversie wordt automatisch gekozen. Meerdere concurrerende of oudere versies blijven afzonderlijk exporteerbaar.
+IMA Apply 2.3.1 bewaart vastgelegde invoer automatisch in de browser. De status in de zijbalk bevestigt de normale lokale opslag. Vóór die opslag staat een gevalideerde herstelkopie klaar; een mislukte of onderbroken schrijfoperatie kan daardoor bij herladen worden hersteld. Alleen een herstelkopie met de passende opslagversie wordt automatisch gekozen. Meerdere concurrerende of oudere versies blijven afzonderlijk exporteerbaar.
 
 ## Tijdens een interview
 
@@ -14,7 +14,11 @@ Beschermde invoer omvat antwoordkeuze en antwoordtekst, dossiers, bewijs, waarne
 
 Ook de percentages en conditionele noemeronderbouwing van de maatregelinschalingshulp blijven als concept behouden voordat je **Toepassen op W/B/E** kiest. Zij geven op zichzelf geen maatregelcredit. Voor een groot PI-interview maak je via de router een afgebakende **Projectwerkruimte exporteren** en werk je verder in dat nieuwe bestand; alle geselecteerde vragen gaan mee, de volledige bank blijft afzonderlijk.
 
-Organisatie-, locatie-, afdelings-, onderwerp-, regelgeving- en dossierreviewformulieren hebben nog geen afzonderlijk herstelconcept. Sla die formulieren op voordat je sluit of herlaadt. Zoekfilters, geopende tab en navigatiekeuzes zijn geen dossiergegevens. De respondent voor nieuwe invoer wordt bij een nieuw bezoek opnieuw bewust opgegeven; opgeslagen responses behouden hun auteur.
+Ook organisatie-, locatie-, afdelings-, onderwerp-, regelgeving- en dossierreviewformulieren bewaren nu een herstelconcept. De naam bij hernoemen of aanmaken van een werkruimte wordt eveneens behouden. Een nieuw werkruimteconcept wordt pas opgeruimd nadat de nieuwe werkruimte daadwerkelijk is opgeslagen. Zoekfilters, geopende tab en navigatiekeuzes zijn geen dossiergegevens. De respondent voor nieuwe invoer wordt bij een nieuw bezoek opnieuw bewust opgegeven; opgeslagen responses behouden hun auteur.
+
+De volledige onderbouwing van een actierevisie blijft als concept behouden: actor, redenering, controledatum, verificateur, effectresultaat, gekozen bewijs en volgende stap. Een gewijzigde geselecteerde bewijsbasis verlangt expliciete herbevestiging. Een open formulier neemt geen concept mee naar een andere werkruimte met dezelfde actie-ID.
+
+Intervalvelden voor W/B/E-reductie, initiatorfrequentie, IPL-PFD en conditionele kans bewaren de exacte getalinvoer, ook een leeg veld, onvolledige exponent of omgekeerd interval. Het LOPA-criterium bewaart eveneens zijn invoer. Ongeldige getalinvoer wordt niet toegepast en blokkeert het vastleggen; de grafiek blijft de laatst geldige waarden tonen. **Toepassen op W/B/E** vervangt bewust alleen het gekozen factorconcept en laat de andere factorconcepten behouden. Corrigeer de gemarkeerde velden voordat je opslaat.
 
 ## Twee tabbladen en eerdere versies
 

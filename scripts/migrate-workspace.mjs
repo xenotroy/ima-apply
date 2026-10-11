@@ -221,11 +221,263 @@ async function selectedMarkdownFiles(root) {
   return files;
 }
 
+/** Only the original, immediate action archive structure is allowed through hidden-directory filtering. */
+async function selectedActionArchives(root, ordinaryCount, knownStems) {
+  const folders = [];
+  const directory = async filename => {
+    let stat;
+    try { stat = await fs.lstat(filename); } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('Actiearchiefselectie vereist een echte map, geen symlink.');
+    return true;
+  };
+  const history = path.join(root, '.history');
+  if (!await directory(history)) return folders;
+  const actions = path.join(history, 'actions');
+  if (!await directory(actions)) return folders;
+  let selectedCount = ordinaryCount;
+  for (const entry of (await fs.readdir(actions, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name.startsWith('.') && !knownStems.has(entry.name)) continue;
+    if (entry.isSymbolicLink()) throw new Error('Actiearchiefselectie bevat een symlink.');
+    if (!entry.isDirectory()) continue;
+    const folder = path.join(actions, entry.name);
+    await directory(folder);
+    const files = [];
+    for (const file of (await fs.readdir(folder, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      // Preserve malformed/case-variant revision filenames too, but never recurse into an archive.
+      if (!/^revision-.*\.md$/i.test(file.name)) continue;
+      if (file.isSymbolicLink()) throw new Error('Actierevisie bevat een symlink.');
+      if (!file.isFile()) continue;
+      files.push(path.join(folder, file.name));
+      if (++selectedCount > maxFiles) throw new Error('Meer dan 1.000 Markdown-records inclusief actiearchieven; splits de bronselectie.');
+    }
+    folders.push({ stem: entry.name, relativeDirectory: path.relative(root, folder).split(path.sep).join('/'), files });
+    if (folders.length > maxFiles) throw new Error('Meer dan 1.000 actiearchiefmappen; splits de bronselectie.');
+  }
+  return folders;
+}
+
+function actionScalarLexeme(sourceText, key) {
+  const frontmatter = sourceText?.replace(/^\uFEFF/, '').replaceAll('\r\n', '\n').match(/^---\n([\s\S]*?)\n---(?:\n|$)/)?.[1];
+  return frontmatter?.match(new RegExp('^' + key + ':[ \\t]*(.*)$', 'mi'))?.[1].trim() ?? null;
+}
+
+function sourceActionScalar(metadata, key, sourceText) {
+  const lexeme = actionScalarLexeme(sourceText, key);
+  const parsed = metadata[key];
+  // MarkdownDocument.String reads the original YAML scalar text; numeric/boolean
+  // JavaScript coercions must not erase it. Its IsNull also applies to quoted null/~.
+  if (parsed === undefined || parsed === null || typeof parsed === 'string' && /^(?:null|~)$/i.test(parsed))
+    return { lexeme, value: '', confirmed: true };
+  if (typeof parsed === 'string') return { lexeme, value: parsed.trim(), confirmed: true };
+  if ((typeof parsed === 'number' || typeof parsed === 'boolean') && lexeme !== null)
+    return { lexeme, value: lexeme, confirmed: true };
+  return { lexeme, value: null, confirmed: false };
+}
+
+function sourceActionRevision(metadata, sourceText) {
+  const scalar = sourceActionScalar(metadata, 'revision', sourceText);
+  if (!scalar.confirmed) return null;
+  if (metadata.schema === 'ima.action/v1' && !scalar.value) return 1; // Actual .NET parser default, not a fabricated event.
+  if (!/^[+-]?\d+$/.test(scalar.value)) return null;
+  const value = Number(scalar.value);
+  return Number.isInteger(value) && value >= 1 && value <= 1_000_000 ? value : null;
+}
+
+function sourceActionIdentityEqual(left, right) {
+  if (left === right) return true;
+  // .NET OrdinalIgnoreCase is not JS Unicode lowercasing. Confirm the shared ASCII
+  // subset only; a different non-ASCII spelling requires original-runtime review.
+  return /^[\x00-\x7f]*$/.test(left + right) ? left.toLowerCase() === right.toLowerCase() : null;
+}
+
+function sourceActionStems(id) {
+  // FileStem is OS-dependent in the original .NET code. Preserve both observed platform rules.
+  const stem = windows => [...id].map(character => character === ':' ? '--'
+    : /[\u0000-\u001f\u007f-\u009f/]/.test(character) || windows && /[<>"\\|?*]/.test(character) ? '-' : character).join('');
+  return [...new Set([stem(false), stem(true)])].map(value => value + '--' + hash(id).slice(0, 16));
+}
+
+function archiveText(bytes) {
+  // File.ReadAllText detects these BOMs before hashing its decoded exact string as UTF-8.
+  if (bytes.subarray(0, 4).equals(Buffer.from([0xff, 0xfe, 0, 0])) || bytes.subarray(0, 4).equals(Buffer.from([0, 0, 0xfe, 0xff])))
+    return { text: null, encoding: 'unconfirmed-utf32' };
+  const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le'
+    : bytes[0] === 0xfe && bytes[1] === 0xff ? 'utf-16be' : 'utf-8';
+  try { return { text: new TextDecoder(encoding, { fatal: true }).decode(bytes), encoding }; }
+  catch { return { text: null, encoding: 'unconfirmed' }; }
+}
+
+async function preserveLegacyActionHistories(context, root, folders, records) {
+  const actionSchemas = ['ima.action/v1', 'ima.action/v2'];
+  const currents = records.filter(record => actionSchemas.includes(record.metadata.schema));
+  const groups = new Map();
+  for (const current of currents) {
+    const previous = sourceActionScalar(current.metadata, 'previous_revision_sha256', current.sourceText);
+    if (sourceActionRevision(current.metadata, current.sourceText) > 1 || previous.value || !previous.confirmed) {
+      groups.set(current.sourceId, { current, folders: [], ambiguous: false });
+    }
+  }
+  for (const folder of folders) {
+    const matches = currents.filter(current => string(current.metadata.id).trim() && sourceActionStems(string(current.metadata.id).trim()).includes(folder.stem));
+    const key = matches.length === 1 ? matches[0].sourceId : 'directory:' + folder.relativeDirectory;
+    if (!groups.has(key)) groups.set(key, { current: matches.length === 1 ? matches[0] : null, folders: [], ambiguous: matches.length > 1 });
+    groups.get(key).folders.push(folder);
+  }
+  for (const [key, group] of groups) {
+    const archives = [];
+    const issues = [];
+    let unconfirmed = false;
+    const current = group.current;
+    const currentSource = current && context.workspace.sources.find(source => source.id === current.sourceId);
+    const manifestId = stableId('action-history', key);
+    const reportSourceId = current?.sourceId || manifestId;
+    const issue = (code, sourceId, message) => {
+      issues.push({ code, sourceId, message });
+      warning(context, code, sourceId, message);
+    };
+    if (!current) {
+      unconfirmed = true;
+      issue(group.ambiguous ? 'legacy_action_history_current_ambiguous' : 'legacy_action_history_current_missing', reportSourceId,
+        'Archiefmap heeft geen unieke actuele actie volgens de oorspronkelijke InternalActionStem-regel; geen actuele actie gegokt.');
+    }
+    if (group.folders.length > 1) issue('legacy_action_history_directory_ambiguous', reportSourceId, 'Meer dan één archiefmap past bij dezelfde actuele actie; alle bestanden blijven afzonderlijk bewaard.');
+    for (const folder of group.folders) for (const filename of folder.files) {
+      const stat = await fs.lstat(filename);
+      if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('Actierevisie is geen gewoon bestand of bevat een symlink.');
+      if (stat.size > maxSourceBytes) throw new Error('Actierevisiebron te groot.');
+      const bytes = await fs.readFile(filename);
+      const relativePath = path.relative(root, filename).split(path.sep).join('/');
+      const sourceId = stableId('md-action-archive', relativePath);
+      const decoded = archiveText(bytes);
+      let parsed;
+      if (decoded.text !== null) { try { parsed = parseLegacyMarkdown(decoded.text); } catch { /* Unsupported source syntax remains exact raw. */ } }
+      const m = parsed?.metadata;
+      const filenameMatch = path.basename(filename).match(/^revision-(\d+)\.md$/);
+      const fileNumber = filenameMatch ? Number(filenameMatch[1]) : null;
+      const fileRevision = Number.isInteger(fileNumber) && fileNumber >= 1 && fileNumber <= 2_147_483_647 ? fileNumber : null;
+      rawSource(context, { sourceId, title: string(m?.title) || path.basename(filename), format: 'legacy-action-revision/v1',
+        raw: { relativePath, bytesBase64: bytes.toString('base64'), byteLength: bytes.length, encoding: decoded.encoding,
+          ...(decoded.text !== null ? { text: decoded.text } : {}), ...(m ? { metadata: m } : {}),
+          ...(parsed ? { legacyNormalizedSha256: parsed.legacySha256 } : {}) },
+        contentSha256: hash(bytes), originalId: string(m?.id), originalSchema: string(m?.schema) });
+      const previous = m && sourceActionScalar(m, 'previous_revision_sha256', decoded.text);
+      const archive = { sourceId, relativePath, fileRevision, parsedRevision: m?.revision ?? null,
+        revisionLexeme: actionScalarLexeme(decoded.text, 'revision'),
+        revision: m && actionSchemas.includes(m.schema) ? sourceActionRevision(m, decoded.text) : null,
+        originalId: string(m?.id) || null, originalSchema: string(m?.schema) || null, byteLength: bytes.length,
+        bytesSha256: hash(bytes), exactTextSha256: decoded.text !== null ? hash(decoded.text) : null,
+        normalizedDocumentSha256: parsed?.legacySha256 ?? null, encoding: decoded.encoding,
+        parsedPreviousRevisionSha256: m?.previous_revision_sha256 ?? null,
+        previousRevisionSha256Lexeme: previous?.lexeme ?? null,
+        previousRevisionSha256: previous?.value ?? null,
+        parserStatus: parsed ? 'supported-subset' : 'unconfirmed' };
+      archives.push(archive);
+      if (fileRevision === null) issue('legacy_action_history_filename_invalid', sourceId, 'Archiefnaam heeft geen oorspronkelijke positieve revision-<nummer>.md; volledige bytes blijven behouden.');
+      if (!parsed) {
+        unconfirmed = true;
+        issue(decoded.text === null ? 'legacy_action_history_encoding_unconfirmed' : 'legacy_action_history_parser_unconfirmed', sourceId,
+          'De broncodering of YAML/sectiedialect is niet volledig bevestigd; bytes behouden en geen hashketen-validiteit gegokt.');
+        continue;
+      }
+      if (!actionSchemas.includes(m.schema) || !string(m.id).trim() || archive.revision === null) {
+        unconfirmed = true;
+        issue('legacy_action_history_record_unconfirmed', sourceId, 'Archief mist bruikbaar oorspronkelijk actieschema, ID of revisie; metadata en bytes blijven behouden.');
+      }
+      if (previous && !previous.confirmed) {
+        unconfirmed = true;
+        issue('legacy_action_history_predecessor_scalar_unconfirmed', sourceId, 'Oorspronkelijke voorgangerhash is geen bevestigde YAML-scalar; geen lege voorganger gegokt.');
+      }
+      if (current) {
+        const sameId = sourceActionIdentityEqual(string(m.id).trim(), string(current.metadata.id).trim());
+        if (sameId === false) issue('legacy_action_history_id_mismatch', sourceId, 'Gearchiveerde actie-ID past niet bij de actuele actie van deze oorspronkelijke archiefmap.');
+        else if (sameId === null) {
+          unconfirmed = true;
+          issue('legacy_action_history_id_comparison_unconfirmed', sourceId, 'Verschillende niet-ASCII-ID’s vereisen .NET OrdinalIgnoreCase-broncontrole; geen overeenkomst of mismatch gegokt.');
+        }
+      }
+      if (fileRevision !== null && archive.revision !== null && archive.revision !== fileRevision)
+        issue('legacy_action_history_revision_mismatch', sourceId, 'De gedeclareerde archiefrevisie wijkt af van de revisie in de bestandsnaam.');
+    }
+    archives.sort((a, b) => (a.fileRevision ?? Number.MAX_SAFE_INTEGER) - (b.fileRevision ?? Number.MAX_SAFE_INTEGER) || a.relativePath.localeCompare(b.relativePath));
+    const byRevision = new Map();
+    for (const archive of archives.filter(entry => entry.fileRevision !== null)) {
+      if (!byRevision.has(archive.fileRevision)) byRevision.set(archive.fileRevision, []);
+      byRevision.get(archive.fileRevision).push(archive);
+    }
+    for (const [revision, entries] of byRevision) if (entries.length > 1)
+      issue('legacy_action_history_duplicate_revision', reportSourceId, 'Meer dan één archiefbestand declareert bestandsrevisie ' + revision + '; geen willekeurige voorganger gekozen.');
+    const currentRevision = current ? sourceActionRevision(current.metadata, current.sourceText) : null;
+    const currentPrevious = current && sourceActionScalar(current.metadata, 'previous_revision_sha256', current.sourceText);
+    if (currentPrevious && !currentPrevious.confirmed) {
+      unconfirmed = true;
+      issue('legacy_action_history_predecessor_scalar_unconfirmed', current.sourceId, 'Actuele oorspronkelijke voorgangerhash is geen bevestigde YAML-scalar; geen lege voorganger gegokt.');
+    }
+    if (current && currentRevision === null) {
+      unconfirmed = true;
+      issue('legacy_action_history_current_unconfirmed', current.sourceId, 'Actuele oorspronkelijke revisie is onbekend of buiten de ondersteunde brongrens.');
+    }
+    const missingRanges = [];
+    if (currentRevision !== null) {
+      let expected = 1;
+      for (const revision of [...byRevision.keys()].filter(value => value < currentRevision).sort((a, b) => a - b)) {
+        if (revision > expected) missingRanges.push({ from: expected, through: revision - 1 });
+        expected = revision + 1;
+      }
+      if (expected < currentRevision) missingRanges.push({ from: expected, through: currentRevision - 1 });
+      for (const range of missingRanges) issue('legacy_action_history_missing_revision', current.sourceId,
+        'Oorspronkelijke archiefrevisie(s) ontbreken: ' + range.from + ' t/m ' + range.through + '. Geen voorganger gereconstrueerd.');
+      for (const [revision] of byRevision) if (revision > currentRevision)
+        issue('legacy_action_history_future_revision', current.sourceId, 'Archiefrevisie ' + revision + ' ligt vóór op actuele revisie ' + currentRevision + '; mogelijke rollback of fork.');
+    }
+    const checkHash = (entry, revision) => {
+      if (!entry || revision === null) return;
+      const declared = entry.previousRevisionSha256?.trim() ?? '';
+      if (revision === 1) {
+        if (declared) issue('legacy_action_history_initial_hash_invalid', entry.sourceId, 'Eerste oorspronkelijke revisie verwijst onverwacht naar een voorganger.');
+        return;
+      }
+      const predecessors = byRevision.get(revision - 1) ?? [];
+      if (predecessors.length !== 1 || predecessors[0].exactTextSha256 === null || !declared) {
+        unconfirmed = true;
+        issue('legacy_action_history_predecessor_unconfirmed', entry.sourceId, 'Geen unieke exact gedecodeerde voorgangerhash beschikbaar voor revisie ' + revision + '.');
+      } else if (declared.toLowerCase() !== predecessors[0].exactTextSha256)
+        issue('legacy_action_history_hash_mismatch', entry.sourceId, 'Oorspronkelijke previous_revision_sha256 wijkt af van de exacte teksthash van revisie ' + (revision - 1) + '.');
+    };
+    for (const archive of archives) if (archive.parserStatus === 'supported-subset' && archive.originalSchema && actionSchemas.includes(archive.originalSchema))
+      checkHash(archive, archive.fileRevision);
+    const currentEntry = current ? { sourceId: current.sourceId, originalId: current.metadata.id, originalSchema: current.metadata.schema,
+      parsedRevision: current.metadata.revision ?? null, revisionLexeme: actionScalarLexeme(current.sourceText, 'revision'), revision: currentRevision,
+      relativePath: currentSource.raw.relativePath, bytesSha256: currentSource.contentSha256,
+      exactTextSha256: hash(currentSource.raw.text), normalizedDocumentSha256: current.legacySha256,
+      parsedPreviousRevisionSha256: current.metadata.previous_revision_sha256 ?? null,
+      previousRevisionSha256Lexeme: currentPrevious.lexeme, previousRevisionSha256: currentPrevious.value,
+      browserActionId: context.workspace.actions.some(action => action.id === current.targetId) ? current.targetId : null } : null;
+    checkHash(currentEntry, currentRevision);
+    if (currentEntry && byRevision.has(currentRevision)) for (const prepared of byRevision.get(currentRevision)) {
+      if (prepared.exactTextSha256 !== currentEntry.exactTextSha256)
+        issue('legacy_action_history_prepared_revision_changed', prepared.sourceId, 'Archiefbestand voor de actuele revisie wijkt af van de actuele bron; mogelijke rollback of fork.');
+    }
+    const manifest = { schema: 'ima.legacy-action-history/v1', current: currentEntry,
+      relativeDirectories: group.folders.map(folder => folder.relativeDirectory).sort(),
+      expectedDirectoryStems: current ? sourceActionStems(string(current.metadata.id).trim()) : [],
+      archives, missingRanges, issues, hashChainStatus: issues.length ? 'issues' : unconfirmed ? 'unconfirmed' : 'consistent',
+      validationScope: 'source-identity (exact equality or ASCII OrdinalIgnoreCase subset), original revision/previous-hash scalars, revision-files and SHA-256 of exact decoded text; not full .NET parser/lifecycle validation or authenticated authorship',
+      hashAlgorithm: 'SHA-256(UTF-8(File.ReadAllText source string)); CRLF is retained; a BOM is decoded, not included as a character',
+      interpretation: 'Original source consistency only; no new browser events, actor, time or effectiveness approval.' };
+    context.workspace.contentRecords ??= [];
+    context.workspace.contentRecords.push({ id: manifestId, sourceIds: [current?.sourceId, ...archives.map(archive => archive.sourceId)].filter(Boolean), format: manifest.schema,
+      publication: 'private', manifest, manifestSha256: hash(canonicalMigrationReportJson(manifest)) });
+    warning(context, 'legacy_action_history_requires_review', reportSourceId,
+      'Oorspronkelijke actiearchieven en inspectiemanifest ' + manifestId + ' behouden (' + archives.length + ' bestanden; keten ' + manifest.hashChainStatus + '). Bronconsistentie is geen nieuwe lifecycle- of effectgoedkeuring.');
+  }
+}
+
 export async function migrateMarkdown(root, options = {}) {
   root = path.resolve(root);
   const context = await contextFor(options.name || 'Gemigreerde IMA-werkruimte', options.now);
   const records = [];
-  for (const filename of await selectedMarkdownFiles(root)) {
+  const selected = await selectedMarkdownFiles(root);
+  for (const filename of selected) {
     const stat = await fs.stat(filename);
     if (stat.size > maxSourceBytes) throw new Error('Markdown-bron te groot.');
     const bytes = await fs.readFile(filename);
@@ -240,8 +492,11 @@ export async function migrateMarkdown(root, options = {}) {
     }
     const m = parsed.metadata;
     rawSource(context, { sourceId, title: string(m.title) || path.basename(filename), format: 'legacy-markdown', raw: { relativePath: relative, text: rawText, metadata: m, legacyNormalizedSha256: parsed.legacySha256 }, contentSha256: hash(bytes), originalId: string(m.id), originalSchema: string(m.schema) });
-    records.push({ ...parsed, sourceId, targetId: stableId('md', `${m.schema}|${m.id}|${relative}`) });
+    records.push({ ...parsed, sourceText: rawText, sourceId, targetId: stableId('md', `${m.schema}|${m.id}|${relative}`) });
   }
+  const knownArchiveStems = new Set(records.filter(record => ['ima.action/v1', 'ima.action/v2'].includes(record.metadata.schema))
+    .flatMap(record => string(record.metadata.id).trim() ? sourceActionStems(string(record.metadata.id).trim()) : []));
+  const archiveFolders = await selectedActionArchives(root, selected.length, knownArchiveStems);
   const { workspace } = context;
   const bySchema = schema => records.filter(record => record.metadata.schema === schema);
   const unique = (schema, id) => { const candidates = bySchema(schema).filter(record => string(record.metadata.id).toLowerCase() === string(id).toLowerCase()); return id && candidates.length === 1 ? candidates[0] : null; };
@@ -574,6 +829,7 @@ export async function migrateMarkdown(root, options = {}) {
       warning(context, 'unsupported_record_raw_only', record.sourceId, 'Dit legacy schema is uitsluitend als compleet raw record overgedragen; geen typed functiepariteit geclaimd.');
     }
   }
+  await preserveLegacyActionHistories(context, root, archiveFolders, records);
   return finish(context);
 }
 
@@ -872,6 +1128,7 @@ function finish(context) {
   // Count this summary source too; never put a self-referential workspace digest inside it.
   context.workspace.sources.push(review);
   context.report.counts = Object.fromEntries(['scenarios', 'questions', 'answers', 'actions', 'incidents', 'sources', 'organisations', 'sites', 'departments', 'dossiers', 'evidence', 'observations', 'findings', 'topics', 'legalRecords', 'investigations', 'exposure', 'projectContexts', 'walkthroughs', 'basisRiskFactorRecords', 'modulePlans', 'riskLibraries', 'riskLibraryReviews', 'riskLibraryLayouts'].map(key => [key, context.workspace[key]?.length ?? 0]));
+  if (context.workspace.contentRecords?.length) context.report.counts.contentRecords = context.workspace.contentRecords.length;
   review.raw = JSON.parse(canonicalMigrationReportJson(context.report));
   review.contentSha256 = hash(canonicalMigrationReportJson(review.raw));
   const serialized = context.api.exportWorkspace(context.workspace);

@@ -136,22 +136,22 @@ export const sources: SourceRecord[] = [
     kind: 'reference',
     status: 'partial_read',
     readScope:
-      'Bronnotitie en PDF-pagina’s 1–8 van 20: bronlagen, toepassingsgebied, AHS, RI&E/PvA, voorlichting en toezicht. Pagina’s 1, 3–6 en 8 aanvullend gelezen op 10 oktober 2026.',
+      'Bronnotitie en cumulatief PDF-pagina’s 1–16 van 20; nieuw gelezen op 11 oktober 2026: 9–16 over preventieorganisatie, deskundige bijstand, BHV en arbeidsgezondheidskundig onderzoek. Pagina 16 eindigt binnen een paragraaf.',
     publication: 'metadata_only',
     notes:
-      'Webprint van 8 augustus 2026; bronnotitie vermeldt bijgewerkt tot 26 januari 2026. De tekst bevat ook voorstellen en voornemens, die geen vastgesteld geldend recht zijn. Geen juridische actualiteitscontrole of gelicentieerde tekst meegeleverd.',
+      'Webprint van 8 augustus 2026; bronnotitie vermeldt bijgewerkt tot 26 januari 2026. Bronhash en paginabinding gecontroleerd. Voorstellen, historische grenzen en bronclaims zijn geen actuele automatische wetstoets; geen volledige wettelijke actualiteitscontrole of gelicentieerde tekst meegeleverd.',
     url: 'https://www.praktijkgidsarbeidsveiligheid.nl/publicaties/praktijkgids-arbeidsveiligheid/32489',
   },
   {
     id: 'PGA-32490',
     title: 'Praktijkgids Arbeidsveiligheid — Arbobesluit, regeling en beleidsregels',
     kind: 'reference',
-    status: 'partial_read',
+    status: 'read',
     readScope:
-      'Bronnotitie en PDF-pagina’s 1–3 van 6: juridische bronlagen, onderwerpscope, sectoren, risicogroepen en verantwoordelijkheden. Pagina’s 2–3 aanvullend gelezen op 10 oktober 2026.',
+      'Bronnotitie en alle zes pagina’s van de beschikbare PDF-webprint cumulatief gelezen; nieuw gelezen op 11 oktober 2026: 4–6 over uitvoeringsregels, beleid, catalogi en deskundigheid.',
     publication: 'metadata_only',
     notes:
-      'Webprint van 8 augustus 2026; bronnotitie vermeldt bijgewerkt tot 26 januari 2026. Bronstatus en toepasselijkheid vragen afzonderlijke verificatie; aangekondigde wijzigingen zijn geen bewezen actuele verplichting. Geen gelicentieerde tekst meegeleverd.',
+      'Leesstatus read betreft alleen de beschikbare webprint van 8 augustus 2026, geen volledige publicatie of actuele wetsconsolidatie. Bronnotitie vermeldt bijgewerkt tot 26 januari 2026. Wet, uitvoeringsregel, beleid, catalogus en interne afspraak blijven afzonderlijk; geen gelicentieerde tekst meegeleverd.',
     url: 'https://www.praktijkgidsarbeidsveiligheid.nl/publicaties/praktijkgids-arbeidsveiligheid/32490',
   },
   {
@@ -160,10 +160,10 @@ export const sources: SourceRecord[] = [
     kind: 'reference',
     status: 'partial_read',
     readScope:
-      'Referentienotitie en toegeschreven tekstkopie: PDF-pagina’s 2–4 (inhoudsopgave), 11–13, 20–21, 25–27 en 34–39. Aanvullende lezing op 10 oktober 2026 omvat procesveiligheids-KPI’s, onderzoekdiepte, expertise, bewijsbeheer, tijdlijn en BRF-trends.',
+      'Referentienotitie en toegeschreven tekstkopie: cumulatief PDF-pagina’s 2–4 (inhoudsopgave), 11–13, 20–21, 25–27 en 34–58. Nieuw gelezen op 11 oktober 2026: 40–58, gedrukte pagina’s 36–54, over fysiek bewijs, interviews, taakgedrag, barrières en effectevaluatie.',
     publication: 'metadata_only',
     notes:
-      'Selectie van 17 van 92 PDF-pagina’s, waarvan drie inhoudsopgavepagina’s; geen volledige lezing. De kopie vermeldt 18 januari 2024 en bevat meldingen over ontbrekende afbeeldingen. Uitgeversbinair en volledige figuurlayout zijn niet geverifieerd; ontbrekende grenzen of figuren zijn niet gereconstrueerd. Eigen vragen, geen oorspronkelijke tekst meegeleverd.',
+      '36 van 92 PDF-pagina’s gelezen: drie inhoudsopgave- en 33 inhoudspagina’s; geen volledige hoofdstuk- of publicatielezing. Kopie vermeldt 18 januari 2024. Figuur 13 op PDF-pagina 52 en figuur 15 op 57 ontbreken, visueel bevestigd. Uitgeversbinair niet geverifieerd. Geen vaste geheugenpercentages, schuldclassificatie, CE-garantie of risicoreductie uit bronclaims afgeleid. Geen oorspronkelijke tekst meegeleverd.',
   },
   {
     id: 'SDU-AI82',
@@ -185,7 +185,7 @@ export const sources: SourceRecord[] = [
       'Verwijzing in de arbobeleidsmodule plus oorspronkelijke PDF-route in de lokale HVK-bronstructuur aangetroffen.',
     publication: 'metadata_only',
     notes:
-      'PDF is een cloudplaceholder met 0 lokaal toegewezen blokken. Inhoud niet gelezen of als inhoud opgenomen; editie/actualiteit niet vastgesteld.',
+      'Eerdere oorspronkelijke route was een cloudplaceholder met 0 toegewezen blokken. Op 11 oktober geen leesbaar origineel gevonden in de gericht gecontroleerde actieve VaultTek-routes; externe operationele route niet opnieuw benaderd. Inhoud, editie en actualiteit niet vastgesteld.',
   },
   {
     id: 'SDU-AI61',
@@ -196,7 +196,7 @@ export const sources: SourceRecord[] = [
       'Verwijzing in de arbobeleidsmodule plus oorspronkelijke PDF-route in de lokale HVK-bronstructuur aangetroffen.',
     publication: 'metadata_only',
     notes:
-      'PDF is een cloudplaceholder met 0 lokaal toegewezen blokken. Inhoud niet gelezen of als inhoud opgenomen; editie/actualiteit niet vastgesteld.',
+      'Eerdere oorspronkelijke route was een cloudplaceholder met 0 toegewezen blokken. Op 11 oktober geen leesbaar origineel gevonden in de gericht gecontroleerde actieve VaultTek-routes; externe operationele route niet opnieuw benaderd. Inhoud, editie en actualiteit niet vastgesteld.',
   },
   {
     id: 'EDU-HVK',
@@ -228,7 +228,7 @@ export const sources: SourceRecord[] = [
       'Vindnotities plus 138 gericht geselecteerde oorspronkelijke lesbestanden en zes HVK/MVK-curriculum- of handleidingvermeldingen op beschikbaarheid gecontroleerd.',
     publication: 'private',
     notes:
-      'Alle geselecteerde bestanden hebben 0 lokaal toegewezen blokken. Het lezen van Riskmanagement 2 (2025-06) gaf een timeout. Ook RI&E (2025-04) en gerichte PDF-alternatieven waren placeholders. Geen oorspronkelijke deck- of curriculumtekst geïmporteerd.',
+      'Eerdere selectie had 0 lokaal toegewezen blokken; begrensde decklezing gaf een timeout. Op 11 oktober ontbreken de geselecteerde actieve bron-/extractiemappen nog. Beschikbare registers bevatten secundaire verwerkingsclaims, geen opnieuw gelezen originelen. Externe operationele bestanden niet herbenaderd; geen oorspronkelijke deck- of curriculumtekst geïmporteerd.',
   },
   {
     id: 'LMS-MOODLE',
@@ -239,7 +239,7 @@ export const sources: SourceRecord[] = [
       'Modulecontext en bronwerkwijze plus drie oorspronkelijke conceptteksten voor lesdagen: gevaarlijke stoffen; Seveso/Bal/ARIE; BHV, noodplan en gebouwveiligheid.',
     publication: 'metadata_only',
     notes:
-      'Drie lesontwikkelingsteksten zijn privé behouden als bronrecords, zonder daaruit toetsvragen te verzinnen. Geen actuele Moodle-CSV, MBZ/XML-back-up, deelnemers- of voortgangsexport aangetroffen in de succesvol onderzochte routes; één operationele OneDrive-route bleef ontoegankelijk.',
+      'Drie lesontwikkelingsteksten zijn privé behouden, zonder daaruit toetsvragen te verzinnen. Gerichte actieve routecontrole op 11 oktober vond alleen project-/mailcontext, geen daadwerkelijke export of live cursusdata. Geen actuele CSV, MBZ/XML, deelnemers- of voortgangsexport gelezen. Geen volledige opslag- of LMS-afwezigheidsclaim; externe operationele route niet opnieuw benaderd.',
   },
   {
     id: 'VAULT-BOWTIE',
@@ -263,7 +263,107 @@ export const sources: SourceRecord[] = [
       'Bronaanpak, collectieve techniek, individuele organisatie en PBM. De app kent hieraan geen automatisch gemeten risicoreductiepercentage toe.',
     url: 'https://www.arboportaal.nl/onderwerpen/persoonlijke-beschermingsmiddelen/persoonlijke-beschermingsmiddelen-als-hulpmiddel-voor-gezond-en-veilig-werken',
   },
+  {
+    id: 'ARBO-PREVENTIE',
+    title: 'Arboportaal — preventiemedewerker',
+    kind: 'web',
+    status: 'read',
+    readScope:
+      'Webtoelichting over kennis, beschikbare tijd, preventietaken en samenwerking; gelezen 11 oktober 2026.',
+    publication: 'public',
+    notes:
+      'Primaire toelichting voor taakgerichte onderzoeksvragen. Exacte uitzonderingen en volledige wetsconsolidatie niet als automatische toets geïmplementeerd.',
+    url: 'https://www.arboportaal.nl/onderwerpen/ondersteuning-bij-arbowet/preventiemedewerker/wat-zegt-de-wet-over-de-preventiemedewerker',
+  },
+  {
+    id: 'ARBO-BHV',
+    title: 'Arboportaal — bedrijfshulpverlening',
+    kind: 'web',
+    status: 'partial_read',
+    readScope:
+      'Webtoelichting over lokale risico’s, personeel, opleiding en uitrusting; gelezen 11 oktober 2026. Andere gebouwregels buiten deze selectie.',
+    publication: 'public',
+    notes:
+      'Onderzoek scenario en beschikbaarheid; geen vaste personeelsratio, opleidingscredit of algemeen bewezen restrisico afgeleid.',
+    url: 'https://www.arboportaal.nl/onderwerpen/arbozorg/bedrijfshulpverlening/wat-zegt-de-wet-over-bedrijfshulpverlening',
+  },
+  {
+    id: 'NLA-BHV-2025',
+    title: 'Nederlandse Arbeidsinspectie — Werkinstructie Bedrijfshulpverlening',
+    kind: 'web',
+    status: 'partial_read',
+    readScope:
+      'PDF-pagina’s 2–5 van 17: metadata, inhoudsopgave, introductie, RI&E en maatgevende factoren; gelezen 11 oktober 2026. Geen volledige PDF-lezing.',
+    publication: 'public',
+    notes:
+      'Inspectierichtlijn: akkoord 9 april 2025, vermelde laatste wijziging 27 februari 2025. Scenario’s, zelfredzaamheid en continuïteit ondersteunen eigen bewijscriteria; geen geconsolideerde wet of automatische beoordeling.',
+    url: 'https://www.nlarbeidsinspectie.nl/site/binaries/site-content/collections/documents/2025/07/03/werkinstructie-bedrijfshulpverlening/werkinstructie-bedrijfshulpverlening-20250703.pdf',
+  },
+  {
+    id: 'ARBO-PAGO',
+    title: 'Arboportaal — PAGO',
+    kind: 'web',
+    status: 'read',
+    readScope:
+      'Webtoelichting over arbeidsrisico’s, inhoud, deskundig advies en terugkoppeling naar maatregelen; gelezen 11 oktober 2026.',
+    publication: 'public',
+    notes:
+      'Risicogerichte monitoring en maatregelwerking blijven verschillende gegevens. Tabel met bijzondere voorschriften niet omgezet naar automatische juridische drempels.',
+    url: 'https://www.arboportaal.nl/onderwerpen/arbowet--en--regelgeving/arbobeleid/pago',
+  },
+  {
+    id: 'EC-CE',
+    title: 'Europese Commissie — CE-markering',
+    kind: 'web',
+    status: 'partial_read',
+    readScope:
+      'Webtoelichting over fabrikantverklaring en grens aan autoriteitsgoedkeuring; gelezen 11 oktober 2026.',
+    publication: 'public',
+    notes:
+      'CE-markering levert geen automatische autoriteitsgoedkeuring van veiligheid en geen gemeten lokale risicoreductie op.',
+    url: 'https://single-market-economy.ec.europa.eu/single-market/goods/ce-marking_en',
+  },
+  {
+    id: 'ARBO-ARBEIDSMIDDELEN',
+    title: 'Arboportaal — keuring van arbeidsmiddelen',
+    kind: 'web',
+    status: 'read',
+    readScope:
+      'Webtoelichting over installatie, gebruik, verslechtering en vastgelegd keuringsbewijs; gelezen 11 oktober 2026.',
+    publication: 'public',
+    notes:
+      'Beoordeel toepasselijke keuring en concrete gebruikssituatie. Geen universele keuringsfrequentie of reductiepercentage geïmplementeerd.',
+    url: 'https://www.arboportaal.nl/onderwerpen/veiligheid-op-het-werk/arbeidsmiddelen/keuring-van-arbeidsmiddelen',
+  },
+  {
+    id: 'ARBO-CONFORMITEIT',
+    title: 'Arboportaal — conformiteitsbeoordeling van arbeidsmiddelen',
+    kind: 'web',
+    status: 'read',
+    readScope:
+      'Webtoelichting over conformiteitsdocumentatie, instructies en beoordeling in de gebruiksfase; gelezen 11 oktober 2026.',
+    publication: 'public',
+    notes:
+      'Productdocumentatie en lokale werking hebben verschillende scopes. Geen volledige toets aan alle productregelgeving.',
+    url: 'https://www.arboportaal.nl/onderwerpen/arbowet--en--regelgeving/conformiteitsbeoordeling/wat-is-conformiteitsbeoordeling/verplichte-conformiteitsbeoordelingen-van-producten-arbeidsmiddelen',
+  },
 ];
+
+/** New catalog snapshots use this version; historical frozen questions keep their own version. */
+export const PUBLIC_CONTENT_VERSION = '2.4.0';
+
+const questionSourceAdditions: Record<string, string[]> = {
+  'organisatie-02': ['ARBO-PAGO'],
+  'organisatie-03': ['ARBO-PREVENTIE'],
+  'organisatie-04': ['SDU-AI43'],
+  'brand-01': ['PGA-32489', 'ARBO-BHV', 'NLA-BHV-2025'],
+  'brand-03': ['PGA-32489', 'ARBO-BHV', 'NLA-BHV-2025'],
+  'brand-04': ['PGA-32489', 'ARBO-BHV', 'NLA-BHV-2025'],
+  'brand-05': ['SDU-AI43', 'NLA-BHV-2025'],
+  'klimaat-01': ['SDU-AI43'],
+  'arbeidsmiddelen-02': ['SDU-AI43', 'EC-CE', 'ARBO-CONFORMITEIT', 'ARBO-ARBEIDSMIDDELEN'],
+  'arbeidsmiddelen-04': ['SDU-AI43', 'ARBO-ARBEIDSMIDDELEN'],
+};
 
 type DraftQuestion = [
   title: string,
@@ -305,7 +405,11 @@ function theme(
         route,
         evidenceHints,
         assessmentGuidance,
-        sourceIds: ['IMA-ORIGINAL', ...sourceIds],
+        sourceIds: [
+          'IMA-ORIGINAL',
+          ...sourceIds,
+          ...(questionSourceAdditions[`${id}-${String(index + 1).padStart(2, '0')}`] ?? []),
+        ],
         suggestedHierarchy,
         roles,
       }),
@@ -339,20 +443,29 @@ export const themes: Theme[] = [
           'Taakgebonden blootstelling',
           'Geanonimiseerde werknemersinbreng',
         ],
-        'Maak onderscheid tussen betrokken groepen en individuele gezondheidsinformatie. Onderzoek verschillen in ervaring, inzetbaarheid en werkcontext.',
+        'Maak onderscheid tussen betrokken groepen en individuele gezondheidsinformatie. Onderzoek verschillen in ervaring, inzetbaarheid en werkcontext. Leg bij arbeidsgezondheidskundig onderzoek de koppeling met het blootstellingsprofiel en deskundig advies vast; een algemeen vitaliteitsprogramma toont die koppeling niet. Bewaar alleen passende geaggregeerde opvolging in het algemene dossier.',
       ],
       [
         'Bezetting en uitval',
         'Wat verandert in de veiligheid wanneer mensen, middelen of ondersteuning uitvallen?',
-        ['Roosters zonder persoonsgegevens', 'Uitvalscenario', 'Waarneming op piekmoment'],
-        'Beschrijf de faalconditie en de veilige terugval. Een gepland aantal medewerkers bewijst geen beschikbare hulp op het kritieke moment.',
+        [
+          'Roosters zonder persoonsgegevens',
+          'Uitvalscenario',
+          'Waarneming op piekmoment',
+          'Taakgerichte deskundigheid en beschikbare preventietijd',
+        ],
+        'Beschrijf de faalconditie en de veilige terugval. Een gepland aantal medewerkers bewijst geen beschikbare hulp op het kritieke moment. Toets bij preventietaken ook kennis, beschikbare tijd, uitgevoerde werkzaamheden en samenwerking; een benoeming of contract alleen bewijst geen uitvoering.',
         ['collective', 'individual'],
       ],
       [
         'Plan van aanpak',
         'Hoe wordt vastgesteld dat een afgesproken maatregel is uitgevoerd én het bedoelde scenario beheerst?',
-        ['Actieregister', 'Acceptatiecriterium', 'Effectmeting na invoering'],
-        'Scheid oplevering van werking. Leg bewijs, verantwoordelijke rol, reviewmoment en herbeoordeling vast.',
+        [
+          'Actieregister',
+          'Vooraf beschreven werkingsmechanisme en acceptatiecriterium',
+          'Effectverificatie na invoering met datum en gebruikscondities',
+        ],
+        'Scheid oplevering van werking. Leg bewijs, verantwoordelijke rol, reviewmoment en herbeoordeling vast. Controleer of een centrale afspraak lokaal is uitgevoerd en de beoogde prestatie bereikt; een afgeronde actie of uitblijven van meldingen is geen zelfstandig effectbewijs.',
       ],
       [
         'Verandering',
@@ -508,8 +621,12 @@ export const themes: Theme[] = [
       [
         'Maatgevende scenario’s',
         'Welke brand- en medische noodsituaties bepalen de benodigde hulp en ontruimingsaanpak?',
-        ['Scenarioanalyse', 'Aanwezigheidsprofiel', 'Noodplan'],
-        'Beoordeel dag, nacht, beperkte mobiliteit, contractors en afwijkende gebouwsituaties afzonderlijk.',
+        [
+          'Lokaal incidentscenario en restrisico’s',
+          'Aanwezigheids- en zelfredzaamheidsprofiel',
+          'Toegang en opkomst van passende hulp',
+        ],
+        'Beoordeel dag, nacht, beperkte mobiliteit, contractors en afwijkende gebouwsituaties afzonderlijk. Onderbouw mensen, middelen en opleiding vanuit het scenario; gebruik geen vaste personeelsratio als bewijs van voldoende hulp.',
       ],
       [
         'Preventie en scheiding',
@@ -521,21 +638,29 @@ export const themes: Theme[] = [
       [
         'Van alarm naar veilig',
         'Is de keten van ontdekken, alarmeren, reageren en veilig verlaten onder realistische omstandigheden getest?',
-        ['Oefenverslag', 'Gebruikerstest', 'Waarneming vluchtroute'],
-        'Het aanleggen van een voorziening bewijst nog geen succesvolle respons. Leg prestatie, knelpunten en opvolging vast.',
+        [
+          'Oefenverslag met scenario, omstandigheden en gemeten prestatie',
+          'Gebruikerstest',
+          'Waarneming bereikbaarheid en vluchtroute',
+        ],
+        'Het aanleggen van een voorziening bewijst nog geen succesvolle respons. Leg prestatie, acceptatiecriterium, knelpunten en opvolging vast; een geslaagde oefening onder één conditie bewijst niet iedere dienst of afwijkende situatie.',
       ],
       [
         'Beschikbare hulp',
         'Zijn de benodigde BHV-capaciteit, middelen en bevoegdheden beschikbaar wanneer het noodscenario optreedt?',
-        ['Dienstdekking', 'Materiaalcontrole', 'Oefening met afwezige sleutelrol'],
-        'Kijk naar bereikbare hulp en deskundigheid in het scenario; tel opleidingscertificaten niet als beschikbaarheidsbewijs.',
+        [
+          'Dienstdekking inclusief ziekte en verlof',
+          'Taakgerichte materiaal- en deskundigheidscontrole',
+          'Oefening met afwezige sleutelrol',
+        ],
+        'Kijk naar bereikbare hulp en deskundigheid in het scenario; tel opleidingscertificaten niet als beschikbaarheidsbewijs. Onderzoek overdracht tussen afdelingen en andere werkgevers, en laat onbekende dekking een open onderzoeksgat blijven.',
         ['collective', 'individual'],
       ],
       [
         'Escalatie en herstel',
         'Hoe wordt vastgesteld dat knelpunten uit oefeningen zijn hersteld voordat een scenario opnieuw wordt vrijgegeven?',
         ['Afwijkingenregister', 'Herhalingstest', 'Vrijgavebewijs'],
-        'Een afgesloten actie vraagt bewijs van de herstelde functie. Maak onbekende prestaties zichtbaar.',
+        'Een afgesloten actie vraagt bewijs van de herstelde functie in de relevante omstandigheden. Bewaar implementatiestatus en effectverificatie afzonderlijk; maak onbekende prestaties zichtbaar.',
         [],
         'verdieping',
       ],
@@ -551,8 +676,12 @@ export const themes: Theme[] = [
       [
         'Representatieve situatie',
         'Welke klachten of signalen hangen samen met seizoen, bezetting, taak of procescondities?',
-        ['Klachtenpatroon zonder personen', 'Gebruiksgegevens', 'Meetplan'],
-        'Een meting op één rustig moment kan de ongunstige situatie missen. Leg meetcontext en onzekerheid vast.',
+        [
+          'Klachtenpatroon zonder personen',
+          'Gebruiksgegevens met taak en periode',
+          'Meetplan met meettijd en representativiteit',
+        ],
+        'Een meting op één rustig moment kan de ongunstige situatie missen. Leg meetcontext en onzekerheid vast. Een latere meting bewijst niet rechtstreeks de omstandigheden tijdens een eerdere gebeurtenis; onderbouw overeenkomsten en verschillen.',
       ],
       [
         'Bron en verspreiding',
@@ -747,8 +876,12 @@ export const themes: Theme[] = [
       [
         'Ontwerp en afscherming',
         'Welke wijziging in ontwerp of collectieve beveiliging voorkomt toegang tot het gevaar?',
-        ['Risicobeoordeling machine', 'Beveiligingsontwerp', 'Functionele verificatie'],
-        'Een handleiding of CE-markering alleen bewijst geen veilige feitelijke toepassing. Beoordeel de configuratie en taak.',
+        [
+          'Risicobeoordeling machine en gebruiksgrenzen',
+          'Conformiteitsdocumentatie en actuele configuratie',
+          'Functionele verificatie van de beveiliging',
+        ],
+        'Een handleiding of CE-markering alleen bewijst geen veilige feitelijke toepassing. CE is geen autoriteitsgoedkeuring van veiligheid en geen gemeten reductie. Beoordeel installatie, wijzigingen, toestand, taak en beveiligingsfunctie in de concrete gebruikssituatie.',
         ['eliminate', 'source', 'collective'],
       ],
       [
@@ -760,8 +893,12 @@ export const themes: Theme[] = [
       [
         'Effect van onderhoud',
         'Welke controles tonen dat veiligheidsfuncties na onderhoud nog hun functie vervullen?',
-        ['Beproevingsverslag', 'Vrijgave', 'Preventief onderhoudsplan'],
-        'Leg de geteste functie en testcondities vast. Een afgeronde onderhoudsbon bewijst niet iedere veiligheidsfunctie.',
+        [
+          'Beproevingsverslag met functie, grenzen en resultaat',
+          'Vrijgave en resterende beperkingen',
+          'Preventief onderhoudsplan',
+        ],
+        'Leg de geteste functie en testcondities vast. Een afgeronde onderhoudsbon bewijst niet iedere veiligheidsfunctie. Een defect of beschadigd onderdeel is niet zonder onderzoek de initiërende oorzaak; onderzoek ook incidentschade en schakel passende expertise in.',
         [],
         'verdieping',
       ],
@@ -857,14 +994,14 @@ export const themes: Theme[] = [
         'Preventie en mitigatie',
         'Welke maatregel voorkomt de gebeurtenis en welke beperkt pas het gevolg nadat beheersing verloren is?',
         ['Bowtie', 'Barrièreregister', 'Functiebeschrijving'],
-        'Ken elke barrière een duidelijke functie toe. Hetzelfde effect mag niet op meerdere plaatsen opnieuw als reductie worden geteld.',
+        'Ken elke barrière een duidelijke functie en gebruiksgrens toe. Onderzoek welke voorspelbare fout of storing wordt opgevangen en hoe dat is geverifieerd. Hetzelfde effect mag niet op meerdere plaatsen opnieuw als reductie worden geteld.',
         ['source', 'collective'],
       ],
       [
         'Onafhankelijke laag',
         'Is een opgevoerde beschermingslaag specifiek, effectief, onafhankelijk en aantoonbaar onderhouden voor dit scenario?',
         ['Onafhankelijkheidsanalyse', 'Testgegevens', 'Onderhoud en faaldata'],
-        'Een alarm en menselijke reactie vormen doorgaans één functionele keten. Afhankelijkheid en gemeenschappelijke voeding kunnen vermenigvuldigen van faalkansen ongeldig maken.',
+        'Een alarm en menselijke reactie vormen doorgaans één functionele keten. Afhankelijkheid en gemeenschappelijke voeding kunnen vermenigvuldigen van faalkansen ongeldig maken. Een kwalitatieve aanbeveling voor een onafhankelijke beveiliging is nog geen gevalideerde IPL of PFD.',
         [],
         'verdieping',
       ],
@@ -909,8 +1046,12 @@ export const themes: Theme[] = [
       [
         'Bewijs van werking',
         'Welk bewijs ondersteunt de gekozen reductie en welke gebruiksomstandigheden begrenzen die werking?',
-        ['Representatieve test', 'Voor- en nameting', 'Taakobservatie en controle op toepassing'],
-        'Scheid verwacht effect, bewezen functie en werkelijk gebruik. Controleer passendheid voor taak en betrokken mensen, beschikbare instructie en toezicht. Een opleidingsregistratie of procedure levert geen zelfstandig reductiepercentage; geef onzekerheid weer als bewijs ontbreekt.',
+        [
+          'Representatieve test met scope en acceptatiecriterium',
+          'Voor- en nameting met vergelijkbare gebruikscondities',
+          'Taakobservatie en controle op toepassing',
+        ],
+        'Scheid verwacht effect, bewezen functie, werkelijk gebruik en evaluatie na invoering. Controleer taak, gebruiksgrenzen, betrokken mensen, instructie en toezicht. Een opleidingsregistratie, vergunning, cultuurstadium of afgeronde actie levert geen zelfstandig reductiepercentage; geef onzekerheid weer als bewijs ontbreekt.',
       ],
       [
         'Afhankelijkheid',
@@ -930,7 +1071,7 @@ export const themes: Theme[] = [
         'In stand houden',
         'Welke eigenaar, controle en herstelactie houden de maatregel effectief?',
         ['Controleregister', 'Onderhoudsplan', 'Prestatie-indicator'],
-        'Stuur op de functie en degradatie. Invoering zonder blijvende controle kan het verwachte effect verliezen.',
+        'Stuur op de functie en degradatie. Invoering zonder blijvende controle kan het verwachte effect verliezen. Een gedeelde verbetering is niet automatisch ingevoerd of werkzaam op andere werkplekken; toets daar opnieuw toepasselijkheid en werking.',
       ],
       [
         'Geschikte beoordelingsmethode',
@@ -965,11 +1106,11 @@ export const themes: Theme[] = [
         'Feit en verklaring',
         'Welke informatie is een waarneming, registratie, verklaring of interpretatie en waar zitten tegenstrijdigheden?',
         [
-          'Brondossier met bewijs-ID’s en versies',
-          'Feitenlijst en tijdlijn vóór, tijdens en na het incident',
-          'Onafhankelijke verificatie van tegenspraak',
+          'Brondossier met bewijs-ID’s, eerste verklaring en herleidbare correcties',
+          'Tijdlijn en posities vóór, tijdens en na het incident; wijzigingen vóór vastlegging',
+          'Onderscheid zelf waargenomen, vernomen en geïnterpreteerd; onafhankelijke verificatie',
         ],
-        'Bewaar ruwe informatie en conclusies apart. Leg bron, verzamelvolgorde en bewijsversie vast; laat onbekende tijden of onopgeloste tegenspraak zichtbaar. Een plausibele verklaring is geen vastgesteld causaal verband.',
+        'Bewaar ruwe informatie en conclusies apart. Leg vraag, eigen antwoord, bron, tijd, locatie, bewijsversie en latere wijzigingen vast. Gebruik neutrale vervolgvragen en onafhankelijke tijdsankers; herhaling is geen onafhankelijke bevestiging. Behoud onzekerheid en tegenspraak. Geen automatische uitsluiting van één getuige, geheugenvervalpercentage of geloofwaardigheid uit lichaamstaal. Een plausibele verklaring is geen vastgesteld causaal verband.',
       ],
       [
         'Van incident naar scenario',
@@ -979,13 +1120,17 @@ export const themes: Theme[] = [
           'Barrière-evaluatie',
           'Herbeoordeling RI&E',
         ],
-        'Scheid feitelijke schade en potentiële ernst. Onderbouw of en hoe diep onderzoek nodig is, ook bij een bijna-ongeval; leg verantwoordelijke en expertise vast. Onderzoek techniek, taak en organisatie en controleer herstel.',
+        'Scheid feitelijke schade en potentiële ernst. Onderbouw onderzoekdiepte, scope, verantwoordelijke en taakgerichte expertise, ook bij een bijna-ongeval. Onderscheid voorafgaand defect van incidentschade en onderzoek alternatieve verklaringen. Onderzoek techniek, taak en organisatie; sluit de analyse niet af met menselijke fout of opleiden als standaardoplossing.',
       ],
       [
         'Aantoonbare bekwaamheid',
         'Welke praktijksituatie toont dat de medewerker veilig kan handelen en afwijkingen herkent?',
-        ['Praktijkdemonstratie', 'Scenario-oefening', 'Beoordelingscriteria'],
-        'LMS-voltooiing of een kennistoets ondersteunt leerbewijs maar is geen gemeten risicoreductie of volledige taakbekwaamheid.',
+        [
+          'Praktijkdemonstratie voor de concrete taak',
+          'Scenario-oefening met afwijkingen',
+          'Beoordelingscriteria en grenzen van deskundigheid',
+        ],
+        'LMS-voltooiing of een kennistoets ondersteunt leerbewijs maar is geen gemeten risicoreductie of volledige taakbekwaamheid. Leg vast welke afwijkingen iemand zelfstandig mag beoordelen en wanneer aanvullende expertise nodig is.',
         ['individual'],
       ],
       [
@@ -1012,7 +1157,7 @@ export const themes: Theme[] = [
           'Onderzoek taak en organisatie',
           'Toets van structurele verbetering',
         ],
-        'Onderbouw de oorzaakketen met feiten en bewijs. Een BRF-code is een classificatie en bewijst geen oorzaak. Maak verschillen tussen incidenten, coderingsversies en ontbrekende gegevens expliciet; één casus bewijst geen representatief organisatiepatroon.',
+        'Onderbouw de oorzaakketen met feiten en bewijs. Een BRF-code is een classificatie en bewijst geen oorzaak. Onderzoek taakontwerp, informatie, onderbrekingen en conflicterende doelstellingen; een afwijking bewijst geen bewuste overtreding. Maak coderingsverschillen en ontbrekende gegevens expliciet; één casus bewijst geen representatief organisatiepatroon.',
         ['source', 'collective'],
         'verdieping',
       ],
@@ -1022,9 +1167,9 @@ export const themes: Theme[] = [
         [
           'Gebundelde oorzaakanalyse',
           'Besluit over aanbevelingen',
-          'Werkbare uitvoering en follow-up',
+          'Werkbare uitvoering en afzonderlijke effectevaluatie',
         ],
-        'Onderzoek of acties op het juiste niveau aangrijpen. Leg acceptatie, aanpassing of afwijzing van aanbevelingen met reden vast en toets de gerealiseerde werking.',
+        'Onderzoek of verbetering de handeling, werkwijze of onderliggende organisatiekeuze betreft. Leg acceptatie, aanpassing of afwijzing van aanbevelingen met reden vast. Bewaar implementatie en effectevaluatie afzonderlijk; toets gerealiseerde werking en geschiktheid voor andere taken of locaties.',
         [],
         'verdieping',
       ],
@@ -1144,7 +1289,7 @@ export const contentPacks: ContentPack[] = [
 
 export const questions = themes.flatMap((item) => item.questions);
 export const catalog = {
-  version: '2026.10',
+  version: PUBLIC_CONTENT_VERSION,
   language: 'nl',
   sources,
   themes,

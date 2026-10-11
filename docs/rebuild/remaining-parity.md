@@ -30,3 +30,7 @@ De PI-bibliotheek en router ondersteunen afbakening, documentonderzoek, rondgang
 De nog ongelezen oorspronkelijke HVK/MVK-materialen, inhoudelijke AI-45/AI-61-bronnen en werkelijke actuele Moodle/LMS-data blijven brontaken. Geselecteerde extracten en drie lesconcepten bewijzen geen volledige bronintegratie. API- en Chrome-overdracht bewijzen geen inrichting van ieder persoonlijk apparaat of inhoudelijk bekrachtigde klantoverdracht.
 
 De [volledige herbouwgoal](goal.md) blijft actief. Zie het [bronregister](source-register.md), [brondekking](source-coverage.md) en [toegangsvervolg](source-access-followup.md).
+
+## Volledigheidscontrole na versie 2.3
+
+De [audit van 11 oktober](completion-audit-2026-10-11.md) benoemt concrete resterende betekenispariteit en acceptatiegevallen voor bewijsversies bij risicomaatregelen, binaire bewijsintegriteit, afzonderlijke actiecontext, bijzondere incidentvelden en directe wettelijke impactrelaties. Het selectiegat voor oude actiearchieven is in [2.3.1](legacy-action-history.md) hersteld en met fictieve brongevallen gecontroleerd; een werkelijk productiearchief is nog niet geselecteerd en overgedragen. De oorspronkelijke tabellen zijn geen bewijs dat de overige ketenvereisten al zijn afgerond. De extra bronlezing en herstelconcepten van [2.3.1](release-2.3.1.md) sluiten hun eigen controlepunten; de volledige goal blijft actief.

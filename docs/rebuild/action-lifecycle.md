@@ -56,3 +56,11 @@ Historie wordt niet stil afgekapt. Een actie heeft maximaal 250 revisies en de g
 `web/src/domain/action-lifecycle.test.ts` controleert de afzonderlijke uitvoering/controle, negatieve beoordeling, heropening, volledigheid van voorgangers, actor/redenering, expected revisie, tijdvolgorde, werkelijk geverifieerd scopebewijs, inhoudsrevisies, oude exports, annulering, wijziging/intrekking van bewijs en import met gewijzigde of semantisch ongeldige geschiedenis. De browserworkflow wordt afzonderlijk beproefd in `web/e2e/risk-workflows.spec.ts`.
 
 Deze tests bewijzen de daarin uitgevoerde nieuwe routes; zij stellen geen eerdere productieacties of historische effectiviteit vast.
+
+## Herstelbare revisieonderbouwing, 2.3.1
+
+Titel, eigenaar, datum, notities, gekozen bewijs, actor, redenering, volgende stap en effectcontrolevelden vormen één compact herstelconcept per werkruimte/actie/bronrevisie. Het concept bevat de vingerafdruk van de geselecteerde actuele bewijsregistraties. Wijziging daarvan blokkeert vastleggen totdat de gebruiker de actuele bewijsbasis expliciet herbevestigt. Dit maakt geen bewijs of reductie automatisch geldig.
+
+Validatiefalen bewaart de exacte tekst en het oorspronkelijke actierecord. Een geaccepteerde revisie verwijdert het eigen concept pas nadat die exacte schrijfoperatie duurzaam is voltooid. Een latere revisie, ander schrijverslot of andere werkruimte behoudt zijn eigen inhoud. Oudere writers blijven via Markdown inspecteerbaar totdat zij bewust worden verwijderd.
+
+De browserproeven controleren ook een geïmporteerde andere werkruimte met identieke actie-ID en revisie, gewijzigde bewijsregistratie, 100.001 Unicode-tekens, werkelijk uitgestelde lokale opslag en een nieuw vervolgconcept tijdens de oude schrijfoperatie. Deze proeven bewijzen nieuwe browserconcepten; zij reconstrueren geen oude Markdown-actierevisies.

@@ -9,7 +9,11 @@ import DraftNotice from './DraftNotice';
 import { captureQuestionPackages } from '../data/question-definition';
 import { piRouterQuestionBindings } from '../data/pi-router';
 import { Building2, ClipboardCheck, FileCheck2, Plus, ArrowRight } from 'lucide-react';
-import { sources as builtinSources, type Question } from '../content/catalog';
+import {
+  sources as builtinSources,
+  PUBLIC_CONTENT_VERSION,
+  type Question,
+} from '../content/catalog';
 import { freezeQuestion, evidenceHash } from '../data/frozen';
 import { departmentOrganisationId, departmentLabel } from '../data/dossier';
 import type {
@@ -566,6 +570,7 @@ export default function DossierWorkspace({
         >
           {['organisation', 'site', 'department'].includes(modal) && (
             <ScopeForm
+              key={`${workspace.id}/scope/${modal}`}
               kind={modal as 'organisation' | 'site' | 'department'}
               workspace={workspace}
               onSave={add}
@@ -609,12 +614,25 @@ export default function DossierWorkspace({
               onSave={(f) => add({ findings: [...findings.filter((x) => x.id !== f.id), f] })}
             />
           )}
-          {modal === 'topic' && <TopicForm onSave={(t) => add({ topics: [...topics, t] })} />}
+          {modal === 'topic' && (
+            <TopicForm
+              key={`${workspace.id}/topic/new`}
+              workspace={workspace}
+              onSave={(t) => add({ topics: [...topics, t] })}
+            />
+          )}
           {modal === 'legal' && (
-            <LegalForm topics={topics} onSave={(l) => add({ legalRecords: [...legal, l] })} />
+            <LegalForm
+              key={`${workspace.id}/legal/new`}
+              workspace={workspace}
+              topics={topics}
+              onSave={(l) => add({ legalRecords: [...legal, l] })}
+            />
           )}
           {modal === 'review' && selected && (
             <DossierReview
+              key={`${workspace.id}/${selected.id}`}
+              workspaceId={workspace.id}
               dossier={selected}
               onSave={(d) => add({ dossiers: dossiers.map((x) => (x.id === d.id ? d : x)) })}
             />
@@ -632,68 +650,145 @@ function ScopeForm({
 }: {
   kind: 'organisation' | 'site' | 'department';
   workspace: WorkspaceState;
-  onSave: (p: WorkspacePatch) => void;
+  onSave: (p: WorkspacePatch) => boolean;
 }) {
-  const [name, setName] = useState(''),
-    [description, setDescription] = useState('');
-  const options: { value: string; title: string; siteId?: string; organisationId?: string }[] =
+  const options: {
+    value: string;
+    title: string;
+    sourceBasis: string;
+    siteId?: string;
+    organisationId?: string;
+  }[] =
     kind === 'department'
       ? [
           ...(workspace.sites ?? []).map((site) => ({
             value: `site:${site.id}`,
             title: `Locatie ${site.name} · ${workspace.organisations?.find((record) => record.id === site.organisationId)?.name ?? ''}`,
+            sourceBasis: draftBase(site),
             siteId: site.id,
           })),
           ...(workspace.organisations ?? []).map((organisation) => ({
             value: `organisation:${organisation.id}`,
             title: `${organisation.name} · locatie niet vastgelegd`,
+            sourceBasis: draftBase(organisation),
             organisationId: organisation.id,
           })),
         ]
       : (workspace.organisations ?? []).map((organisation) => ({
           value: organisation.id,
           title: organisation.name,
+          sourceBasis: draftBase(organisation),
           organisationId: organisation.id,
         }));
-  const [parent, setParent] = useState(options[0]?.value ?? '');
+  const collection =
+    kind === 'organisation'
+      ? workspace.organisations
+      : kind === 'site'
+        ? workspace.sites
+        : workspace.departments;
+  const [draft, setDraft, draftStatus] = usePersistentDraft(
+    `${workspace.id}/scope/${kind}/new`,
+    () => ({
+      id: id(),
+      name: '',
+      description: '',
+      parent: options[0]?.value ?? '',
+      parentBasis: options[0]?.sourceBasis ?? '',
+    }),
+    'new/v1',
+    (candidate) =>
+      !(collection ?? []).some((record) => record.id === candidate.id) &&
+      (kind === 'organisation' ||
+        options.some(
+          (option) =>
+            option.value === candidate.parent && option.sourceBasis === candidate.parentBasis,
+        )),
+  );
+  const { name, description, parent } = draft;
+  const setName = (name: string) => setDraft((previous) => ({ ...previous, name }));
+  const setDescription = (description: string) =>
+    setDraft((previous) => ({ ...previous, description }));
+  const setParent = (parent: string) =>
+    setDraft((previous) => ({
+      ...previous,
+      parent,
+      parentBasis: options.find((option) => option.value === parent)?.sourceBasis ?? '',
+    }));
+  const [error, setError] = useState('');
+  const selectedParent = options.find((option) => option.value === parent);
+  const sourceChanged =
+    kind !== 'organisation' &&
+    (!selectedParent || selectedParent.sourceBasis !== draft.parentBasis);
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        const selectedParent = options.find((option) => option.value === parent);
-        if (kind !== 'organisation' && !selectedParent) return;
-        if (kind === 'organisation')
-          onSave({
-            organisations: [...(workspace.organisations ?? []), { id: id(), name, description }],
-          });
-        if (kind === 'site')
-          onSave({
-            sites: [
-              ...(workspace.sites ?? []),
-              {
-                id: id(),
-                name,
-                address: description,
-                organisationId: selectedParent!.organisationId!,
-              },
-            ],
-          });
-        if (kind === 'department')
-          onSave({
-            departments: [
-              ...(workspace.departments ?? []),
-              {
-                id: id(),
-                name,
-                activity: description,
-                ...(selectedParent!.siteId
-                  ? { siteId: selectedParent!.siteId }
-                  : { organisationId: selectedParent!.organisationId! }),
-              },
-            ],
-          });
+        if ((collection ?? []).some((record) => record.id === draft.id)) {
+          setError(
+            'Dit concept is inmiddels vastgelegd. De tekst blijft behouden; open het formulier opnieuw voor een nieuw record.',
+          );
+          return;
+        }
+        if (sourceChanged) {
+          setError(
+            'De gekozen organisatie of locatie is gewijzigd. Controleer het concept en bevestig de actuele keuze opnieuw.',
+          );
+          return;
+        }
+        const patch: WorkspacePatch =
+          kind === 'organisation'
+            ? {
+                organisations: [
+                  ...(workspace.organisations ?? []),
+                  { id: draft.id, name, description },
+                ],
+              }
+            : kind === 'site'
+              ? {
+                  sites: [
+                    ...(workspace.sites ?? []),
+                    {
+                      id: draft.id,
+                      name,
+                      address: description,
+                      organisationId: selectedParent!.organisationId!,
+                    },
+                  ],
+                }
+              : {
+                  departments: [
+                    ...(workspace.departments ?? []),
+                    {
+                      id: draft.id,
+                      name,
+                      activity: description,
+                      ...(selectedParent!.siteId
+                        ? { siteId: selectedParent!.siteId }
+                        : { organisationId: selectedParent!.organisationId! }),
+                    },
+                  ],
+                };
+        if (onSave(patch)) draftStatus.clear();
+        else setError('Vastleggen geweigerd. Het volledige scopeconcept blijft behouden.');
       }}
     >
+      <DraftNotice status={draftStatus} />
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      {sourceChanged && (
+        <p role="alert">
+          De brongegevens van de gekozen organisatie of locatie zijn gewijzigd. Het concept wordt
+          niet automatisch opnieuw gekoppeld.
+          {selectedParent && (
+            <button type="button" className="secondary" onClick={() => setParent(parent)}>
+              Huidige organisatie- of locatiekeuze bevestigen
+            </button>
+          )}
+        </p>
+      )}
       <Field label="Naam">
         <input required autoFocus value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
@@ -719,7 +814,9 @@ function ScopeForm({
       >
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
-      <button className="primary">Opslaan</button>
+      <button className="primary" disabled={sourceChanged}>
+        Opslaan
+      </button>
     </form>
   );
 }
@@ -807,7 +904,7 @@ function DossierForm({
               q.definition?.version ??
                 (imported
                   ? [...new Set(versions)].join(' + ') || 'bronversie-niet-vastgelegd'
-                  : 'IMA-catalogus-2.0.0'),
+                  : `IMA-catalogus-${PUBLIC_CONTENT_VERSION}`),
             );
           });
           const accepted = onSave({
@@ -1314,17 +1411,44 @@ function FindingForm({
     </form>
   );
 }
-function TopicForm({ onSave }: { onSave: (t: Topic) => void }) {
-  const [title, setTitle] = useState(''),
-    [category, setCategory] = useState(''),
-    [description, setDescription] = useState(''),
-    [aliases, setAliases] = useState('');
+function TopicForm({
+  workspace,
+  onSave,
+}: {
+  workspace: WorkspaceState;
+  onSave: (t: Topic) => boolean;
+}) {
+  const [draft, setDraft, draftStatus] = usePersistentDraft(
+    `${workspace.id}/topic/new`,
+    () => ({
+      id: id(),
+      title: '',
+      category: '',
+      description: '',
+      aliases: '',
+    }),
+    'new/v1',
+    (candidate) => !(workspace.topics ?? []).some((record) => record.id === candidate.id),
+  );
+  const { title, category, description, aliases } = draft;
+  const setTitle = (title: string) => setDraft((previous) => ({ ...previous, title }));
+  const setCategory = (category: string) => setDraft((previous) => ({ ...previous, category }));
+  const setDescription = (description: string) =>
+    setDraft((previous) => ({ ...previous, description }));
+  const setAliases = (aliases: string) => setDraft((previous) => ({ ...previous, aliases }));
+  const [error, setError] = useState('');
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({
-          id: id(),
+        if ((workspace.topics ?? []).some((record) => record.id === draft.id)) {
+          setError(
+            'Dit onderwerpconcept is inmiddels vastgelegd. De tekst blijft behouden; open het formulier opnieuw voor een nieuw onderwerp.',
+          );
+          return;
+        }
+        const accepted = onSave({
+          id: draft.id,
           title,
           category,
           description,
@@ -1333,8 +1457,16 @@ function TopicForm({ onSave }: { onSave: (t: Topic) => void }) {
             .map((a) => a.trim())
             .filter(Boolean),
         });
+        if (accepted) draftStatus.clear();
+        else setError('Vastleggen geweigerd. Het volledige onderwerpconcept blijft behouden.');
       }}
     >
+      <DraftNotice status={draftStatus} />
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
       <Field label="Onderwerptitel">
         <input required value={title} onChange={(e) => setTitle(e.target.value)} />
       </Field>
@@ -1351,27 +1483,62 @@ function TopicForm({ onSave }: { onSave: (t: Topic) => void }) {
     </form>
   );
 }
-function LegalForm({ topics, onSave }: { topics: Topic[]; onSave: (l: LegalRecord) => void }) {
-  const [record, set] = useState<LegalRecord>({
-    id: id(),
-    title: '',
-    officialUrl: '',
-    citation: '',
-    jurisdiction: 'NL',
-    status: 'signal',
-    effectiveOn: '',
-    lastVerifiedOn: today(),
-    summary: '',
-    impact: '',
-    topicIds: [],
-  });
+function LegalForm({
+  workspace,
+  topics,
+  onSave,
+}: {
+  workspace: WorkspaceState;
+  topics: Topic[];
+  onSave: (l: LegalRecord) => boolean;
+}) {
+  const [record, set, draftStatus] = usePersistentDraft<LegalRecord>(
+    `${workspace.id}/legal/new`,
+    () => ({
+      id: id(),
+      title: '',
+      officialUrl: '',
+      citation: '',
+      jurisdiction: 'NL',
+      status: 'signal',
+      effectiveOn: '',
+      lastVerifiedOn: today(),
+      summary: '',
+      impact: '',
+      topicIds: [],
+    }),
+    'new/v1',
+    (candidate) =>
+      !(workspace.legalRecords ?? []).some((existing) => existing.id === candidate.id) &&
+      candidate.topicIds.every((topicId) => topics.some((topic) => topic.id === topicId)),
+  );
+  const [error, setError] = useState('');
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave(record);
+        if ((workspace.legalRecords ?? []).some((existing) => existing.id === record.id)) {
+          setError(
+            'Dit regelgevingsconcept is inmiddels vastgelegd. De tekst blijft behouden; open het formulier opnieuw voor een nieuw signaal.',
+          );
+          return;
+        }
+        if (record.topicIds.some((topicId) => !topics.some((topic) => topic.id === topicId))) {
+          setError(
+            'Een gekozen onderwerp bestaat niet meer. Controleer het concept en pas de onderwerpkeuze aan.',
+          );
+          return;
+        }
+        if (onSave(record)) draftStatus.clear();
+        else setError('Vastleggen geweigerd. Het volledige regelgevingsconcept blijft behouden.');
       }}
     >
+      <DraftNotice status={draftStatus} />
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
       <Field label="Signaaltitel">
         <input
           required
@@ -1452,23 +1619,69 @@ function LegalForm({ topics, onSave }: { topics: Topic[]; onSave: (l: LegalRecor
     </form>
   );
 }
-function DossierReview({ dossier, onSave }: { dossier: Dossier; onSave: (d: Dossier) => void }) {
-  const [status, setStatus] = useState(dossier.status),
-    [reviewedBy, setReviewer] = useState(dossier.reviewedBy ?? ''),
-    [reviewNote, setNote] = useState(dossier.reviewNote ?? '');
+function DossierReview({
+  workspaceId,
+  dossier,
+  onSave,
+}: {
+  workspaceId: string;
+  dossier: Dossier;
+  onSave: (d: Dossier) => boolean;
+}) {
+  const [original] = useState(() => structuredClone(dossier));
+  const originalBasis = draftBase(original);
+  const [draft, setDraft, draftStatus] = usePersistentDraft(
+    `${workspaceId}/dossier-review/${encodeURIComponent(dossier.id)}`,
+    () => ({
+      dossierId: original.id,
+      sourceBasis: originalBasis,
+      status: original.status,
+      reviewedBy: original.reviewedBy ?? '',
+      reviewNote: original.reviewNote ?? '',
+    }),
+    originalBasis,
+    (candidate) => candidate.dossierId === dossier.id && candidate.sourceBasis === originalBasis,
+  );
+  const { status, reviewedBy, reviewNote } = draft;
+  const setStatus = (status: Dossier['status']) =>
+    setDraft((previous) => ({ ...previous, status }));
+  const setReviewer = (reviewedBy: string) => setDraft((previous) => ({ ...previous, reviewedBy }));
+  const setNote = (reviewNote: string) => setDraft((previous) => ({ ...previous, reviewNote }));
+  const [error, setError] = useState('');
+  const sourceChanged = draftBase(dossier) !== draft.sourceBasis || draft.dossierId !== dossier.id;
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({
-          ...dossier,
+        if (sourceChanged) {
+          setError(
+            'Het dossier is gewijzigd sinds dit beoordelingsconcept. De invoer blijft behouden; sluit het formulier en open de actuele dossierbasis.',
+          );
+          return;
+        }
+        const accepted = onSave({
+          ...original,
           status,
           reviewedBy,
           reviewNote,
           reviewedAt: new Date().toISOString(),
         });
+        if (accepted) draftStatus.clear();
+        else setError('Vastleggen geweigerd. Het volledige beoordelingsconcept blijft behouden.');
       }}
     >
+      <DraftNotice status={draftStatus} />
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      {sourceChanged && (
+        <p role="alert">
+          De dossierbasis is intussen gewijzigd. Dit beoordelingsconcept wordt niet automatisch aan
+          de nieuwe dossierinhoud gebonden.
+        </p>
+      )}
       <Field label="Dossierstatus">
         <select value={status} onChange={(e) => setStatus(e.target.value as Dossier['status'])}>
           <option value="draft">Concept</option>
@@ -1495,7 +1708,9 @@ function DossierReview({ dossier, onSave }: { dossier: Dossier; onSave: (d: Doss
         Een afgerond dossier is een vastgelegd beoordelingsbesluit. Het sluit open risico’s of
         acties niet automatisch.
       </p>
-      <button className="primary">Beoordeling vastleggen</button>
+      <button className="primary" disabled={sourceChanged}>
+        Beoordeling vastleggen
+      </button>
     </form>
   );
 }

@@ -4,6 +4,7 @@ import {
   themes,
   sources as builtinSources,
   type Question,
+  PUBLIC_CONTENT_VERSION,
 } from '../content/catalog';
 import type { WorkspaceState, WorkspaceRecord } from './model';
 import { departmentOrganisationId, type Dossier } from './dossier';
@@ -326,7 +327,7 @@ export function createDossierFromModulePlan(
       question.definition?.version ??
         (imported
           ? [...new Set(versions)].join(' + ') || 'bronversie-niet-vastgelegd'
-          : 'IMA-catalogus-2.0.0'),
+          : `IMA-catalogus-${PUBLIC_CONTENT_VERSION}`),
     );
   });
   const contentPackageSnapshots = captureQuestionPackages(questionIds, workspace);

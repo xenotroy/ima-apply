@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
-import { questions as builtinQuestions, type Question } from '../content/catalog';
+import {
+  questions as builtinQuestions,
+  PUBLIC_CONTENT_VERSION,
+  type Question,
+} from '../content/catalog';
 import type { Evidence, WorkspaceAnswer, WorkspacePatch, WorkspaceState } from '../data';
 import { questionHash } from '../data/frozen';
 import { draftBase } from '../data/local-drafts';
@@ -150,7 +154,7 @@ export default function QuestionAnswerCard({
         ('version' in question && typeof question.version === 'string'
           ? question.version
           : builtinQuestions.some((builtin) => builtin.id === question.id)
-            ? 'IMA-catalogus-2.0.0'
+            ? `IMA-catalogus-${PUBLIC_CONTENT_VERSION}`
             : 'bronversie-niet-vastgelegd'),
     };
     try {
