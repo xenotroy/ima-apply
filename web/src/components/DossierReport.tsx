@@ -3,6 +3,8 @@ import { actionStage, actionStageLabels } from '../domain/action-lifecycle';
 import { projectContextMarkdown } from '../data/project-context';
 import { basisRiskFactorMarkdown } from '../data/brf';
 import { riskAssessmentMarkdown } from './RiskAssessmentPanel';
+import { justificationMarkdown } from '../data/justification';
+import { modulePlanMarkdown } from '../data/module-plan';
 import { readMigrationReviews } from '../data/migration-review';
 
 /** Readable projection; the JSON export remains the complete portable record. */
@@ -24,6 +26,7 @@ export function dossierMarkdown(workspace: WorkspaceState): string[] {
     );
   }
   lines.push(...projectContextMarkdown(workspace));
+  lines.push(...modulePlanMarkdown(workspace));
   if (workspace.organisations?.length) {
     lines.push('', '## Organisatie', '');
     for (const o of workspace.organisations) lines.push(`- ${o.name} [${o.id}] — ${o.description}`);
@@ -198,6 +201,7 @@ export default function DossierReport({ workspace }: { workspace: WorkspaceState
   const lines = [
     ...dossierMarkdown(workspace),
     ...riskAssessmentMarkdown(workspace.riskAssessments ?? []),
+    ...justificationMarkdown(workspace.justifications ?? []),
   ];
   if (!lines.length) return null;
   return (

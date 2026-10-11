@@ -27,6 +27,10 @@ De tokeninvoer moet opnieuw op een ander apparaat of in een nieuw tabblad. Het t
 
 Het veld **Werkruimtebestand in de repository** bepaalt welk project je opent. Gebruik op beide pc’s hetzelfde pad. De private bronwerkruimte staat op `workspaces/bronwerkruimte.json`; zij bevat 260 oorspronkelijke themavragen en drie conceptlesteksten, zonder verzonnen projectbeoordelingen. Selecteer dit bestand, bekijk de cloudversie en kies **Gebruik cloudversie**. Bewaar eigen projecten bewust in afzonderlijke bestanden, bijvoorbeeld `workspaces/projectnaam.json`.
 
+De aanvullende bronreview staat afzonderlijk in `workspaces/bronwerkruimte-reviewed-2026-10-11.json`. Deze behoudt dezelfde 260 vragen en drie lesconcepten en voegt drie afgebakende bronextracten toe, met werkelijk gelezen pagina’s, hashes en provenance. De oorspronkelijke bronwerkruimte blijft beschikbaar. Kies het reviewbestand op beide pc’s wanneer je deze aanvullende inhoud wilt gebruiken.
+
+Voor project- of afdelingsselectie open je **Dossiers → Modules & scope**. Bewaar een moduleplan met scopenotities en volgorde en maak daaruit een dossier aan. Alle geselecteerde vragen worden bevroren, ook onbeantwoorde; latere planwijzigingen veranderen dit dossier niet. Voor een maatregelbesluit bewaar je eerst een risicobeoordelingsmoment en leg je daarna in de risicowerkbank de gekozen maatregel(s), kostenbasis en justificatie vast.
+
 ## Private broninhoud
 
 ```bash

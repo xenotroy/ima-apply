@@ -2,7 +2,7 @@
 
 Status: **actief**. Vastgelegd op 7 oktober 2026 op verzoek van de gebruiker: “maak hier een goal van dus”. Dit document concretiseert de oorspronkelijke herbouwopdracht; het verkleint die opdracht niet tot de reeds gepubliceerde browserapp.
 
-Voortgang bijgewerkt op 9 oktober 2026 voor appversie `2.1.0`. De tabel hieronder blijft de oorspronkelijke nulmeting; de actuele gerealiseerde functies en voorlopige overdrachtsgrenzen staan onder **Concrete voortgang na vastlegging**. Appversie, browserdataschema (`schemaVersion: 1`) en rekenmethode (`ima-risk/2.0.0`) zijn afzonderlijke versies.
+Voortgang bijgewerkt op 11 oktober 2026 voor appversie `2.2.0`. De tabel hieronder blijft de oorspronkelijke nulmeting; de actuele gerealiseerde functies en voorlopige overdrachtsgrenzen staan onder **Concrete voortgang na vastlegging**. Appversie, browserdataschema (`schemaVersion: 1`) en rekenmethode (`ima-risk/2.0.0`) zijn afzonderlijke versies.
 
 ## Doel
 
@@ -51,6 +51,9 @@ Een externe toegangsbeperking voor één bron verhindert niet het doorwerken aan
 - Echte browseroverdracht A→B→A en concurrerende upload gecontroleerd met drie volledige 260-vragendossiers van 1,35 MB. Lokale conflictinhoud bleef exact exporteerbaar.
 - De werkruimtegrens is 2.000.000 UTF-8 bytes. GitHub-inhoud boven 1 MB wordt bij dezelfde onveranderlijke blob-SHA opgehaald; conflictcontrole en exportbehoud blijven actief.
 - Read-only migratie-CLI voor geselecteerde Markdown-/SQLite-dossiers en bronbehoud ontwikkeld. Naast fictieve regressiefixtures is een werkelijke private SQLite-projectkopie gecontroleerd en naar twee afzonderlijke browsergeldige exports omgezet. De oorspronkelijke database-, WAL- en SHM-bestanden bleven ongewijzigd. Deze kopiecontrole is geen goedgekeurde klantoverdracht of complete reconstructie van historische dossiers.
+- Maatregeljustificaties bewaren nu de precieze bronbeoordeling/hash, één geplande maatregel of een expliciet gekozen pakket, ratings, kostenbasis, beoordelaar, motivatie en besluit. Andere plannen tellen niet mee in de gekozen vergelijking; een ongunstige uitkomst wordt niet op nul begrensd. AHS-/haalbaarheidsbonus blijft afzonderlijk van modelwerking.
+- Project- en afdelingsmoduleplannen bewaren eigen selectie, oorspronkelijke module-identiteiten, vraagvolgorde, scopenotities, bronverwijzingen en revisie. Nieuwe dossiers bevriezen de gekozen module-inhoud met hash en alle geselecteerde vragen, ook onbeantwoorde. Latere planwijzigingen herschrijven die dossiers niet.
+- Negentien aanvullende, geselecteerde PDF-pagina’s zijn gelezen en geverifieerd met pagina- en bronhashes. De publieke criteria verwerken concrete lessen over onderzoekdiepte, tijdlijnen, methodekeuze en analysegrenzen. De AI-43-kopie is als toegeschreven tekstkopie met ontbrekende afbeeldingen beschreven; uitgeversauthenticiteit wordt niet verondersteld.
 
 ### Gecontroleerde legacykopie: voorlopige overdrachtsstand
 
@@ -63,13 +66,19 @@ Zekerheid over bronbehoud en exportvalidatie: **hoog**. Zekerheid over de UTC-in
 
 Resterende scope omvat de oorspronkelijke toegankelijke HVK/MVK-lesbronnen, inhoudelijke verwerking van AI-45 en AI-61, echte Moodle/LMS-brondata, aantoonbare volledige dossier-/revisiepariteit en beoordeelde productieoverdracht. Drie lesconcepten zijn geen actuele LMS-export. Een gevalideerde private bronkopie is geen vastgestelde klantbeoordeling. De stand van de volledige herbouw blijft **actief**.
 
+### Aanvullende moduleoverdracht, 11 oktober 2026
+
+Dezelfde gecontroleerde databasekopie is opnieuw geprojecteerd met de juiste modulegrenzen: vijf plannen en vijf conceptdossiers, met respectievelijk 52 projectvragen en 85, 2, 49 en 28 afdelingsvragen. Alle 248 oorspronkelijke raw bronrecords zijn exact gelijk aan de eerdere export. De originele database-, WAL- en SHM-bytes en tijdstempels bleven tijdens deze verwerking gelijk.
+
+De afzonderlijke nieuwe exports zijn **990.953 bytes** zonder UTC-aanname en **1.003.609 bytes** met expliciete UTC-interpretatie. Zij bewaren 41 respectievelijk 54 reviewwaarschuwingen. De exporttijd bevriest huidige modulevragen; zij bewijst geen teruggevonden historische selectieversie. Deze nieuwe bestanden vervangen de eerdere private exports niet. [Moduleplanworkflow](module-plan.md) beschrijft de nieuwe bevroren gebruikersdossiers; [resterende pariteit](remaining-parity.md) legt de concreet ontbrekende beheerde vraagbank, response-relaties en herbruikbare risicobibliotheek vast.
+
 ## Afsluitregel
 
 Dit goal blijft actief totdat de volledige opdracht aantoonbaar is uitgevoerd. Een werkende demo, groen testresultaat, gepubliceerd GitHub-project of gedeeltelijk gelezen bronpakket is op zichzelf geen volledige afronding.
 
 De eindcontrole herleidt ieder criterium hierboven naar actuele bestanden, concrete broninhoud, passende tests, migratiebewijs, bruikbare rapporten en daadwerkelijk runtimegedrag. Gebruik de testdekking die bij het betreffende criterium hoort; presenteer een beperkte test niet als bewijs voor een bredere integratie.
 
-Vóór afronding controleert de eindcontrole afzonderlijk: inhoudelijk gelezen oorspronkelijke HVK/MVK-bronnen; AI-45/AI-61-inhoud; werkelijke LMS-data; betekenisbehoud van ontbrekende legacyrevisies en bijzondere bronvelden; private teruglees-/herstelcontrole van de geselecteerde overdracht; en de praktijkworkflow op de daadwerkelijk gebruikte persoonlijke apparaten. Zolang deze onderdelen niet bewezen zijn, blijft dit goal actief ondanks de gerealiseerde versie `2.1.1`.
+Vóór afronding controleert de eindcontrole afzonderlijk: inhoudelijk gelezen oorspronkelijke HVK/MVK-bronnen; AI-45/AI-61-inhoud; werkelijke LMS-data; betekenisbehoud van ontbrekende legacyrevisies en bijzondere bronvelden; private teruglees-/herstelcontrole van de geselecteerde overdracht; en de praktijkworkflow op de daadwerkelijk gebruikte persoonlijke apparaten. Zolang deze onderdelen niet bewezen zijn, blijft dit goal actief ondanks de gerealiseerde browserfuncties.
 
 ## Inspectie bij vastlegging
 

@@ -1,5 +1,11 @@
 import type { WorkspaceState, WorkspaceAction } from './model';
 import { assertRiskAssessment, type RiskAssessment } from './risk-history';
+import { assertJustification } from './justification';
+import {
+  assertModulePlan,
+  assertModulePlans,
+  assertDossierModulePlanSnapshot,
+} from './module-plan';
 import type { Scenario } from '../domain/types';
 import { evaluateRisk } from '../domain/risk';
 import type { Question } from '../content/catalog';
@@ -645,6 +651,8 @@ function dossier(value: unknown, path: string): void {
     'createdAt',
     'questions',
     'sourceSnapshots',
+    'modulePlanSnapshot',
+    'modulePlanSnapshotSha256',
     'reviewedBy',
     'reviewedAt',
     'reviewNote',
@@ -660,6 +668,15 @@ function dossier(value: unknown, path: string): void {
   list(item.questions, `${path}.questions`, frozenQuestion);
   if (item.sourceSnapshots !== undefined)
     list(item.sourceSnapshots, `${path}.sourceSnapshots`, genericRecord);
+  if (item.modulePlanSnapshot !== undefined) {
+    try {
+      assertModulePlan(item.modulePlanSnapshot);
+    } catch (error) {
+      fail(path, error instanceof Error ? error.message : 'ongeldige modulesnapshot.');
+    }
+  }
+  if (item.modulePlanSnapshotSha256 !== undefined)
+    digest(item.modulePlanSnapshotSha256, `${path}.modulePlanSnapshotSha256`);
   for (const key of ['reviewedBy', 'reviewNote'])
     if (item[key] !== undefined) text(item[key], `${path}.${key}`);
   if (item.reviewedAt !== undefined) timestamp(item.reviewedAt, `${path}.reviewedAt`);
@@ -1061,6 +1078,8 @@ function relations(workspace: WorkspaceState): void {
       const q = dossiers.get(a.dossierId)?.questions.find((q) => q.id === a.questionId);
       if (!q || a.questionSha256 !== q.sha256 || a.questionSnapshot !== q.prompt)
         fail('Antwoord', 'antwoord hoort niet bij de bevroren dossiervraag.');
+      if (a.contentVersion !== undefined && a.contentVersion !== q.version)
+        fail('Antwoord', 'vastgelegde vraagversie verschilt van de bevroren dossiervraag.');
     }
   });
   workspace.scenarios.forEach((s) => {
@@ -1137,6 +1156,23 @@ function relations(workspace: WorkspaceState): void {
       'Beoordelingsmoment.historische afdeling',
     );
   });
+  for (const record of workspace.justifications ?? []) {
+    const assessment = workspace.riskAssessments?.find(
+      (item) => item.id === record.riskAssessmentId,
+    );
+    if (!assessment) fail('Justificatie.bronbeoordeling', 'verwijzing bestaat niet.');
+    try {
+      assertJustification(record, assessment);
+    } catch (error) {
+      fail('Justificatie', error instanceof Error ? error.message : 'ongeldige justificatie.');
+    }
+  }
+  try {
+    assertModulePlans(workspace);
+    workspace.dossiers?.forEach((dossier) => assertDossierModulePlanSnapshot(dossier, workspace));
+  } catch (error) {
+    fail('Moduleplan', error instanceof Error ? error.message : 'ongeldige modulekeuze.');
+  }
   const periods = new Set<string>();
   workspace.exposure?.forEach((e) => {
     if (e.departmentId) ref(e.departmentId, departments, 'Blootstelling.afdeling');
@@ -1154,6 +1190,62 @@ function relations(workspace: WorkspaceState): void {
 
 function genericRecord(value: unknown, path: string): void {
   id(object(value, path).id, `${path}.id`);
+}
+
+function justification(value: unknown, path: string): void {
+  const item = baseRecord(value, path, [
+    'riskAssessmentId',
+    'assessmentSha256',
+    'scenarioId',
+    'recordedAt',
+    'methodVersion',
+    'priorityPolicyVersion',
+    'justificationMethodVersion',
+    'selectionKind',
+    'controlIds',
+    'costBasis',
+    'costFactor',
+    'degreeOfCorrectionFactor',
+    'kinneyCostDivisor',
+    'decision',
+    'assessor',
+    'rationale',
+    'result',
+    'sha256',
+  ]);
+  for (const key of ['riskAssessmentId', 'scenarioId']) id(item[key], `${path}.${key}`);
+  for (const key of ['assessmentSha256', 'sha256']) digest(item[key], `${path}.${key}`);
+  timestamp(item.recordedAt, `${path}.recordedAt`);
+  for (const key of [
+    'methodVersion',
+    'priorityPolicyVersion',
+    'justificationMethodVersion',
+    'costBasis',
+    'assessor',
+    'rationale',
+  ])
+    text(item[key], `${path}.${key}`, true);
+  choice(item.selectionKind, ['control', 'portfolio'], `${path}.selectionKind`);
+  strings(item.controlIds, `${path}.controlIds`);
+  choice(item.decision, ['implement', 'defer', 'reject', 'review_required'], `${path}.decision`);
+  for (const key of ['costFactor', 'degreeOfCorrectionFactor', 'kinneyCostDivisor'])
+    number(item[key], `${path}.${key}`, 0, Number.MAX_VALUE, true);
+  // The immutable result is additionally compared with a full recalculation in relations().
+  object(item.result, `${path}.result`, [
+    'status',
+    'current',
+    'selectedTarget',
+    'improvement',
+    'nominalScoreFraction',
+    'fine',
+    'kinneyExpected',
+    'kinneyConservative',
+    'currentCreditedControlIds',
+    'selectedCreditedControlIds',
+    'selectedExcluded',
+    'warnings',
+    'localPriorities',
+  ]);
 }
 
 function riskAssessment(value: unknown, path: string): void {
@@ -1251,6 +1343,8 @@ export function validateWorkspace(value: unknown): asserts value is WorkspaceSta
     'walkthroughs',
     'basisRiskFactorRecords',
     'riskAssessments',
+    'justifications',
+    'modulePlans',
   ]);
   if (item.schemaVersion !== 1)
     fail('Werkruimte', 'niet-ondersteunde schemaversie; verwacht versie 1.');
@@ -1264,6 +1358,7 @@ export function validateWorkspace(value: unknown): asserts value is WorkspaceSta
   list(item.scenarios, 'Scenario’s', scenario);
   if (item.riskAssessments !== undefined)
     list(item.riskAssessments, 'Beoordelingsmomenten', riskAssessment);
+  if (item.justifications !== undefined) list(item.justifications, 'Justificaties', justification);
   list(item.questions, 'Vragen', question);
   list(item.answers, 'Antwoorden', answer);
   list(item.actions, 'Acties', action);

@@ -16,6 +16,7 @@ import type {
 } from '../data';
 import { Badge, Field, Modal } from './Primitives';
 import ProjectContextWorkspace from './ProjectContextWorkspace';
+import ModulePlanWorkspace from './ModulePlanWorkspace';
 
 const id = () => crypto.randomUUID();
 const today = () => new Date().toLocaleDateString('sv-SE');
@@ -72,7 +73,9 @@ export default function DossierWorkspace({
   openInventory: (dossierId: string) => void;
   openScenario: (scenarioId: string) => void;
 }) {
-  const [tab, setTab] = useState<'dossiers' | 'organisation' | 'knowledge' | 'context'>('dossiers');
+  const [tab, setTab] = useState<'dossiers' | 'organisation' | 'knowledge' | 'context' | 'modules'>(
+    'dossiers',
+  );
   const [selectedId, setSelectedId] = useState('');
   const [modal, setModal] = useState<
     | 'organisation'
@@ -125,6 +128,7 @@ export default function DossierWorkspace({
             ['dossiers', 'Dossiers & bewijs'],
             ['organisation', 'Organisatie'],
             ['context', 'Projectcontext & rondgangen'],
+            ['modules', 'Modules & scope'],
             ['knowledge', 'Onderwerpen & regelgeving'],
           ] as const
         ).map(([key, label]) => (
@@ -133,6 +137,9 @@ export default function DossierWorkspace({
           </button>
         ))}
       </div>
+      {tab === 'modules' && (
+        <ModulePlanWorkspace workspace={workspace} questions={questions} onUpdate={onUpdate} />
+      )}
       {tab === 'context' && (
         <ProjectContextWorkspace
           workspace={workspace}

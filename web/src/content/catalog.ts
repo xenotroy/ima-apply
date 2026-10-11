@@ -101,10 +101,10 @@ export const sources: SourceRecord[] = [
     kind: 'reference',
     status: 'partial_read',
     readScope:
-      'Bronnotitie plus oorspronkelijke PDF: pagina 2 (AHS/procesnormen) en 7 (RI&E, PvA, actualisering, voorlichting).',
+      'Bronnotitie en PDF-pagina’s 1–8 van 20: bronlagen, toepassingsgebied, AHS, RI&E/PvA, voorlichting en toezicht. Pagina’s 1, 3–6 en 8 aanvullend gelezen op 10 oktober 2026.',
     publication: 'metadata_only',
     notes:
-      'PDF van 20 pagina’s, geselecteerde pagina’s gelezen. Bronnotitie vermeldt bijgewerkt tot 26 januari 2026; wettelijke actualiteit bij toepassing afzonderlijk controleren. Geen gelicentieerde tekst meegeleverd.',
+      'Webprint van 8 augustus 2026; bronnotitie vermeldt bijgewerkt tot 26 januari 2026. De tekst bevat ook voorstellen en voornemens, die geen vastgesteld geldend recht zijn. Geen juridische actualiteitscontrole of gelicentieerde tekst meegeleverd.',
     url: 'https://www.praktijkgidsarbeidsveiligheid.nl/publicaties/praktijkgids-arbeidsveiligheid/32489',
   },
   {
@@ -113,10 +113,10 @@ export const sources: SourceRecord[] = [
     kind: 'reference',
     status: 'partial_read',
     readScope:
-      'Bronnotitie plus oorspronkelijke PDF-pagina 1: juridische bronlagen, onderwerpscope, sectoren en risicogroepen.',
+      'Bronnotitie en PDF-pagina’s 1–3 van 6: juridische bronlagen, onderwerpscope, sectoren, risicogroepen en verantwoordelijkheden. Pagina’s 2–3 aanvullend gelezen op 10 oktober 2026.',
     publication: 'metadata_only',
     notes:
-      'PDF van 6 pagina’s, eerste pagina gelezen. Bronnotitie vermeldt bijgewerkt tot 26 januari 2026. Geen tekst uit de gelicentieerde publicatie meegeleverd.',
+      'Webprint van 8 augustus 2026; bronnotitie vermeldt bijgewerkt tot 26 januari 2026. Bronstatus en toepasselijkheid vragen afzonderlijke verificatie; aangekondigde wijzigingen zijn geen bewezen actuele verplichting. Geen gelicentieerde tekst meegeleverd.',
     url: 'https://www.praktijkgidsarbeidsveiligheid.nl/publicaties/praktijkgids-arbeidsveiligheid/32490',
   },
   {
@@ -125,10 +125,10 @@ export const sources: SourceRecord[] = [
     kind: 'reference',
     status: 'partial_read',
     readScope:
-      'Referentienotitie plus PDF-pagina’s 11–13 en 37–39: §§2.2–2.4 en 5.10–5.12, risicomethoden, koppeling RI&E, grondoorzaken en implementatie.',
+      'Referentienotitie en toegeschreven tekstkopie: PDF-pagina’s 2–4 (inhoudsopgave), 11–13, 20–21, 25–27 en 34–39. Aanvullende lezing op 10 oktober 2026 omvat procesveiligheids-KPI’s, onderzoekdiepte, expertise, bewijsbeheer, tijdlijn en BRF-trends.',
     publication: 'metadata_only',
     notes:
-      'Oorspronkelijke PDF van 92 pagina’s selectief gelezen; gedrukte pagina’s 7–9 en 33–35. Publicatie vermeldt 18 januari 2024. Nieuwe vragen zijn eigen formuleringen; oorspronkelijke tekst niet herverdeeld.',
+      'Selectie van 17 van 92 PDF-pagina’s, waarvan drie inhoudsopgavepagina’s; geen volledige lezing. De kopie vermeldt 18 januari 2024 en bevat meldingen over ontbrekende afbeeldingen. Uitgeversbinair en volledige figuurlayout zijn niet geverifieerd; ontbrekende grenzen of figuren zijn niet gereconstrueerd. Eigen vragen, geen oorspronkelijke tekst meegeleverd.',
   },
   {
     id: 'SDU-AI82',
@@ -289,8 +289,12 @@ export const themes: Theme[] = [
       [
         'Werkelijke werkzaamheden',
         'Welke taken, locaties, diensten en afwijkende werkzaamheden vallen binnen deze inventarisatie?',
-        ['Proceskaart met scope', 'Rondgang in verschillende diensten', 'Taakinterviews'],
-        'Neem routinewerk, onderhoud, schoonmaak, storingen en tijdelijke werkzaamheden apart op. Een ontbrekende taak is een datagat.',
+        [
+          'Proceskaart met scope en betrokken rollen',
+          'Rondgang in verschillende diensten',
+          'Taakinterviews',
+        ],
+        'Neem routinewerk, onderhoud, schoonmaak, storingen en tijdelijk werk apart op. Leg vast wie het werk doet en welke bron op die taak en groep van toepassing is; een aangekondigde wetswijziging is geen vastgestelde actuele verplichting.',
       ],
       [
         'Risicogroepen',
@@ -805,7 +809,7 @@ export const themes: Theme[] = [
     'procesveiligheid',
     'Procesveiligheid, ATEX en druk',
     'Werk van initiërende gebeurtenis naar gevolg, preventie, mitigatie en aantoonbare beschermingslagen.',
-    ['VAULT-SCENARIO', 'EDU-HVK', 'VAULT-BOWTIE'],
+    ['VAULT-SCENARIO', 'EDU-HVK', 'VAULT-BOWTIE', 'SDU-AI43'],
     ['proceseigenaar', 'technische dienst', 'process safety specialist'],
     [
       [
@@ -833,7 +837,7 @@ export const themes: Theme[] = [
         'Verantwoorde gegevens',
         'Waar komen frequenties en faalkansen vandaan en hoe passen zij bij de installatie en testcondities?',
         ['Databron', 'Aannameregister', 'Proof-testresultaten'],
-        'Een LOPA-uitkomst vraagt passende frequenties, condities en erkende lagen. Vul ontbrekende data niet met schijnprecisie in.',
+        'Een LOPA-uitkomst vraagt passende scenariofrequenties, condities en erkende lagen. Een verzuimongevallenratio bewijst geen beheersing van zeldzame ernstige procesgevolgen en is geen initiatorfrequentie. Beoordeel die scenario’s en barrières afzonderlijk; verzin geen ontbrekende data.',
         [],
         'verdieping',
       ],
@@ -851,7 +855,7 @@ export const themes: Theme[] = [
     'maatregelkwaliteit',
     'Effectiviteit, AHS en justificatie',
     'Onderbouw technisch effect en uitvoerbaarheid afzonderlijk en bewaak dubbeltelling.',
-    ['VAULT-SCENARIO', 'EDU-HVK', 'ARBO-AHS', 'SDU-AI43'],
+    ['VAULT-SCENARIO', 'EDU-HVK', 'ARBO-AHS', 'SDU-AI43', 'PGA-32489'],
     ['veiligheidskundige', 'proceseigenaar', 'preventiemedewerker'],
     [
       [
@@ -870,8 +874,8 @@ export const themes: Theme[] = [
       [
         'Bewijs van werking',
         'Welk bewijs ondersteunt de gekozen reductie en welke gebruiksomstandigheden begrenzen die werking?',
-        ['Representatieve test', 'Voor- en nameting', 'Faal- en gebruiksgegevens'],
-        'Scheid verwacht effect, bewezen functie en werkelijk gebruik. Geef onzekerheid weer als gegevens ontbreken.',
+        ['Representatieve test', 'Voor- en nameting', 'Taakobservatie en controle op toepassing'],
+        'Scheid verwacht effect, bewezen functie en werkelijk gebruik. Controleer passendheid voor taak en betrokken mensen, beschikbare instructie en toezicht. Een opleidingsregistratie of procedure levert geen zelfstandig reductiepercentage; geef onzekerheid weer als bewijs ontbreekt.',
       ],
       [
         'Afhankelijkheid',
@@ -896,8 +900,12 @@ export const themes: Theme[] = [
       [
         'Geschikte beoordelingsmethode',
         'Waarom past de gekozen risicomethode bij het scenario, de benodigde diepgang en de beschikbare gegevens?',
-        ['Methodevergelijking', 'Gegevens en aannames', 'Beoordelingscriteria'],
-        'Onderscheid rangschikken met relatieve factoren, meten van blootstelling en berekenen van scenariofrequenties. Kies verdieping wanneer een grove score de beslissing onvoldoende onderbouwt.',
+        [
+          'Methodevergelijking en keuzegrond',
+          'Gegevens, aannames en teamoverwegingen',
+          'Benodigde expertise en beoordelingscriteria',
+        ],
+        'Onderscheid relatieve rangschikking, blootstellingsmeting en scenariofrequentie. Leg keuzegrond, benodigde expertise en teamoverwegingen vast. Kies verdieping als een grove score de beslissing onvoldoende onderbouwt; methodekeuze bewijst geen bekwaamheid.',
         [],
         'verdieping',
       ],
@@ -921,14 +929,22 @@ export const themes: Theme[] = [
       [
         'Feit en verklaring',
         'Welke informatie is een waarneming, registratie, verklaring of interpretatie en waar zitten tegenstrijdigheden?',
-        ['Brondossier', 'Tijdlijn', 'Onafhankelijke verificatie'],
-        'Bewaar ruwe informatie en conclusies apart. Een plausibele verklaring is geen vastgesteld causaal verband.',
+        [
+          'Brondossier met bewijs-ID’s en versies',
+          'Feitenlijst en tijdlijn vóór, tijdens en na het incident',
+          'Onafhankelijke verificatie van tegenspraak',
+        ],
+        'Bewaar ruwe informatie en conclusies apart. Leg bron, verzamelvolgorde en bewijsversie vast; laat onbekende tijden of onopgeloste tegenspraak zichtbaar. Een plausibele verklaring is geen vastgesteld causaal verband.',
       ],
       [
         'Van incident naar scenario',
         'Welke faalcondities uit een incident vragen om herziening van een scenario of maatregel?',
-        ['Incidentanalyse', 'Barrière-evaluatie', 'Herbeoordeling RI&E'],
-        'Onderzoek techniek, taak en organisatie; leg herstel en toetsing vast voordat een incident als afgehandeld telt.',
+        [
+          'Onderzoeksbesluit met potentiële ernst en scope',
+          'Barrière-evaluatie',
+          'Herbeoordeling RI&E',
+        ],
+        'Scheid feitelijke schade en potentiële ernst. Onderbouw of en hoe diep onderzoek nodig is, ook bij een bijna-ongeval; leg verantwoordelijke en expertise vast. Onderzoek techniek, taak en organisatie en controleer herstel.',
       ],
       [
         'Aantoonbare bekwaamheid',
@@ -961,7 +977,7 @@ export const themes: Theme[] = [
           'Onderzoek taak en organisatie',
           'Toets van structurele verbetering',
         ],
-        'Beoordeel of herstel alleen de laatste gebeurtenis voorkomt of ook de onderliggende faalconditie wegneemt. Maak verschillen tussen incidenten expliciet.',
+        'Onderbouw de oorzaakketen met feiten en bewijs. Een BRF-code is een classificatie en bewijst geen oorzaak. Maak verschillen tussen incidenten, coderingsversies en ontbrekende gegevens expliciet; één casus bewijst geen representatief organisatiepatroon.',
         ['source', 'collective'],
         'verdieping',
       ],

@@ -1,5 +1,9 @@
 import type { Scenario } from '../domain/types';
 import type { RiskAssessment } from './risk-history';
+import type { JustificationRecord } from './justification';
+import type { ModulePlan } from './module-plan';
+export * from './module-plan';
+export * from './justification';
 import type { ActionLifecycle } from './action';
 import type { ProjectContext, Walkthrough } from './project-context';
 export * from './project-context';
@@ -126,6 +130,8 @@ export interface WorkspaceState {
   walkthroughs?: Walkthrough[];
   basisRiskFactorRecords?: BasisRiskFactorRecord[];
   riskAssessments?: RiskAssessment[];
+  justifications?: JustificationRecord[];
+  modulePlans?: ModulePlan[];
 }
 
 export type WorkspacePatch = Partial<
@@ -154,6 +160,8 @@ export type WorkspacePatch = Partial<
     | 'walkthroughs'
     | 'basisRiskFactorRecords'
     | 'riskAssessments'
+    | 'justifications'
+    | 'modulePlans'
   >
 >;
 
@@ -197,6 +205,8 @@ export function createWorkspace(name: string, initial: WorkspacePatch = {}): Wor
     exposure: [],
     contentRecords: [],
     riskAssessments: [],
+    justifications: [],
+    modulePlans: [],
     projectContexts: [],
     walkthroughs: [],
     basisRiskFactorRecords: [],

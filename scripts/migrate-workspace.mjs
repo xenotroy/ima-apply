@@ -604,6 +604,66 @@ export async function migrateSqlite(filename, options = {}) {
     return dossiers.get(key);
   };
   const baseDossier = getDossier({});
+  const originalQuestionOrder = (a, b) => (Number.isSafeInteger(a.SortOrder) ? a.SortOrder : 0) - (Number.isSafeInteger(b.SortOrder) ? b.SortOrder : 0) || string(a.Nummer).localeCompare(string(b.Nummer)) || a.Id - b.Id;
+  const questionByOriginalId = new Map();
+  for (const original of [...rows.Vragen].sort(originalQuestionOrder)) {
+    if (!string(original.Vraagtekst).trim()) continue;
+    const q = question({ id: targetFor('Vragen', original), title: string(original.Titel), prompt: original.Vraagtekst,
+      themeId: string(original.ModuleCode) || String(original.ModuleId), assessmentGuidance: string(original.Toetscriteria),
+      sourceIds: [sourceFor('Vragen', original)], legalReferences: string(original.Wetgeving) });
+    questionByOriginalId.set(original.Id, q);
+    if (!workspace.questions.some(item => item.id === q.id)) workspace.questions.push(q);
+  }
+  const projectModuleLinks = rows.GeselecteerdeModules ?? [];
+  const planModules = (links, table) => {
+    const counts = new Map();
+    for (const link of links) counts.set(link.ModuleId, (counts.get(link.ModuleId) ?? 0) + 1);
+    const projected = [];
+    for (const link of links) {
+      const module = rows.Modules.find(item => item.Id === link.ModuleId);
+      if (counts.get(link.ModuleId) > 1) { warning(context, 'module_assignment_ambiguous', sourceFor(table, link), 'Dubbele moduletoewijzing binnen dezelfde scope blijft raw; geen notes of volgorde gekozen.'); continue; }
+      if (!module || !string(module.Titel).trim()) { warning(context, 'module_assignment_raw_only', sourceFor(table, link), 'Moduletoewijzing mist een benoemde bestaande module; oorspronkelijke FK blijft raw.'); continue; }
+      projected.push({ id: targetFor('Modules', module), origin: 'legacy_module', code: string(module.Code), title: module.Titel,
+        questionIds: [...rows.Vragen].filter(question => question.ModuleId === module.Id).sort(originalQuestionOrder).flatMap(question => questionByOriginalId.has(question.Id) ? [questionByOriginalId.get(question.Id).id] : []),
+        enabled: true, scopeNotes: string(link.ScopeNotes), ...(Number.isSafeInteger(link.SortOrder) ? { sortOrder: link.SortOrder } : {}),
+        ...(Number.isSafeInteger(module.SortOrder) ? { definitionSortOrder: module.SortOrder } : {}), sourceIds: [sourceFor(table, link), sourceFor('Modules', module)],
+        originalCategory: string(module.Categorie) });
+    }
+    // Source order values remain distinct. Project order follows the original repository query;
+    // department assignment order retains its persisted SortOrder with stable definition ties.
+    projected.sort((a, b) => table === 'DepartmentModules'
+      ? (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.originalCategory.localeCompare(b.originalCategory) || (a.definitionSortOrder ?? 0) - (b.definitionSortOrder ?? 0) || a.code.localeCompare(b.code) || a.id.localeCompare(b.id)
+      : a.originalCategory.localeCompare(b.originalCategory) || (a.definitionSortOrder ?? 0) - (b.definitionSortOrder ?? 0) || a.code.localeCompare(b.code) || a.id.localeCompare(b.id));
+    return projected.map(({ originalCategory, ...module }) => module);
+  };
+  const freezePlanQuestions = (plan, dossier) => {
+    if (!dossier) return;
+    for (const questionId of [...new Set(plan.modules.flatMap(module => module.questionIds))]) {
+      const q = [...questionByOriginalId.values()].find(question => question.id === questionId);
+      if (q) addFrozen(context, dossier, q, 'legacy-import/1.0.0');
+    }
+    if (plan.modules.length) warning(context, 'module_questions_frozen_at_export', plan.id, 'Geselecteerde modulevragen bij deze export bevroren, inclusief onbeantwoorde vragen. Dit reconstrueert geen historische module- of vraagversie.');
+  };
+  if (projectModuleLinks.length) {
+    if (projectContextId || baseDossier.organisationId) {
+      const plan = { id: stableId('sqlite-module-plan', `${project.Id}|project`), title: `${string(project.Naam) || 'Project'} — modulekeuze`, scope: 'project',
+        ...(projectContextId ? { projectContextId } : {}), ...(baseDossier.organisationId ? { organisationId: baseDossier.organisationId } : {}),
+        modules: planModules(projectModuleLinks, 'GeselecteerdeModules'), revision: 0, sourceIds: [sourceFor('RieProjecten', project)] };
+      workspace.modulePlans.push(plan); freezePlanQuestions(plan, baseDossier);
+    } else warning(context, 'project_module_plan_raw_only', sourceFor('RieProjecten', project), 'Modulekeuze mist een benoemde projectcontext of organisatie; oorspronkelijke selectie blijft raw.');
+  }
+  for (const originalDepartment of rows.Departments) {
+    const links = rows.DepartmentModules.filter(link => link.DepartmentId === originalDepartment.Id);
+    if (!links.length) continue;
+    const departmentId = departmentMap.get(originalDepartment.Id);
+    const organisationId = organisationByCompany.get(originalDepartment.CompanyId);
+    if (!departmentId || !organisationId) { for (const link of links) warning(context, 'department_module_plan_raw_only', sourceFor('DepartmentModules', link), 'Afdelingsmodule mist een bruikbare oorspronkelijke afdelingsscope; raw bewaard zonder projectbreed te verbreden.'); continue; }
+    const plan = { id: stableId('sqlite-module-plan', `${project.Id}|department|${originalDepartment.Id}`), title: `${originalDepartment.Name} — modulekeuze`, scope: 'department',
+      ...(projectContextId ? { projectContextId } : {}), organisationId, departmentId, modules: planModules(links, 'DepartmentModules'), revision: 0,
+      sourceIds: [sourceFor('Departments', originalDepartment)] };
+    workspace.modulePlans.push(plan);
+    freezePlanQuestions(plan, getDossier({ CompanyId: originalDepartment.CompanyId, DepartmentId: originalDepartment.Id }, sourceFor('Departments', originalDepartment)));
+  }
   const answerPairs = new Map();
   const sqlitePair = answer => JSON.stringify([resolveScope(answer).companyId ?? null, answer.DepartmentId ?? null, answer.VraagId]);
   for (const answer of rows.Antwoorden ?? []) answerPairs.set(sqlitePair(answer), (answerPairs.get(sqlitePair(answer)) ?? 0) + 1);
@@ -624,12 +684,6 @@ export async function migrateSqlite(filename, options = {}) {
     warning(context, 'sqlite_question_not_historically_frozen', sourceId, 'Vraag bij export bevroren; de legacy SQLite-antwoorden bevatten geen oorspronkelijke vraaghash/snapshot.');
     workspace.answers.push({ id: targetFor('Antwoorden', answer), questionId: q.id, dossierId: dossier.id, choice, evidence: '', evidenceIds: [], note: string(answer.Toelichting),
       answeredAt: time, questionSnapshot: q.prompt, questionSha256: frozen.sha256, contentVersion: frozen.version, sourceIds: [sourceId] });
-  }
-  // Preserve selected module questions even when there is no answer yet.
-  for (const original of rows.Vragen) {
-    if (!string(original.Vraagtekst)) continue;
-    const q = question({ id: targetFor('Vragen', original), title: string(original.Titel), prompt: original.Vraagtekst, themeId: string(original.ModuleCode) || String(original.ModuleId), assessmentGuidance: string(original.Toetscriteria), sourceIds: [sourceFor('Vragen', original)], legalReferences: string(original.Wetgeving) });
-    addFrozen(context, baseDossier, q, 'legacy-import/1.0.0');
   }
   for (const rating of rows.RisicofactorBeoordelingen ?? []) {
     const factor = (rows.Risicofactoren ?? []).find(row => row.Id === rating.RisicofactorItemId);
@@ -680,7 +734,7 @@ function finish(context) {
     contentSha256: '', raw: {} };
   // Count this summary source too; never put a self-referential workspace digest inside it.
   context.workspace.sources.push(review);
-  context.report.counts = Object.fromEntries(['scenarios', 'questions', 'answers', 'actions', 'incidents', 'sources', 'organisations', 'sites', 'departments', 'dossiers', 'evidence', 'observations', 'findings', 'topics', 'legalRecords', 'investigations', 'exposure', 'projectContexts', 'walkthroughs', 'basisRiskFactorRecords'].map(key => [key, context.workspace[key]?.length ?? 0]));
+  context.report.counts = Object.fromEntries(['scenarios', 'questions', 'answers', 'actions', 'incidents', 'sources', 'organisations', 'sites', 'departments', 'dossiers', 'evidence', 'observations', 'findings', 'topics', 'legalRecords', 'investigations', 'exposure', 'projectContexts', 'walkthroughs', 'basisRiskFactorRecords', 'modulePlans'].map(key => [key, context.workspace[key]?.length ?? 0]));
   review.raw = JSON.parse(canonicalMigrationReportJson(context.report));
   review.contentSha256 = hash(canonicalMigrationReportJson(review.raw));
   const serialized = context.api.exportWorkspace(context.workspace);

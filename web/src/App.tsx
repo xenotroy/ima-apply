@@ -32,8 +32,6 @@ import {
   evaluateRisk,
   calculateLopa,
   efficacyEstimate,
-  calculateFineJustification,
-  calculateKinneyJustification,
   AHS_LABELS,
   KINNEY_SCALES,
 } from './domain/risk';
@@ -77,6 +75,8 @@ import DossierReport, { dossierMarkdown } from './components/DossierReport';
 import LearningWorkspace from './components/LearningWorkspace';
 import { ActionLifecyclePanel } from './components/ActionLifecyclePanel';
 import RiskAssessmentPanel, { riskAssessmentMarkdown } from './components/RiskAssessmentPanel';
+import JustificationWorkspace from './components/JustificationWorkspace';
+import { justificationMarkdown } from './data/justification';
 import {
   actionRevision,
   actionSnapshot,
@@ -492,7 +492,7 @@ export default function App() {
             target="_blank"
             rel="noreferrer"
           >
-            <GitBranch size={14} /> IMA Apply 2.1 <ArrowUpRight size={13} />
+            <GitBranch size={14} /> IMA Apply 2.2 <ArrowUpRight size={13} />
           </a>
         </div>
       </aside>
@@ -748,6 +748,17 @@ export default function App() {
                     onSave={(record) =>
                       update({
                         riskAssessments: [...(workspaceRef.current.riskAssessments ?? []), record],
+                      })
+                    }
+                  />
+                  <JustificationWorkspace
+                    key={`justification-${selected.id}`}
+                    scenarioId={selected.id}
+                    assessments={workspace.riskAssessments ?? []}
+                    records={workspace.justifications ?? []}
+                    onSave={(record) =>
+                      update({
+                        justifications: [...(workspaceRef.current.justifications ?? []), record],
                       })
                     }
                   />
@@ -1569,7 +1580,6 @@ function RiskWorkbench({
               )}
             </div>
           </section>
-          <Justification scenario={scenario} />
           <div className="bottom-grid">
             <Priorities scenario={scenario} onEdit={editControl} />
             <section className="panel">
@@ -3517,6 +3527,7 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
       );
     lines.push(...dossierMarkdown(workspace));
     lines.push(...riskAssessmentMarkdown(workspace.riskAssessments ?? []));
+    lines.push(...justificationMarkdown(workspace.justifications ?? []));
     download('ima-rie-rapport.md', lines.join('\n'), 'text/markdown');
   };
   return (
@@ -3716,94 +3727,5 @@ function LopaSetup({
         </button>
       </form>
     </Modal>
-  );
-}
-function Justification({ scenario }: { scenario: Scenario }) {
-  const r = evaluateRisk(scenario);
-  const [cost, setCost] = useState(1),
-    [correction, setCorrection] = useState(1),
-    [kinneyCost, setKinneyCost] = useState(1);
-  const fraction = r.current.score.value
-    ? Math.max(0, 1 - r.target.score.value / r.current.score.value)
-    : 0;
-  return (
-    <section className="panel">
-      <details>
-        <summary className="justification-summary">
-          <Target size={17} /> Historische justificatie: Fine en Kinney/Wiruth
-        </summary>
-        <div className="method-grid">
-          <div>
-            <h3>Fine: J = R / (CF × DC)</h3>
-            <p>
-              DC is de historische correctierating, geen reductiepercentage. Historische
-              kostenschalen vragen lokale kalibratie.
-            </p>
-            <Field label="Cost factor CF">
-              <input
-                type="number"
-                min="0.001"
-                step="any"
-                value={cost}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  if (n > 0) setCost(n);
-                }}
-              />
-            </Field>
-            <Field label="Degree of correction-rating DC">
-              <input
-                type="number"
-                min="0.001"
-                step="any"
-                value={correction}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  if (n > 0) setCorrection(n);
-                }}
-              />
-            </Field>
-            <div className="formula">
-              <span>Huidige score {num(r.current.score.value)}</span>
-              <strong>
-                {num(calculateFineJustification(r.current.score.value, cost, correction))}
-              </strong>
-            </div>
-          </div>
-          <div>
-            <h3>Kinney/Wiruth: J = R × reductie / kostendeler</h3>
-            <p>
-              De scoreverbetering van huidig naar prognose: {pct(fraction)}. De apart gekozen
-              kostendeler wordt hier gebruikt; de koppeling van eurokosten aan deze schaal moet
-              afzonderlijk worden vastgesteld.
-            </p>
-            <Field label="Kinney-kostendeler (eigen schaal)">
-              <input
-                type="number"
-                min="0.001"
-                step="any"
-                value={kinneyCost}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  if (n > 0) setKinneyCost(n);
-                }}
-              />
-            </Field>
-            <div className="formula">
-              <span>J (nominale prognose)</span>
-              <strong>
-                {num(calculateKinneyJustification(r.current.score.value, fraction, kinneyCost))}
-              </strong>
-            </div>
-            <p className="caption">
-              Historische modeluitkomst met je eigen ratings. Geen automatische
-              investeringsgoedkeuring of juridische vrijstelling. De IMA-prioriteit met AHS en
-              haalbaarheid blijft een afzonderlijke lokale beleidskeuze. Deze ratings zijn
-              tijdelijk; leg gebruikte ratings en je besluit vast in de beoordelingsonderbouwing.
-            </p>
-          </div>
-        </div>
-      </details>
-    </section>
   );
 }

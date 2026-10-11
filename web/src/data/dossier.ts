@@ -1,6 +1,7 @@
 import type { Question } from '../content/catalog';
 import type { WorkspaceRecord } from './model';
 import type { BasisRiskFactorSnapshot } from './brf';
+import type { ModulePlan } from './module-plan';
 
 export interface Organisation {
   id: string;
@@ -62,6 +63,8 @@ export interface Dossier {
   createdAt: string;
   questions: FrozenQuestion[];
   sourceSnapshots?: WorkspaceRecord[];
+  modulePlanSnapshot?: ModulePlan;
+  modulePlanSnapshotSha256?: string;
   reviewedBy?: string;
   reviewedAt?: string;
   reviewNote?: string;

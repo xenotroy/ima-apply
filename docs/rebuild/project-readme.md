@@ -2,7 +2,7 @@
 
 Een browserwerkruimte voor risico-inventarisatie, onderbouwde beheersmaatregelen en zichtbaar restrisico.
 
-Deze implementatiestand betreft appversie **2.1.0**. Het browserdataschema blijft additief `schemaVersion: 1`; de rekenmethode heeft haar eigen versie `ima-risk/2.0.0`.
+Deze implementatiestand betreft appversie **2.2.0**. Het browserdataschema blijft additief `schemaVersion: 1`; de rekenmethode heeft haar eigen versie `ima-risk/2.0.0`.
 
 **[Open IMA Apply](https://xenotroy.github.io/ima-apply/)** · [Handleiding](docs/rebuild/getting-started.md) · [Risicomethodiek](docs/rebuild/risk-methodology.md) · [Bronregister](docs/rebuild/source-register.md)
 
@@ -15,11 +15,12 @@ Deze implementatiestand betreft appversie **2.1.0**. Het browserdataschema blijf
 - Effectinschaling op basis van bereik, conditionele beschikbaarheid, correct gebruik en werking.
 - Afzonderlijke LOPA met jaarlijkse initiatorfrequentie, modifiers, onafhankelijke beschermlagen, PFD-intervallen en een lokaal vastgesteld criterium.
 - AHS-voorkeur, eenvoudige uitvoerbaarheid en marginale scoreverbetering als aparte prioritering.
-- Historische Fine- en Kinney-justificatiecalculators met afzonderlijke kostenratings.
+- Vastgelegde maatregeljustificatie: één maatregel of gekozen pakket, bevroren bronbeoordeling, kostenbasis, Fine-/Kinney-ratings en expliciet besluit.
 - 16 thema’s, 78 eigen checkvragen, 8 contentpakketten en expliciete bronstatus.
 - Private vragen/content uit Markdown, legacy JSON en Moodle/LMS-CSV.
 - Organisaties, locaties, afdelingen en afzonderlijke RI&E-dossiers met bevroren vragen en gecontroleerde bronhashes. Een echte afdeling kan rechtstreeks bij een organisatie horen wanneer de locatie onbekend is.
 - Bewijsregister, waarnemingen, bevindingen, eigen onderwerpen en regelgevingssignalen.
+- Project-/afdelingsmoduleplannen met volgorde, scopenotities en bevroren dossiervragen, ook als ze nog onbeantwoord zijn.
 - Bewerkbare projectcontext met dertien inhoudelijke velden, volledige rondgangverslagen met modules en expliciete waarnemingslinks; versieerbaar lokaal register voor basisrisicofactoren.
 - Opgeslagen 5×Waarom-/BowTie-onderzoeken en incidentfrequenties met passende maanduren en expliciete datadekking.
 - Gecontroleerde legacy dossierexport uit Markdown en SQLite met bronbehoud en reviewwaarschuwingen.
@@ -38,7 +39,7 @@ Open **Werkruimte & synchronisatie**. Voor de persoonlijke inrichting is de priv
 
 Bekijk op een nieuwe pc de cloudversie voordat je verder werkt. Uploads met een verouderde versie worden geblokkeerd; er is geen stil overschrijven. [Volledige synchronisatiewerkwijze](docs/rebuild/multi-device.md).
 
-De aparte private bronwerkruimte is beschikbaar als `workspaces/bronwerkruimte.json`: 260 oorspronkelijke themavragen en drie lesconcepten. Kies dat bestand in de synchronisatiepagina om de echte private intake te openen. De publieke app blijft 78 eigen checkvragen leveren.
+De aparte private bronwerkruimte is beschikbaar als `workspaces/bronwerkruimte.json`: 260 oorspronkelijke themavragen en drie lesconcepten. Kies dat bestand in de synchronisatiepagina om de echte private intake te openen. De publieke app blijft 78 eigen checkvragen leveren. De afzonderlijke aanvullende bronreview staat in `workspaces/bronwerkruimte-reviewed-2026-10-11.json`: dezelfde vragen en lesconcepten, plus drie afgebakende bronextracten met geverifieerde pagina- en bronhashes.
 
 ## Ontwikkelen en controleren
 
