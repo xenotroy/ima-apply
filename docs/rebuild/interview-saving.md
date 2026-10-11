@@ -1,12 +1,12 @@
 # Interviewinvoer bewaren en herstellen
 
-IMA Apply 2.3.1 bewaart vastgelegde invoer automatisch in de browser. De status in de zijbalk bevestigt de normale lokale opslag. Vóór die opslag staat een gevalideerde herstelkopie klaar; een mislukte of onderbroken schrijfoperatie kan daardoor bij herladen worden hersteld. Alleen een herstelkopie met de passende opslagversie wordt automatisch gekozen. Meerdere concurrerende of oudere versies blijven afzonderlijk exporteerbaar.
+IMA Apply 2.4 bewaart vastgelegde invoer automatisch in de browser. De status in de zijbalk bevestigt de normale lokale opslag. Vóór die opslag staat een gevalideerde herstelkopie klaar; een mislukte of onderbroken schrijfoperatie kan daardoor bij herladen worden hersteld. Alleen een herstelkopie met de passende opslagversie wordt automatisch gekozen. Meerdere concurrerende of oudere versies blijven afzonderlijk exporteerbaar.
 
 ## Tijdens een interview
 
 1. Open het juiste dossier via **Organisatie & dossiers → Inventariseren**. Vul **Respondent / actor voor deze invoer** bewust in; nieuwe antwoorden zijn geblokkeerd zolang die ontbreekt.
 2. Bij iedere wijziging probeert de applicatie antwoordkeuze, toelichting en bewijslinks vast te leggen. De volledige antwoordinvoer wordt eerst als concept bewaard. Weigert validatie de wijziging, bijvoorbeeld vanwege een te lange tekst, dan blijft het opgeslagen antwoord intact en blijft de geweigerde invoer herstelbaar en exporteerbaar. Een geslaagde antwoordwijziging behoudt dezelfde response-ID en de bestaande waarneming-/bevindingrelaties.
-3. Lees de opslagstatus. Bij **Niet lokaal opgeslagen** blijft de actuele werkversie beschikbaar voor export. Ga dan naar **Rapportage** en exporteer JSON en Markdown voordat je het tabblad sluit.
+3. Lees de opslagstatus. Bij **Niet lokaal opgeslagen** blijft de actuele werkversie beschikbaar voor export. Ga naar **Werkruimte & synchronisatie → Werkruimte exporteren** voor JSON en naar **Rapportage → Markdown / Concepten naar Markdown** voor de onvastgelegde formulierinvoer. Exporteer deze voordat je het tabblad sluit.
 4. De hieronder genoemde beschermde formulieren bewaren invoer direct als lokaal concept. Je hoeft niet eerst **Opslaan** te kiezen om dat concept terug te vinden. Open na sluiten of herladen hetzelfde formulier en controleer de melding **Concept hersteld**.
 5. Kies alsnog de opslagknop van het formulier om er een dossierrecord van te maken. Het concept wordt pas opgeruimd wanneer de bijbehorende werkruimte daadwerkelijk duurzaam is geschreven.
 
@@ -32,7 +32,7 @@ Controleer de volledige tekst en verwijder een oude versie pas bewust met **Dit 
 
 - **Rapportage → Markdown** levert het leesbare dossier met bronvragen, actor, relaties, maatregelen en beoordelingen, plus de nog niet vastgelegde formulierconcepten van de huidige werkruimte.
 - **Concepten naar Markdown** bewaart de volledige conceptwaarden afzonderlijk. De tekst vermeldt expliciet dat deze nog geen vastgestelde dossierrecords zijn.
-- **Werkruimte exporteren** levert volledige JSON voor import en verder werken, inclusief bevroren vragen, contentpakketversies en relaties. Losse formulierconcepten staan in hun afzonderlijke Markdown-export en maken geen deel uit van dit vastgelegde werkruimtebestand.
+- **Werkruimte & synchronisatie → Werkruimte exporteren** levert volledige JSON voor import en verder werken, inclusief bevroren vragen, contentpakketversies en relaties. Losse formulierconcepten staan in hun afzonderlijke Markdown-export en maken geen deel uit van dit vastgelegde werkruimtebestand.
 - **Herstelkopie exporteren** bewaart een volledige tussentijdse werkruimte als JSON wanneer die niet veilig automatisch over de huidige versie kan worden gezet.
 
 Markdown is een leesbare backup en rapportage. Gebruik JSON voor volledige werkruimteoverdracht. Bewaar beide aan het begin en einde van een interview en bij relevante tussenstappen.
