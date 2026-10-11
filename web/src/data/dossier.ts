@@ -100,6 +100,13 @@ export interface Observation {
   facts: string;
   evidenceIds: string[];
   responseIds?: string[];
+  topicIds?: string[];
+  observedAt?: string;
+  location?: string;
+  scopeId?: string;
+  context?: string;
+  sourceCreatedAt?: string;
+  sourceUpdatedAt?: string;
 }
 export interface Finding {
   id: string;
@@ -123,6 +130,9 @@ export interface Topic {
   category: string;
   description: string;
   aliases: string[];
+  parentId?: string;
+  tags?: string[];
+  status?: string;
 }
 export interface LegalRecord {
   id: string;
@@ -136,6 +146,8 @@ export interface LegalRecord {
   summary: string;
   impact: string;
   topicIds: string[];
+  publishedOn?: string;
+  affectedRefs?: import('../domain/action-context').ActionSourceRef[];
 }
 export interface Investigation {
   id: string;

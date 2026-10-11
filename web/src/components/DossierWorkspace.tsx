@@ -1,4 +1,9 @@
 import { useState } from 'react';
+import {
+  TopicContextFields,
+  LegalContextFields,
+  ObservationContextFields,
+} from './RecordContextFields';
 import { EvidenceAttachmentPanel } from './EvidenceAttachmentPanel';
 import { useRiskEvidence } from './RiskEvidenceContext';
 import { evidenceFileBindingHash, evidenceFileIntegrityReady } from '../data/evidence-files';
@@ -1337,6 +1342,11 @@ function ObservationForm({
         values={record.evidenceIds}
         onChange={(v) => set({ ...record, evidenceIds: v })}
       />
+      <ObservationContextFields
+        value={record}
+        workspace={workspace}
+        onChange={(patch) => set((previous) => ({ ...previous, ...patch }))}
+      />
       <button className="primary">Waarneming opslaan</button>
     </form>
   );
@@ -1492,7 +1502,9 @@ function TopicForm({
   workspace: WorkspaceState;
   onSave: (t: Topic) => boolean;
 }) {
-  const [draft, setDraft, draftStatus] = usePersistentDraft(
+  const [draft, setDraft, draftStatus] = usePersistentDraft<
+    Omit<Topic, 'aliases'> & { aliases: string }
+  >(
     `${workspace.id}/topic/new`,
     () => ({
       id: id(),
@@ -1522,10 +1534,7 @@ function TopicForm({
           return;
         }
         const accepted = onSave({
-          id: draft.id,
-          title,
-          category,
-          description,
+          ...draft,
           aliases: aliases
             .split(',')
             .map((a) => a.trim())
@@ -1553,6 +1562,11 @@ function TopicForm({
       <Field label="Synoniemen, gescheiden door komma">
         <input value={aliases} onChange={(e) => setAliases(e.target.value)} />
       </Field>
+      <TopicContextFields
+        value={draft}
+        workspace={workspace}
+        onChange={(patch) => setDraft((previous) => ({ ...previous, ...patch }))}
+      />
       <button className="primary">Onderwerp opslaan</button>
     </form>
   );
@@ -1688,6 +1702,11 @@ function LegalForm({
         items={topics}
         values={record.topicIds}
         onChange={(v) => set({ ...record, topicIds: v })}
+      />
+      <LegalContextFields
+        value={record}
+        workspace={workspace}
+        onChange={(patch) => set((previous) => ({ ...previous, ...patch }))}
       />
       <button className="primary">Signaal opslaan</button>
     </form>

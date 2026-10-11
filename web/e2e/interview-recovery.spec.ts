@@ -95,7 +95,7 @@ test('an unfinished observation survives closing and reload and is included in M
   await dialog.getByLabel('Waarnemer', { exact: true }).fill('Interviewactor');
   const facts =
     'Medewerker noemt een knelpunt.\nDit is een interviewclaim, geen geverifieerde bevinding.';
-  await dialog.locator('textarea').fill(facts);
+  await dialog.getByRole('textbox', { name: 'Waargenomen feiten', exact: true }).fill(facts);
   await dialog.getByRole('button', { name: 'Sluiten', exact: true }).click();
   expect((await state(page)).observations).toHaveLength(0);
   const draftReport = await markdown(page);
@@ -106,7 +106,9 @@ test('an unfinished observation survives closing and reload and is included in M
   await page.getByRole('button', { name: 'Organisatie & dossiers', exact: true }).click();
   await page.getByRole('button', { name: 'Waarneming', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Waarneming vastleggen' });
-  await expect(dialog.locator('textarea')).toHaveValue(facts);
+  await expect(
+    dialog.getByRole('textbox', { name: 'Waargenomen feiten', exact: true }),
+  ).toHaveValue(facts);
   await expect(dialog.getByLabel('Waarnemingstitel', { exact: true })).toHaveValue(
     'Nog niet vastgelegde interviewwaarneming',
   );

@@ -23,6 +23,14 @@ import {
 } from './risk-evidence';
 import { assertEvidenceFileFields } from './evidence-files';
 import { assertActionContext, assertActionContextRelations } from '../domain/action-context';
+import {
+  assertIncidentContextStructure,
+  assertIncidentContextRelations,
+} from '../domain/incident-context';
+import {
+  assertRecordContextStructure,
+  assertRecordContextRelations,
+} from '../domain/record-context';
 import type { Question } from '../content/catalog';
 import { questionHash, evidenceHash } from './frozen';
 import { departmentOrganisationId, type Evidence } from './dossier';
@@ -590,7 +598,26 @@ function incident(value: unknown, path: string): void {
     'activity',
     'immediateControls',
     'openQuestions',
+    'kind',
+    'occurredAt',
+    'reportedAt',
+    'scopeId',
+    'organisation',
+    'location',
+    'status',
+    'tags',
+    'topicIds',
+    'basisRiskFactorIds',
+    'evidenceIds',
+    'investigationIds',
+    'sourceCreatedAt',
+    'sourceUpdatedAt',
   ]);
+  try {
+    assertIncidentContextStructure(item);
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'ongeldige incidentcontext.');
+  }
   id(item.id, `${path}.id`);
   text(item.title, `${path}.title`, true, 1_000);
   date(item.date, `${path}.date`);
@@ -839,7 +866,19 @@ function observation(value: unknown, path: string): void {
     'facts',
     'evidenceIds',
     'responseIds',
+    'topicIds',
+    'observedAt',
+    'location',
+    'scopeId',
+    'context',
+    'sourceCreatedAt',
+    'sourceUpdatedAt',
   ]);
+  try {
+    assertRecordContextStructure('observation', item);
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'ongeldige waarnemingscontext.');
+  }
   if (item.responseIds !== undefined) strings(item.responseIds, `${path}.responseIds`);
   text(item.title, `${path}.title`, true);
   id(item.dossierId, `${path}.dossierId`);
@@ -887,7 +926,20 @@ function finding(value: unknown, path: string): void {
   }
 }
 function topic(value: unknown, path: string): void {
-  const item = baseRecord(value, path, ['title', 'category', 'description', 'aliases']);
+  const item = baseRecord(value, path, [
+    'title',
+    'category',
+    'description',
+    'aliases',
+    'parentId',
+    'tags',
+    'status',
+  ]);
+  try {
+    assertRecordContextStructure('topic', item);
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'ongeldige onderwerpcontext.');
+  }
   text(item.title, `${path}.title`, true);
   text(item.category, `${path}.category`);
   text(item.description, `${path}.description`);
@@ -905,7 +957,14 @@ function legalRecord(value: unknown, path: string): void {
     'summary',
     'impact',
     'topicIds',
+    'publishedOn',
+    'affectedRefs',
   ]);
+  try {
+    assertRecordContextStructure('legal', item);
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'ongeldige regelgevingscontext.');
+  }
   text(item.title, `${path}.title`, true);
   text(item.officialUrl, `${path}.officialUrl`, true);
   try {
@@ -1258,7 +1317,22 @@ function relations(workspace: WorkspaceState): void {
     refs(i.evidenceIds, evidenceIds, 'Onderzoek.bewijs');
     refs(i.actionIds, actions, 'Onderzoek.acties');
   });
-  workspace.incidents.forEach((i) => ref(i.departmentId, departments, 'Incident.afdeling'));
+  workspace.incidents.forEach((i) => {
+    ref(i.departmentId, departments, 'Incident.afdeling');
+    try {
+      assertIncidentContextRelations(i, workspace);
+    } catch (error) {
+      fail('Incident', error instanceof Error ? error.message : 'ongeldige incidentrelaties.');
+    }
+  });
+  try {
+    assertRecordContextRelations(workspace);
+  } catch (error) {
+    fail(
+      'Registerrelaties',
+      error instanceof Error ? error.message : 'ongeldige registerrelaties.',
+    );
+  }
   workspace.riskAssessments?.forEach((record) => {
     ref(record.scenarioId, scenarios, 'Beoordelingsmoment.scenario');
     ref(record.input.dossierId, dossierIds, 'Beoordelingsmoment.historisch dossier');

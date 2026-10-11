@@ -69,7 +69,9 @@ export async function loadWorkspaceApi() {
   const riskLibrary = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/data/risk-library.ts')));
   const frozen = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/data/frozen.ts')));
   const actionContext = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/domain/action-context.ts')));
-  return { ...model, ...validation, ...questionDefinitions, ...riskLibrary, ...frozen, ...actionContext };
+  const incidentContext = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/domain/incident-context.ts')));
+  const recordContext = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/domain/record-context.ts')));
+  return { ...model, ...validation, ...questionDefinitions, ...riskLibrary, ...frozen, ...actionContext, ...incidentContext, ...recordContext };
 }
 
 function scalar(input) {
@@ -515,6 +517,31 @@ export async function migrateMarkdown(root, options = {}) {
     const candidates = actionRelationCandidates(id, schema);
     return candidates.length === 1 && sourceActionIdentityEqual(string(candidates[0].metadata.id), id) === true ? candidates[0] : null;
   };
+  const exactTimeFields = (record, prefix, fields) => Object.fromEntries(fields.flatMap(([sourceKey, targetKey]) => {
+    if (!Object.hasOwn(record.metadata, sourceKey)) return [];
+    const value = record.metadata[sourceKey];
+    if (context.api.isIsoOffsetLexeme(value)) return [[targetKey, value]];
+    warning(context, `${prefix}_timestamp_unresolved`, record.sourceId, `${sourceKey} heeft geen bevestigde kalender/tijd/offset met maximaal zeven fractiecijfers. Exacte waarde blijft raw; geen tijdzone, tijdstip of migratiedatum ingevuld.`);
+    return [];
+  }));
+  const exactTextFields = (record, prefix, fields) => Object.fromEntries(fields.flatMap(([sourceKey, targetKey, maxLength = 100_000]) => {
+    if (!Object.hasOwn(record.metadata, sourceKey)) return [];
+    const value = record.metadata[sourceKey];
+    if (typeof value === 'string' && value.length <= maxLength) return [[targetKey, value]];
+    warning(context, `${prefix}_value_unresolved`, record.sourceId, `${sourceKey} is geen ondersteunde tekstwaarde van maximaal ${maxLength} tekens. Exact raw behouden, niet afgekapt of tot tekst omgezet.`);
+    return [];
+  }));
+  const exactTags = (record, prefix) => {
+    if (!Object.hasOwn(record.metadata, 'tags')) return {};
+    const values = record.metadata.tags;
+    const maxLength = 1_000;
+    if (!Array.isArray(values) || values.length > 10_000 || values.some(value => typeof value !== 'string' || !value.trim() || value.length > maxLength)) {
+      warning(context, `${prefix}_tags_unresolved`, record.sourceId, 'tags bevat geen volledig bruikbare lijst. Exacte bronlijst blijft raw; geen labels geraden.');
+      return {};
+    }
+    if (new Set(values).size !== values.length) warning(context, `${prefix}_duplicate_tags`, record.sourceId, 'Dubbele oorspronkelijke tags eenmaal geprojecteerd; exacte bronlijst blijft raw.');
+    return { tags: [...new Set(values)] };
+  };
   const originalQuestion = (id, version, sha256) => {
     const matches = bySchema('ima.rie-question-definition/v1').filter(record => string(record.metadata.id).toLowerCase() === string(id).toLowerCase() && record.metadata.version === version && record.legacySha256 === string(sha256).toLowerCase());
     return matches.length === 1 ? matches[0] : null;
@@ -559,7 +586,8 @@ export async function migrateMarkdown(root, options = {}) {
   }
   for (const record of bySchema('ima.topic/v1')) {
     if (!string(record.metadata.title)) { warning(context, 'topic_raw_only', record.sourceId, 'Onderwerp zonder titel blijft raw.'); continue; }
-    workspace.topics.push({ id: record.targetId, title: record.metadata.title, category: string(record.metadata.category), description: record.body, aliases: strings(record.metadata.aliases) });
+    workspace.topics.push({ id: record.targetId, title: record.metadata.title, category: string(record.metadata.category), description: record.body, aliases: strings(record.metadata.aliases),
+      ...exactTextFields(record, 'topic', [['status', 'status', 1_000]]), ...exactTags(record, 'topic') });
   }
   const topicMap = new Map(bySchema('ima.topic/v1').filter(record => workspace.topics.some(topic => topic.id === record.targetId) && unique('ima.topic/v1', record.metadata.id) === record).map(record => [string(record.metadata.id).toLowerCase(), record.targetId]));
   const mappedRefs = (ids, schema, sourceId) => strings(ids).flatMap(id => {
@@ -570,11 +598,14 @@ export async function migrateMarkdown(root, options = {}) {
   });
   for (const record of bySchema('ima.legal-update/v1')) {
     const m = record.metadata;
+    const publicationKnown = context.api.isSourceCalendarDate(m.published_on);
     if (!/^https?:\/\//.test(string(m.official_uri)) || !['signal', 'published', 'effective', 'superseded', 'withdrawn'].includes(m.status) || !string(m.title) || !string(m.jurisdiction) || !calendarDate(m.last_verified_on) || !record.sections.samenvatting) {
       warning(context, 'legal_not_projected', record.sourceId, 'Wetgevingsrecord mist geldige officiële URL/status; raw behouden.'); continue;
     }
     workspace.legalRecords.push({ id: record.targetId, title: string(m.title), officialUrl: m.official_uri, citation: string(m.citation), jurisdiction: string(m.jurisdiction), status: m.status,
-      effectiveOn: calendarDate(m.effective_on), lastVerifiedOn: calendarDate(m.last_verified_on), summary: record.sections.samenvatting || '', impact: record.sections.impact || '', topicIds: strings(m.topic_ids).flatMap(id => topicMap.has(id.toLowerCase()) ? [topicMap.get(id.toLowerCase())] : []) });
+      effectiveOn: calendarDate(m.effective_on), lastVerifiedOn: calendarDate(m.last_verified_on), summary: record.sections.samenvatting || '', impact: record.sections.impact || '', topicIds: strings(m.topic_ids).flatMap(id => topicMap.has(id.toLowerCase()) ? [topicMap.get(id.toLowerCase())] : []),
+      ...(publicationKnown ? { publishedOn: m.published_on } : {}) });
+    if (m.published_on != null && m.published_on !== '' && !publicationKnown) warning(context, 'legal_publication_date_unresolved', record.sourceId, 'published_on is geen bevestigde kalenderdatum. Exacte waarde blijft raw, geen publicatiedatum afgeleid uit ingangsdatum of broncontrole.');
   }
   // Definitions are enriched only after their actual relation targets are known.
   // A source snapshot is never promoted to managed status by a migration default.
@@ -766,10 +797,13 @@ export async function migrateMarkdown(root, options = {}) {
   }
   for (const record of bySchema('ima.rie-observation/v1')) {
     const m = record.metadata; const dossier = dossierFor(m.assessment_id, record.sourceId);
-    const time = timestamp(m.observed_at, context, record.sourceId);
+    const times = exactTimeFields(record, 'observation', [['observed_at', 'observedAt'], ['created_at', 'sourceCreatedAt'], ['updated_at', 'sourceUpdatedAt']]);
+    const time = times.observedAt;
     if (!dossier || !time || !record.sections.feit || !string(m.observer)) { warning(context, 'observation_not_projected', record.sourceId, 'Waarneming mist bekende contextvelden; raw behouden.'); continue; }
     workspace.observations.push({ id: record.targetId, title: record.body.match(/^#\s+(.+)$/m)?.[1] || 'Legacy waarneming', dossierId: dossier.id, date: string(m.observed_at).slice(0, 10), observer: m.observer,
-      facts: `Feit:\n${record.sections.feit}${record.sections.context ? `\n\nContext:\n${record.sections.context}` : ''}`, evidenceIds: evidenceRefs(m.evidence_ids, record) });
+      facts: record.sections.feit, ...(record.sections.context !== undefined && record.sections.context.length <= 100_000 ? { context: record.sections.context } : {}), evidenceIds: evidenceRefs(m.evidence_ids, record),
+      ...times, ...exactTextFields(record, 'observation', [['location', 'location'], ['scope_id', 'scopeId', 160]]) });
+    if (record.sections.context?.length > 100_000) warning(context, 'observation_context_unresolved', record.sourceId, 'Context-sectie overschrijdt de native veldgrens van 100.000 tekens. Exacte volledige context blijft raw, niet afgekapt.');
   }
   const findingProjected = new Set();
   for (const record of bySchema('ima.rie-finding/v2')) {
@@ -847,13 +881,16 @@ export async function migrateMarkdown(root, options = {}) {
   }
   for (const record of bySchema('ima.incident/v1')) {
     const m = record.metadata;
-    const occurred = string(m.occurred_at); const time = timestamp(occurred, context, record.sourceId);
+    const occurred = string(m.occurred_at);
+    const times = exactTimeFields(record, 'incident', [['occurred_at', 'occurredAt'], ['reported_at', 'reportedAt'], ['created_at', 'sourceCreatedAt'], ['updated_at', 'sourceUpdatedAt']]);
+    const time = times.occurredAt;
     if (!time || !string(m.title)) { warning(context, 'incident_not_projected', record.sourceId, 'Incident zonder exact bruikbaar feitelijk tijdstip of titel blijft raw.'); continue; }
     const type = m.kind === 'near_miss' ? 'near_miss' : m.kind === 'unsafe_condition' ? 'observation' : ['injury', 'illness', 'property_damage', 'environmental', 'other'].includes(m.kind) ? 'incident' : null;
     if (!type) { warning(context, 'incident_not_projected', record.sourceId, 'Onbekend incidenttype niet ingevuld.'); continue; }
     const actionIds = strings(m.action_ids).flatMap(id => { const candidates = workspace.actions.filter(action => records.some(item => item.targetId === action.id && string(item.metadata.id).toLowerCase() === id.toLowerCase()));
       if (candidates.length === 1) return [candidates[0].id]; warning(context, 'unresolved_relation', record.sourceId, 'Incidentactie ontbreekt of is niet uniek; oorspronkelijke verwijzing raw behouden.'); return []; });
-    workspace.incidents.push({ id: record.targetId, title: m.title, date: occurred.slice(0, 10), department: string(m.department), type, description: record.body, actionIds,
+    workspace.incidents.push({ id: record.targetId, title: m.title, date: occurred.slice(0, 10), department: string(m.department), type, kind: m.kind, description: record.sections.feiten ?? record.body, actionIds,
+      ...times, ...exactTextFields(record, 'incident', [['scope_id', 'scopeId'], ['organisation', 'organisation'], ['location', 'location'], ['status', 'status']]), ...exactTags(record, 'incident'),
       ...(severities.includes(m.actual_severity) ? { actualSeverity: m.actual_severity } : {}), ...(severities.includes(m.potential_severity) ? { potentialSeverity: m.potential_severity } : {}),
       ...(typeof m.is_recordable === 'boolean' ? { recordable: m.is_recordable } : {}), ...(typeof m.is_lost_time === 'boolean' ? { lostTime: m.is_lost_time } : {}),
       ...(Number.isInteger(m.lost_time_days) && m.lost_time_days >= 0 ? { lostTimeDays: m.lost_time_days } : {}),
@@ -888,6 +925,98 @@ export async function migrateMarkdown(root, options = {}) {
       basisRiskFactors: strings(m.basis_risk_factor_ids), evidenceIds: mappedRefs(m.evidence_ids, 'ima.rie-evidence/v1', record.sourceId).filter(id => evidenceProjected.has(id)), actionIds,
       conclusion: record.sections['conclusie en bewijs'] || '', reviewedBy: '', reviewNote: '' });
     warning(context, 'analysis_requires_review', record.sourceId, 'Herkenbare bronsecties als draft onderzoek overgedragen. Waarom-antwoorden blijven hypotheses; geen oorzaken, reviewgoedkeuring of barrièrecredit afgeleid.');
+  }
+  // Typed incident/observation/topic edges and untyped affected-record edges
+  // retain their own roles. Missing roles are never recast as a source relation.
+  const originalRelationIds = (record, sourceKey, role) => {
+    if (!Object.hasOwn(record.metadata, sourceKey)) return undefined;
+    const value = record.metadata[sourceKey];
+    if (!Array.isArray(value)) {
+      warning(context, `${role}_unresolved`, record.sourceId, `${sourceKey} is geen oorspronkelijke lijst. Exact raw behouden; geen relaties afgeleid.`);
+      return undefined;
+    }
+    return value.filter(id => {
+      if (typeof id === 'string' && id.trim() && id.length <= 1_000) return true;
+      warning(context, `${role}_unresolved`, record.sourceId, `${sourceKey} bevat een onbruikbare oorspronkelijke ID. Exact raw behouden; niet afgekapt of tot tekst omgezet.`);
+      return false;
+    });
+  };
+  const typedRelationIds = (record, sourceKey, schemas, collection, role, accept = () => true) => {
+    const originals = originalRelationIds(record, sourceKey, role);
+    if (originals === undefined) return undefined;
+    const projected = originals.flatMap(originalId => {
+      const candidates = actionRelationCandidates(originalId).filter(source => schemas.includes(source.metadata.schema));
+      const source = candidates.length === 1 && sourceActionIdentityEqual(string(candidates[0].metadata.id), originalId) === true ? candidates[0] : null;
+      const targetId = source && collection === 'basisRiskFactorRecords' && brfProjectedSources.has(source.sourceId)
+        ? stableId('brf-version', `${source.metadata.id}|${source.metadata.version}|${source.legacySha256}`) : source?.targetId;
+      const matches = targetId ? (workspace[collection] ?? []).filter(target => target.id === targetId) : [];
+      if (matches.length === 1 && accept(matches[0])) return [targetId];
+      warning(context, `${role}_unresolved`, record.sourceId, `${sourceKey} → ${originalId} ontbreekt, is dubbel, niet bevestigd of niet bruikbaar als ${collection}-doel. Oorspronkelijke rol/ID blijft exact raw, geen ander doel gekozen.`);
+      return [];
+    });
+    if (new Set(projected).size !== projected.length) warning(context, `${role}_duplicate`, record.sourceId, `Dubbele ${sourceKey}-relaties eenmaal geprojecteerd; volledige originele lijst blijft raw.`);
+    return [...new Set(projected)];
+  };
+  for (const record of bySchema('ima.incident/v1')) {
+    const incident = workspace.incidents.find(item => item.id === record.targetId);
+    if (!incident) continue;
+    for (const [sourceKey, targetKey, schemas, collection, role] of [
+      ['topic_ids', 'topicIds', ['ima.topic/v1'], 'topics', 'incident_topic'],
+      ['basis_risk_factor_ids', 'basisRiskFactorIds', ['ima.taxonomy-term/v1'], 'basisRiskFactorRecords', 'incident_brf'],
+      ['evidence_ids', 'evidenceIds', ['ima.rie-evidence/v1'], 'evidence', 'incident_evidence'],
+      ['investigation_ids', 'investigationIds', ['ima.analysis/v1'], 'investigations', 'incident_investigation'],
+      ['action_ids', 'actionIds', ['ima.action/v1', 'ima.action/v2'], 'actions', 'incident_action'],
+    ]) {
+      const values = typedRelationIds(record, sourceKey, schemas, collection, role, target => collection !== 'investigations' || target.incidentId === incident.id);
+      if (values !== undefined) incident[targetKey] = values;
+    }
+  }
+  for (const record of bySchema('ima.rie-observation/v1')) {
+    const observation = workspace.observations.find(item => item.id === record.targetId);
+    if (!observation) continue;
+    const ids = typedRelationIds(record, 'topic_ids', ['ima.topic/v1'], 'topics', 'observation_topic');
+    if (ids !== undefined) observation.topicIds = ids;
+  }
+  const parentEdges = new Map();
+  const parentSources = new Map();
+  for (const record of bySchema('ima.topic/v1')) {
+    if (!workspace.topics.some(topic => topic.id === record.targetId) || record.metadata.parent_id == null || record.metadata.parent_id === '') continue;
+    const originalId = record.metadata.parent_id;
+    const parent = typeof originalId === 'string' && originalId.length <= 1_000 ? actionRelationUnique(originalId, 'ima.topic/v1') : null;
+    if (parent && workspace.topics.filter(topic => topic.id === parent.targetId).length === 1) {
+      parentEdges.set(record.targetId, parent.targetId); parentSources.set(record.targetId, record.sourceId);
+    } else warning(context, 'topic_parent_unresolved', record.sourceId, 'parent_id mist een unieke bevestigde onderwerpbron. Exacte ouderrol/ID blijft raw; geen ouder gekozen.');
+  }
+  const cycleNodes = new Set();
+  for (const start of parentEdges.keys()) {
+    const visited = new Map(); let current = start;
+    while (parentEdges.has(current) && !visited.has(current)) { visited.set(current, visited.size); current = parentEdges.get(current); }
+    if (visited.has(current)) for (const [node, position] of visited) if (position >= visited.get(current)) cycleNodes.add(node);
+  }
+  for (const [id, parentId] of parentEdges) {
+    if (cycleNodes.has(id)) warning(context, 'topic_parent_cycle_raw_only', parentSources.get(id), 'Oorspronkelijke ouderrelatie vormt een onderwerpcyclus of zelfverwijzing. Exacte relatie blijft raw; geen ongeldige typed cyclus overgedragen.');
+    else workspace.topics.find(topic => topic.id === id).parentId = parentId;
+  }
+  for (const record of bySchema('ima.legal-update/v1')) {
+    const legal = workspace.legalRecords.find(item => item.id === record.targetId);
+    if (!legal) continue;
+    const topicIds = typedRelationIds(record, 'topic_ids', ['ima.topic/v1'], 'topics', 'legal_topic');
+    if (topicIds !== undefined) legal.topicIds = topicIds;
+    const originals = originalRelationIds(record, 'affected_ids', 'legal_affected');
+    if (originals === undefined) continue;
+    const refs = originals.map(originalId => {
+      const source = actionRelationUnique(originalId);
+      const targetIds = source ? [source.targetId] : [];
+      if (source && brfProjectedSources.has(source.sourceId)) targetIds.push(stableId('brf-version', `${source.metadata.id}|${source.metadata.version}|${source.legacySha256}`));
+      const targets = source ? context.api.actionSourceCollections.flatMap(collection => context.api.actionSourceRecords(workspace, collection)
+        .filter(target => targetIds.includes(target.id)).map(target => ({ kind: 'workspace', collection, id: target.id }))) : [];
+      if (targets.length === 1) return targets[0];
+      warning(context, 'legal_affected_unresolved', record.sourceId, `affected_ids → ${originalId} heeft geen uniek bevestigd getypeerd doel. Geraakt-recordrol blijft expliciet unresolved met exacte raw bron; geen effectgoedkeuring of collectie geraden.`);
+      return { kind: 'unresolved', originalId, rawSourceId: source?.sourceId ?? record.sourceId };
+    });
+    const keys = refs.map(context.api.sourceRefKey);
+    legal.affectedRefs = refs.filter((value, index) => keys.indexOf(keys[index]) === index);
+    if (legal.affectedRefs.length !== refs.length) warning(context, 'legal_affected_duplicate', record.sourceId, 'Dubbele affected_ids-relaties eenmaal geprojecteerd; volledige originele lijst blijft raw.');
   }
   // Complete the original action edges only after every possible typed target
   // has been projected. A raw-only original remains explicitly unresolved.
@@ -930,7 +1059,7 @@ export async function migrateMarkdown(root, options = {}) {
     context.api.assertActionContextRelations(action, workspace);
   }
   for (const record of records) {
-    if (record.metadata.scope_id) warning(context, 'scope_raw_only', record.sourceId, 'Oude scope-ID raw behouden; Markdown bevat geen bevestigde organisation/site/department-definitie voor deze ID.');
+    if (record.metadata.scope_id) warning(context, 'scope_raw_only', record.sourceId, 'Oude scope-ID blijft oorspronkelijke vrije broncontext (waar ondersteund ook in scopeId), geen bevestigde organisation/site/department-definitie en geen KPI-scope afgeleid.');
     for (const [key, value] of Object.entries(record.metadata)) if (/(?:_id|_ids)$/.test(key)) {
       for (const id of Array.isArray(value) ? strings(value) : string(value) ? [value] : []) {
         const candidates = records.filter(item => string(item.metadata.id).toLowerCase() === id.toLowerCase());

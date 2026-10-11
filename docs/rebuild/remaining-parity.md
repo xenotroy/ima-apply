@@ -42,3 +42,9 @@ E01/E02/E04 hebben nu getypeerde browsertegenhangers en gerichte betekenisproeve
 De migrator projecteert uitsluitend aantoonbare oorspronkelijke bestandshash/MIME/vastlegger en afzonderlijke actievelden. Echte geselecteerde bronrelaties krijgen hun werkelijke collectie/ID. Ontbrekende of ambigue actiebronnen blijven expliciet onopgelost; een ontbrekende onderwerprelatie wordt niet tot actiebron veranderd. Raw gegevens blijven behouden. Er is in deze stap geen nieuwe productiedatabase of oorspronkelijk klantbestand geopend of overgedragen.
 
 De oorspronkelijke bijzondere incidentbetekenis (E05), wettelijke impact-/onderwerp-/waarnemingsrelaties (E06) en resterende primaire onderwijs-/AI-/LMS-inhoud (E07) zijn nog geen afgeronde acceptatiepunten. De volledige goal blijft actief.
+
+## Afzonderlijk ontwikkelvoorstel na de release
+
+De branch `codex/incident-legal-parity` werkt E05/E06 uit als `2.5.0-dev.1`: zeven afzonderlijke incidentsoorten, exacte bronmomenten, vrije oorspronkelijke scope/locatie, echte recordrelaties, onderwerpouders, publicatiedatum en benoemde geraakte objecten. [Het contract en de bewijsgrens](incident-legal-parity.md) beschrijven behoud, validatie en fictieve migratieproeven. Deze aanvulling is een afzonderlijk ontwikkelvoorstel; de stabiele app voor het interview blijft `2.4.0`.
+
+Een werkelijke geselecteerde overdracht en de resterende E07-bronnen blijven open. De full-scope goal wordt niet afgerond door deze technische aanvulling.
