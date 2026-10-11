@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { createWorkspace, type WorkspaceState } from '../src/data/model';
 
 const key = 'ima-apply.workspace.v1';
+// Dialog closure acknowledges acceptance. Poll the exact durable record while the save queue completes.
 async function state(page: Page): Promise<WorkspaceState> {
   return page.evaluate(
     (storageKey) => JSON.parse(localStorage.getItem(storageKey)!).workspace,
@@ -94,15 +95,16 @@ test('incident exact source time and kind survive unsaved reload and committed r
   );
   await dialog.getByRole('button', { name: 'Melding opslaan', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  const incident = (await state(page)).incidents[0];
-  expect(incident).toMatchObject({
-    kind: 'environmental',
-    occurredAt: exactTime,
-    date: '2026-10-01',
-    topicIds: ['parent'],
-    location: 'Fictieve bronlocatie Ω',
-  });
-  expect(incident).not.toHaveProperty('recordable');
+  await expect
+    .poll(async () => (await state(page)).incidents[0])
+    .toMatchObject({
+      kind: 'environmental',
+      occurredAt: exactTime,
+      date: '2026-10-01',
+      topicIds: ['parent'],
+      location: 'Fictieve bronlocatie Ω',
+    });
+  expect((await state(page)).incidents[0]).not.toHaveProperty('recordable');
   expect(await markdown(page)).toContain(exactTime);
 });
 
@@ -123,9 +125,11 @@ test('topic parent and legal publication and typed affected link survive draft r
   await dialog.getByLabel('Onderwerpstatus (bronlabel)', { exact: true }).fill('Fictief bronlabel');
   await dialog.getByRole('button', { name: 'Onderwerp opslaan', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  expect(
-    (await state(page)).topics!.find((topic) => topic.title === 'Fictief kindonderwerp Ω'),
-  ).toMatchObject({ parentId: 'parent', status: 'Fictief bronlabel' });
+  await expect
+    .poll(async () =>
+      (await state(page)).topics!.find((topic) => topic.title === 'Fictief kindonderwerp Ω'),
+    )
+    .toMatchObject({ parentId: 'parent', status: 'Fictief bronlabel' });
   await page.getByRole('button', { name: 'Regelgevingssignaal', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Regelgevingssignaal vastleggen', exact: true });
   await dialog.getByLabel('Signaaltitel', { exact: true }).fill('Fictief juridisch signaal Ω');
@@ -148,11 +152,13 @@ test('topic parent and legal publication and typed affected link survive draft r
   await expect(dialog.getByLabel('Publicatiedatum', { exact: true })).toHaveValue('2026-09-01');
   await dialog.getByRole('button', { name: 'Signaal opslaan', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  expect((await state(page)).legalRecords![0]).toMatchObject({
-    publishedOn: '2026-09-01',
-    effectiveOn: '2027-01-01',
-    affectedRefs: [{ kind: 'workspace', collection: 'actions', id: 'action' }],
-  });
+  await expect
+    .poll(async () => (await state(page)).legalRecords![0])
+    .toMatchObject({
+      publishedOn: '2026-09-01',
+      effectiveOn: '2027-01-01',
+      affectedRefs: [{ kind: 'workspace', collection: 'actions', id: 'action' }],
+    });
   const report = await markdown(page);
   expect(report).toContain('2026-09-01');
   expect(report).toContain('actions');
@@ -188,13 +194,15 @@ test('observation exact source time, separate context and topic survive unsaved 
   await expect(dialog.getByLabel('Waarnemingsdatum', { exact: true })).toHaveValue('2026-10-01');
   await dialog.getByRole('button', { name: 'Waarneming opslaan', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  expect((await state(page)).observations![0]).toMatchObject({
-    observedAt: exactTime,
-    date: '2026-10-01',
-    topicIds: ['parent'],
-    facts: 'Fictieve afzonderlijke feiten',
-    context: 'Fictieve afzonderlijke procescontext',
-  });
+  await expect
+    .poll(async () => (await state(page)).observations![0])
+    .toMatchObject({
+      observedAt: exactTime,
+      date: '2026-10-01',
+      topicIds: ['parent'],
+      facts: 'Fictieve afzonderlijke feiten',
+      context: 'Fictieve afzonderlijke procescontext',
+    });
   const report = await markdown(page);
   expect(report).toContain(exactTime);
   expect(report).toContain('Fictieve afzonderlijke procescontext');
@@ -232,7 +240,7 @@ test('a vanished topic parent refuses save and keeps the complete recovered conc
   await expect(dialog.getByRole('alert')).toContainText(
     'volledige onderwerpconcept blijft behouden',
   );
-  expect((await state(page)).topics).toEqual([]);
+  await expect.poll(async () => (await state(page)).topics).toEqual([]);
   await page.reload();
   dialog = await open();
   await expect(dialog.getByLabel('Onderwerptitel', { exact: true })).toHaveValue(

@@ -1,6 +1,6 @@
 # Aanvullende toegangstoets voor oorspronkelijke bronnen
 
-Eerste toegangstoets: 7 oktober 2026. Bijgewerkt op 11 oktober na de metadatahercontrole van 9 oktober en aanvullende inhoudelijke lezing van 10 oktober. Dit is een afzonderlijke vervolgcontrole op [source-coverage.md](source-coverage.md). **Hoge zekerheid** over de gecontroleerde metadata en routegrenzen; geen conclusie over alle bestanden in alle opslag.
+Eerste toegangstoets: 7 oktober 2026. Bijgewerkt op 11 oktober met de afzonderlijke leesstanden van 10 en 11 oktober en een gerichte metadatahercontrole. Dit is een vervolgcontrole op [source-coverage.md](source-coverage.md); de aanvullende verwerking van 11 oktober staat in [source-review-continued.md](source-review-continued.md). **Hoge zekerheid** over de gecontroleerde leesmanifesten, lokale outputs, metadata en routegrenzen; geen conclusie over alle bestanden in alle opslag.
 
 ## Zelfstandige cloudroute onderzocht
 
@@ -44,10 +44,26 @@ Een begrensde metadatahercontrole van exact geselecteerde routes bevestigde dat 
 
 De drie eerder gelezen Moodle-lesconcepten bestonden wel en waren lokaal beschikbaar. De hercontrole heeft geen actuele Moodle-export, nieuwe cursusinhoud of deelnemersdata gelezen. De private audit `private-data/source-access-revalidation-2026-10-09.json` bewaart deze afzonderlijke uitkomsten; de audit is geen nieuwe volledige opslaginventarisatie.
 
-## Aanvullende inhoud die wél beschikbaar was
+## Aanvullende inhoudelijke lezing van 10 oktober
 
-Op 10 oktober zijn negentien geselecteerde aanvullende PDF-pagina’s uit de al beschikbare actieve `PGA-32489`, `PGA-32490` en `SDU-AI43` gelezen. Dit is een andere route dan de ontbrekende AI-45/AI-61- en onderwijsbestanden. De cumulatieve scope is nu PGA-32489 pagina’s 1–8 van 20, PGA-32490 pagina’s 1–3 van 6 en AI-43 zeventien pagina’s van 92, waarvan drie inhoudsopgavepagina’s.
+Op 10 oktober zijn negentien geselecteerde aanvullende PDF-pagina’s uit de al beschikbare actieve `PGA-32489`, `PGA-32490` en `SDU-AI43` gelezen. Dit is een andere route dan de ontbrekende AI-45/AI-61- en onderwijsbestanden. Na deze lezing bedroeg de cumulatieve scope PGA-32489 pagina’s 1–8 van 20, PGA-32490 pagina’s 1–3 van 6 en AI-43 zeventien pagina’s van 92, waarvan drie inhoudsopgavepagina’s. Dit is de historische stand van 10 oktober.
 
 De leesmanifesten en geselecteerde extracten zijn op 11 oktober onderling gecontroleerd: de drie binaire bronhashes matchen, alle negentien paginahashes en tekstlengtes matchen, en de private tekstrecords bevatten exact de geselecteerde extracten. De bronnen bleven ongewijzigd. AI-43 is daarbij preciezer gekwalificeerd als toegeschreven tekstkopie met ontbrekende afbeeldingen; een oorspronkelijke uitgeversbinair of volledige figuurlayout is niet geverifieerd.
 
 Deze lezing levert wél aangescherpte eigen criteria op voor onderzoekdiepte, bewijsbeheer, tijdlijn, causaliteit/BRF, toepassingsscope en het onderscheid tussen arbeidsveiligheids-KPI’s en procesveiligheidsfrequenties. De [inhoudelijke vertaling en exacte scope](source-coverage.md) beschrijven deze verwerking. De aanvullende tekst blijft privé; de 78 publieke vraag-ID’s blijven behouden. Deze voortgang lost de ontbrekende oorspronkelijke HVK/MVK-bronnen, AI-45/AI-61-inhoud of actuele LMS-data niet op.
+
+## Aanvullende inhoudelijke lezing en hercontrole van 11 oktober
+
+Op 11 oktober zijn dertig verdere PDF-pagina’s gelezen: acht uit PGA-32489 (pagina’s 9–16), drie uit PGA-32490 (pagina’s 4–6) en negentien uit AI-43 (PDF-pagina’s 40–58). De afzonderlijke [verwerking en bronkwalificatie](source-review-continued.md) leggen deze uitbreiding vast; [source-coverage.md](source-coverage.md) beschrijft de cumulatieve bronstand.
+
+| Bron | Cumulatieve leesomvang op 11 oktober | Resterende scope binnen de beschikbare PDF |
+| --- | --- | --- |
+| PGA-32489 | Pagina’s 1–16 van 20 | Vier ongelezen pagina’s: 17–20 |
+| PGA-32490 | Pagina’s 1–6 van 6 | Geen ongelezen pagina’s binnen deze webprint |
+| AI-43 | 36 van 92 PDF-pagina’s, waarvan drie inhoudsopgavepagina’s en 33 inhoudspagina’s | 56 ongelezen PDF-pagina’s |
+
+De actuele private leesmanifesten, extracten en inhoudspakketten zijn onderling gecontroleerd. De drie aanvullende extracthashes, alle dertig nieuwe opgeslagen paginateksthashes en de pakket- en werkruimtehashes kloppen. De eerdere 260 private vragen, zestien bronnen en zes inhoudrecords zijn exact behouden. De 21 aanvullende eigen criteria blijven voorstellen; deze controle stelt ze niet vast en kent geen risicoreductie toe.
+
+De drie beschikbare actieve PDF-exemplaren hebben lokaal toegewezen blokken en dezelfde bestandsgrootte en wijzigingsdatum als in hun leesmanifest. Daardoor is de container met de vier resterende PGA-32489-pagina’s lokaal beschikbaar. Die pagina’s zijn bij deze metadatahercontrole niet geopend, geëxtraheerd of gelezen. De oorspronkelijke PDF-bytes zijn in deze hercontrole niet opnieuw gehasht. Volledig lezen van een beschikbare webprint betekent bovendien geen volledige of actuele wettelijke dekking. AI-43 blijft een toegeschreven tekstkopie met ontbrekende afbeeldingen; de oorspronkelijke uitgeversbinair en volledige figuurlayout zijn niet geverifieerd.
+
+Daarnaast zijn exact zeven eerder geselecteerde operationele originelen opnieuw uitsluitend op metadata gecontroleerd: het riskmanagementdeck, het RI&E-deck, AI-45, AI-61, de HVK-opleidingsinhoud, de MVK-leerdoelen en de onderwijsomgevinghandleiding voor docenten. Alle zeven bestaan, maar hebben nog nul lokaal toegewezen blokken en de cloudplaceholderflags `0x40000060`. Er is geen inhoud geopend of hydratie uitgevoerd. Dit is een uitkomst voor deze zeven geselecteerde bestanden, geen conclusie dat zulke bronnen elders ontbreken. De docentenhandleiding is geen actuele LMS-export; de drie eerder gelezen Moodle-lesconcepten blijven afzonderlijk van daadwerkelijke LMS-data gekwalificeerd.
