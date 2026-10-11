@@ -135,7 +135,8 @@ test('migrates Markdown dossier, frozen answer and evidence without inventing ef
   assert.notEqual(answer.questionSha256, originalHash);
   assert.equal(result.workspace.evidence[0].status, 'unverified');
   assert.equal(result.workspace.observations[0].date, '2026-10-07');
-  assert.match(result.workspace.observations[0].facts, /Feit:[\s\S]*Context:/);
+  assert.equal(result.workspace.observations[0].facts, 'Een opening is zichtbaar.');
+  assert.equal(result.workspace.observations[0].context, 'Machine stond stil.');
   assert.equal(result.workspace.findings[0].status, 'open');
   assert.equal(result.workspace.actions.length, 1);
   assert.equal(result.workspace.actions[0].status, 'in_progress');
@@ -196,6 +197,121 @@ test('projects exact original action context and each source edge into its actua
   const raw = restored.sources.find(source => source.originalId === 'action:1' && source.format === 'legacy-markdown');
   assert.equal(raw.raw.text, original); assert.deepEqual(raw.raw.metadata.source_ids, sourceIds); assert.equal(raw.contentSha256, hash(original));
   assert.deepEqual(await fs.readFile(filename), Buffer.from(original));
+});
+
+test('E05/E06 preserve exact offset/fractions, original incident context, typed edges and separate publication/observation fields', async t => {
+  const { root } = await markdownFixture(t);
+  const occurredAt = '2026-10-01T00:30:00.1234567+02:00';
+  const reportedAt = '2026-10-01T00:45:00.7654321+02:00';
+  const createdAt = '2026-10-01T01:00:00.0000001+02:00';
+  const updatedAt = '2026-10-02T10:20:00.9999999-03:00';
+  const incidentText = md('ima.incident/v1', 'incident:1', { title: 'Fictief ziektegeval', kind: 'illness', occurred_at: occurredAt, reported_at: reportedAt,
+    scope_id: 'scope:original-unresolved-location', organisation: 'Exacte organisatiebron', location: 'Exacte plaatsbron', department: 'Werkplaats', status: 'triage',
+    tags: ['Exact label', 'bron:token'], created_at: createdAt, updated_at: updatedAt,
+    topic_ids: ['TOPIC:MACHINE'], basis_risk_factor_ids: ['fixture:brf:1'], evidence_ids: ['evidence:1'], investigation_ids: ['analysis:1'], action_ids: ['action:1'],
+    is_recordable: false, is_lost_time: false, lost_time_days: 0 }, '# Fictief ziektegeval\n\n## Feiten\n\nExacte incidentfeiten.\n\n## Directe beheersing\n\nDirecte bronmaatregel.\n\n## Open vragen\n\nNog te onderzoeken.');
+  const incidentFile = await put(root, 'incidents/i.md', incidentText);
+  await put(root, 'taxonomies/brf/selected.md', md('ima.taxonomy-term/v1', 'fixture:brf:1', { title: 'Fictieve systeemconditie', taxonomy: 'ima-core:taxonomy:brf', version: '1.2.3', status: 'draft' }, '# BRF\n\nExacte bronbetekenis.'));
+  await put(root, 'topics/parent.md', md('ima.topic/v1', 'topic:parent', { title: 'Arbeidsmiddelen', status: 'active', tags: ['Oorspronkelijke tag'] }, '# Parent'));
+  await put(root, 'topics/t.md', md('ima.topic/v1', 'topic:machine', { title: 'Machineveiligheid', parent_id: 'TOPIC:PARENT', status: 'active', tags: ['machines'] }, '# Machineveiligheid'));
+  await put(root, 'legal/l.md', md('ima.legal-update/v1', 'law:1', { title: 'Fictief wetsignaal', official_uri: 'https://example.invalid/signal', jurisdiction: 'NL', status: 'signal',
+    published_on: '2026-09-02', effective_on: '2027-01-01', last_verified_on: '2026-10-03', topic_ids: ['topic:machine'], affected_ids: ['finding:1', 'action:1', 'incident:1', 'analysis:1', 'custom:1', 'missing:affected'] }, '# Signal\n\n## Samenvatting\n\nFictieve broninhoud.\n\n## Impact\n\nNog te beoordelen.'));
+  await put(root, 'rie/observations/o.md', md('ima.rie-observation/v1', 'observation:1', { assessment_id: 'assessment:1', observed_at: occurredAt, observer: 'Exacte bronwaarnemer',
+    location: 'Bronlocatie waarneming', scope_id: 'scope:observation-source', topic_ids: ['topic:machine'], evidence_ids: ['evidence:1'], created_at: createdAt, updated_at: updatedAt }, '# Waarneming\n\n## Feit\n\nExact feit, zonder context vermengd.\n\n## Context\n\nAfzonderlijke broncontext.'));
+  const result = await migrateMarkdown(root, { now: NOW }); const api = await loadWorkspaceApi(); const workspace = api.importWorkspace(result.serialized);
+  const incident = workspace.incidents[0];
+  assert.equal(incident.kind, 'illness'); assert.equal(incident.type, 'incident'); assert.equal(incident.date, '2026-10-01');
+  assert.equal(incident.occurredAt, occurredAt); assert.equal(incident.reportedAt, reportedAt);
+  assert.equal(incident.sourceCreatedAt, createdAt); assert.equal(incident.sourceUpdatedAt, updatedAt);
+  assert.equal(incident.scopeId, 'scope:original-unresolved-location'); assert.equal(incident.organisation, 'Exacte organisatiebron'); assert.equal(incident.location, 'Exacte plaatsbron');
+  assert.equal(incident.status, 'triage'); assert.deepEqual(incident.tags, ['Exact label', 'bron:token']); assert.equal(incident.departmentId, undefined);
+  assert.equal(incident.recordable, false); assert.equal(incident.lostTime, false); assert.equal(incident.description, 'Exacte incidentfeiten.');
+  assert.deepEqual(incident.topicIds, [workspace.topics.find(topic => topic.title === 'Machineveiligheid').id]);
+  assert.deepEqual(incident.basisRiskFactorIds, [workspace.basisRiskFactorRecords[0].id]); assert.deepEqual(incident.evidenceIds, [workspace.evidence[0].id]);
+  assert.deepEqual(incident.investigationIds, [workspace.investigations[0].id]); assert.deepEqual(incident.actionIds, [workspace.actions[0].id]);
+  assert.equal(workspace.topics.find(topic => topic.title === 'Machineveiligheid').parentId, workspace.topics.find(topic => topic.title === 'Arbeidsmiddelen').id);
+  const observation = workspace.observations[0];
+  assert.equal(observation.observedAt, occurredAt); assert.equal(observation.date, '2026-10-01'); assert.equal(observation.facts, 'Exact feit, zonder context vermengd.');
+  assert.equal(observation.context, 'Afzonderlijke broncontext.'); assert.equal(observation.location, 'Bronlocatie waarneming'); assert.equal(observation.scopeId, 'scope:observation-source');
+  assert.equal(observation.sourceCreatedAt, createdAt); assert.equal(observation.sourceUpdatedAt, updatedAt); assert.deepEqual(observation.topicIds, incident.topicIds);
+  const legal = workspace.legalRecords[0];
+  assert.equal(legal.publishedOn, '2026-09-02'); assert.equal(legal.effectiveOn, '2027-01-01'); assert.equal(legal.lastVerifiedOn, '2026-10-03');
+  assert.deepEqual(legal.affectedRefs.slice(0,4).map(ref => ref.collection), ['findings','actions','incidents','investigations']);
+  assert.deepEqual(legal.affectedRefs.slice(4).map(ref => [ref.kind,ref.originalId]), [['unresolved','custom:1'],['unresolved','missing:affected']]);
+  const raw = workspace.sources.find(source => source.originalId === 'incident:1'); assert.equal(raw.raw.text, incidentText); assert.equal(raw.contentSha256, hash(incidentText));
+  assert.deepEqual(await fs.readFile(incidentFile), Buffer.from(incidentText));
+  assert.equal(workspace.sources.find(source => source.format === 'ima.migration-review/v1').raw.warnings.some(w => w.code === 'legal_affected_unresolved'), true);
+});
+
+test('E05/E06 warn role-specifically for missing or ambiguous IDs, invalid timestamps and raw-only BRFs without inventing relations', async t => {
+  const { root } = await markdownFixture(t);
+  await put(root, 'topics/collision.md', md('ima.topic/v1', 'FINDING:1', { title: 'Dubbele bronidentiteit' }, '# Collision'));
+  await put(root, 'taxonomies/other.md', md('ima.taxonomy-term/v1', 'taxonomy:other', { title: 'Andere taxonomie', taxonomy: 'other:taxonomy', version: '1.0.0', status: 'draft' }, '# Other\n\nOnbevestigde andere term.'));
+  await put(root, 'incidents/i.md', md('ima.incident/v1', 'incident:1', { title: 'Fictieve milieuzaak', kind: 'environmental', occurred_at: '2026-10-01T00:30:00+02:00',
+    reported_at: '2026-10-01T01:00:00', created_at: '2026-02-30T12:00:00Z', updated_at: '2026-10-01T12:00:00.12345678Z',
+    topic_ids: ['topic:missing'], basis_risk_factor_ids: ['taxonomy:other'], evidence_ids: ['evidence:missing'], investigation_ids: ['analysis:missing'], action_ids: ['action:missing'] }, '# Incident\n\n## Feiten\n\nFictief bronfeit.'));
+  await put(root, 'legal/l.md', md('ima.legal-update/v1', 'law:1', { title: 'Fictief wetsignaal', official_uri: 'https://example.invalid/signal', jurisdiction: 'NL', status: 'signal',
+    published_on: '2026-02-30', last_verified_on: '2026-10-01', affected_ids: ['finding:1', 'missing:affected'], topic_ids: ['topic:missing'] }, '# Signal\n\n## Samenvatting\n\nFictief signal.'));
+  await put(root, 'legal/zero-year.md', md('ima.legal-update/v1', 'law:zero-year', { title: 'Ongeldig oorspronkelijk publicatiejaar', official_uri: 'https://example.invalid/signal', jurisdiction: 'NL', status: 'signal', published_on: '0000-01-01', last_verified_on: '2026-10-01' }, '# Signal\n\n## Samenvatting\n\nFictief signal.'));
+  await put(root, 'rie/observations/o.md', md('ima.rie-observation/v1', 'observation:1', { assessment_id: 'assessment:1', observed_at: '2026-10-01T01:00:00Z', observer: 'Bronwaarnemer', topic_ids: ['topic:missing'] }, '# Observation\n\n## Feit\n\nExact feit.'));
+  const result = await migrateMarkdown(root, {now:NOW}); const incident = result.workspace.incidents[0];
+  assert.equal(incident.kind,'environmental'); assert.equal(incident.type,'incident');
+  for (const key of ['reportedAt','sourceCreatedAt','sourceUpdatedAt','recordable','lostTime','departmentId']) assert.equal(Object.hasOwn(incident,key),false);
+  for (const key of ['topicIds','basisRiskFactorIds','evidenceIds','investigationIds','actionIds']) assert.deepEqual(incident[key],[]);
+  assert.equal(Object.hasOwn(result.workspace.legalRecords[0],'publishedOn'),false);
+  assert.equal(Object.hasOwn(result.workspace.legalRecords.find(record=>record.title==='Ongeldig oorspronkelijk publicatiejaar'),'publishedOn'),false);
+  assert.equal(result.workspace.legalRecords[0].affectedRefs.every(ref=>ref.kind==='unresolved'),true);
+  assert.equal(result.workspace.legalRecords[0].affectedRefs[0].originalId,'finding:1');
+  for (const code of ['incident_timestamp_unresolved','incident_topic_unresolved','incident_brf_unresolved','incident_evidence_unresolved','incident_investigation_unresolved','incident_action_unresolved','legal_publication_date_unresolved','legal_topic_unresolved','legal_affected_unresolved','observation_topic_unresolved']) assert(result.report.warnings.some(w=>w.code===code),code);
+  assert.equal(result.workspace.sources.find(source=>source.originalId==='incident:1').raw.metadata.reported_at,'2026-10-01T01:00:00');
+  (await loadWorkspaceApi()).importWorkspace(result.serialized);
+});
+
+test('E06 retains original topic cycles and missing parents raw while transferring only valid typed parent edges', async t => {
+  const root = await temporary(t);
+  for (const [id,parent] of [['a','b'],['b','a'],['self','self'],['missing','absent'],['child','a'],['good-child','good-parent'],['good-parent','']]) {
+    await put(root,`topics/${id}.md`,md('ima.topic/v1',`topic:${id}`,{title:id,parent_id:parent ? `topic:${parent}`:'',status:'active',tags:['Exact source tag']},'# '+id));
+  }
+  const result = await migrateMarkdown(root,{now:NOW});
+  for (const name of ['a','b','self','missing','good-parent']) assert.equal(result.workspace.topics.find(topic=>topic.title===name).parentId,undefined);
+  assert.equal(result.workspace.topics.find(topic=>topic.title==='child').parentId,result.workspace.topics.find(topic=>topic.title==='a').id);
+  assert.equal(result.workspace.topics.find(topic=>topic.title==='good-child').parentId,result.workspace.topics.find(topic=>topic.title==='good-parent').id);
+  assert.equal(result.report.warnings.filter(w=>w.code==='topic_parent_cycle_raw_only').length,3);
+  assert(result.report.warnings.some(w=>w.code==='topic_parent_unresolved'));
+  for (const id of ['a','b','self','missing']) assert.equal(result.workspace.sources.find(source=>source.originalId===`topic:${id}`).raw.metadata.parent_id,id==='a'?'topic:b':id==='b'?'topic:a':id==='self'?'topic:self':'topic:absent');
+  (await loadWorkspaceApi()).importWorkspace(result.serialized);
+});
+
+test('E05 preserves all seven kinds and existing broad mapping without inferring flags; offset/calendar failures remain raw', async t => {
+  const root = await temporary(t);
+  const kinds = ['unsafe_condition','near_miss','injury','illness','property_damage','environmental','other'];
+  for (const [index,kind] of kinds.entries()) await put(root,`incidents/${index}.md`,md('ima.incident/v1',`incident:${index}`,{title:kind,kind,occurred_at:'2026-10-01T00:30:00.1234567+02:00'},'# Incident\n\n## Feiten\n\nFictief feit.'));
+  for (const [index,time] of ['2026-02-30T12:00:00Z','2026-10-01T00:00:00+14:01','2026-10-01T12:00:00','2026-10-01T00:00:00.12345678Z'].entries()) await put(root,`incidents/invalid-${index}.md`,md('ima.incident/v1',`incident:invalid:${index}`,{title:'Ongeldig tijdstip '+index,kind:'illness',occurred_at:time},'# Incident\n\n## Feiten\n\nRaw behouden.'));
+  const result = await migrateMarkdown(root,{now:NOW}); const api = await loadWorkspaceApi();
+  assert.deepEqual(result.workspace.incidents.map(item=>item.kind),kinds);
+  assert.deepEqual(result.workspace.incidents.map(item=>item.type),['observation','near_miss','incident','incident','incident','incident','incident']);
+  for (const incident of result.workspace.incidents) {assert.equal(incident.date,'2026-10-01');assert.equal(incident.occurredAt,'2026-10-01T00:30:00.1234567+02:00');for(const key of ['reportedAt','recordable','lostTime','actualSeverity','departmentId'])assert.equal(Object.hasOwn(incident,key),false);}
+  assert.equal(result.report.warnings.filter(w=>w.code==='incident_not_projected').length,4);
+  assert.equal(result.workspace.sources.filter(source=>source.originalId?.startsWith('incident:invalid:')).length,4);
+  const oldWorkspace = api.importWorkspace(result.serialized);
+  for (const incident of oldWorkspace.incidents) for (const key of ['kind','occurredAt']) delete incident[key];
+  assert.doesNotThrow(()=>api.importWorkspace(api.exportWorkspace(oldWorkspace)));
+});
+
+test('E05/E06 apply exact native field limits without truncating oversized original topic/status/observation context', async t => {
+  const {root}=await markdownFixture(t);
+  const longStatus='S'.repeat(1_001), longScope='I'.repeat(161), longTag='T'.repeat(1_001), validLongTag='V'.repeat(161), sourceContext='Afzonderlijke broncontext.';
+  await put(root,'topics/t.md',md('ima.topic/v1','topic:machine',{title:'Machineveiligheid',status:longStatus,tags:[longTag]},'# Topic'));
+  await put(root,'topics/valid-tag.md',md('ima.topic/v1','topic:valid-tag',{title:'Geldig lang bronlabel',tags:[validLongTag]},'# Topic'));
+  await put(root,'rie/observations/o.md',md('ima.rie-observation/v1','observation:1',{assessment_id:'assessment:1',observed_at:'2026-10-01T12:00:00Z',observer:'Bronwaarnemer',scope_id:longScope},'# Observation\n\n## Feit\n\nExact feit.\n\n## Context\n\n'+sourceContext));
+  const result=await migrateMarkdown(root,{now:NOW});
+  const topic=result.workspace.topics.find(item=>item.title==='Machineveiligheid');assert.equal(topic.status,undefined);assert.equal(topic.tags,undefined);
+  const observation=result.workspace.observations[0];assert.equal(observation.scopeId,undefined);assert.equal(observation.context,sourceContext);assert.equal(observation.facts,'Exact feit.');
+  assert.deepEqual(result.workspace.topics.find(topic=>topic.title==='Geldig lang bronlabel').tags,[validLongTag]);
+  assert.equal(result.workspace.sources.find(source=>source.originalId==='topic:machine').raw.metadata.status,longStatus);
+  const raw=result.workspace.sources.find(source=>source.originalId==='observation:1');assert.equal(raw.raw.metadata.scope_id,longScope);assert(raw.raw.text.includes(sourceContext));
+  for(const code of ['topic_value_unresolved','topic_tags_unresolved','observation_value_unresolved'])assert(result.report.warnings.some(w=>w.code===code),code);
+  (await loadWorkspaceApi()).importWorkspace(result.serialized);
 });
 
 test('does not choose an action source across duplicate schemas, duplicate topics or unconfirmed Unicode casing', async t => {

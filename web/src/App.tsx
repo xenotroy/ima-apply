@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { version as appVersion } from '../package.json';
+import { IncidentContextFields } from './components/IncidentContextFields';
 import {
   Activity,
   ArrowDownToLine,
@@ -1271,6 +1272,7 @@ export default function App() {
         )}
         {modal === 'incident' && (
           <IncidentEditor
+            workspace={workspace}
             draftKey={`${workspace.id}/incident/${editingIncident?.id ?? 'new'}`}
             initial={editingIncident}
             existingIds={workspace.incidents.map((record) => record.id)}
@@ -3268,6 +3270,7 @@ function Incidents({
   );
 }
 function IncidentEditor({
+  workspace,
   scenarios,
   existingIds,
   initial,
@@ -3276,6 +3279,7 @@ function IncidentEditor({
   onClose,
   draftKey,
 }: {
+  workspace: WorkspaceState;
   scenarios: Scenario[];
   existingIds: string[];
   initial?: WorkspaceIncident;
@@ -3479,6 +3483,11 @@ function IncidentEditor({
             ))}
           </select>
         </Field>
+        <IncidentContextFields
+          value={i}
+          workspace={workspace}
+          onChange={(patch) => set((previous) => ({ ...previous, ...patch }))}
+        />
         <button className="primary" type="submit">
           Melding opslaan
         </button>

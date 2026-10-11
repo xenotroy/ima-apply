@@ -125,3 +125,7 @@ Bewijsbestanden hebben een afzonderlijke bytehash, MIME-herkomst, bekende oorspr
 Acties gebruiken dezelfde expliciete invoer vanaf een incident, bevinding of zelfstandig voorstel. Doel, eigenaar, AHS/hoger overwogen niveaus/motivering, prioriteit, werkelijke bron-/onderwerpverwijzingen, uitvoering en verificatie blijven in de revisie en het herstelconcept. Bewust geselecteerde risicodoelen dragen hun echte ID en versie. De aanvullende migrator behoudt aantoonbare velden en raw onbekende betekenis zonder oorspronkelijke beoordelingen te verzinnen.
 
 Dit sluit de nieuwe technische ketengaten E01/E02/E04 voor hun beproefde browsergevallen. E05/E06/E07, werkelijke geselecteerde bestand-/archiefmigratie en een inhoudelijk beoordeelde productieoverdracht blijven open. De [release 2.4](release-2.4.0.md) en [audit](completion-audit-2026-10-11.md) houden de bewijsgrens expliciet. De volledige goal blijft **actief**.
+
+### Geïsoleerd ontwikkelvoorstel voor E05/E06
+
+Na oplevering van de stabiele `2.4.0` is `2.5.0-dev.1` in een afzonderlijke werkruimte uitgewerkt. De additieve incident-/waarnemings-/onderwerp-/wetgevingsvelden behouden bronnotatie, afzonderlijke inhoud en werkelijke getypeerde relaties in invoer, herstel, native export en Markdown. De [uitwerking](incident-legal-parity.md) benoemt de fictieve acceptatiegevallen en resterende overdrachtsgrenzen. De ontwikkelbranch vervangt de gepubliceerde interviewversie niet. De volledige goal blijft actief, met E07 en echte geselecteerde overdracht als open werk.

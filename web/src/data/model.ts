@@ -113,6 +113,28 @@ export interface WorkspaceIncident {
   activity?: string;
   immediateControls?: string;
   openQuestions?: string;
+  /** Source-specific incident meaning; absence in early exports remains unknown. */
+  kind?:
+    | 'unsafe_condition'
+    | 'near_miss'
+    | 'injury'
+    | 'illness'
+    | 'property_damage'
+    | 'environmental'
+    | 'other';
+  occurredAt?: string;
+  reportedAt?: string;
+  scopeId?: string;
+  organisation?: string;
+  location?: string;
+  status?: string;
+  tags?: string[];
+  topicIds?: string[];
+  basisRiskFactorIds?: string[];
+  evidenceIds?: string[];
+  investigationIds?: string[];
+  sourceCreatedAt?: string;
+  sourceUpdatedAt?: string;
 }
 
 export interface WorkspaceState {

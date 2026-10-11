@@ -1,6 +1,8 @@
 import type { WorkspaceState } from '../data';
 import { useRiskEvidence } from './RiskEvidenceContext';
 import { actionContextMarkdown } from '../domain/action-context';
+import { incidentContextMarkdown } from '../domain/incident-context';
+import { recordContextMarkdown } from '../domain/record-context';
 import type { EvidenceFileIntegrityContext } from '../data/evidence-file-types';
 import { actionStage, actionStageLabels } from '../domain/action-lifecycle';
 import { projectContextMarkdown } from '../data/project-context';
@@ -104,6 +106,7 @@ export function dossierMarkdown(
         `Rondgangverslag: ${o.walkthroughId ?? 'Niet gekoppeld'}`,
         o.facts,
         `Bewijs: ${o.evidenceIds.join(', ')}`,
+        ...recordContextMarkdown('observation', o),
         '',
       );
     for (const f of workspace.findings?.filter((f) => f.dossierId === dossier.id) ?? [])
@@ -147,6 +150,7 @@ export function dossierMarkdown(
   for (const t of workspace.topics ?? [])
     lines.push(
       `- ${t.title} [${t.id}] | ${t.category}: ${t.description} | synoniemen ${t.aliases.join(', ')}`,
+      ...recordContextMarkdown('topic', t),
     );
   if (workspace.legalRecords?.length) lines.push('', '## Regelgevingsregister', '');
   for (const l of workspace.legalRecords ?? [])
@@ -156,6 +160,7 @@ export function dossierMarkdown(
       `Gecontroleerd: ${l.lastVerifiedOn} | Ingangsdatum: ${l.effectiveOn || 'Onbekend'}`,
       l.summary,
       `Toepassing: ${l.impact}`,
+      ...recordContextMarkdown('legal', l),
       '',
     );
   if (workspace.actions.some((a) => a.lifecycle))
@@ -201,6 +206,7 @@ export function dossierMarkdown(
       `Direct handelen: ${incident.immediateControls ?? 'Niet vastgelegd'}`,
       `Open vragen: ${incident.openQuestions ?? 'Niet vastgelegd'}`,
       `Scenario: ${incident.scenarioId ?? ''} | acties ${incident.actionIds.join(', ')}`,
+      ...incidentContextMarkdown(incident),
       '',
     );
   }
