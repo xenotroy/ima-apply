@@ -85,6 +85,24 @@ import {
   actionStageLabels,
 } from './domain/action-lifecycle';
 import { Waterfall, LopaChart } from './components/RiskCharts';
+import { usePersistentDraft } from './hooks/usePersistentDraft';
+import DraftNotice from './components/DraftNotice';
+import DraftRecoveryPanel from './components/DraftRecoveryPanel';
+import { WorkspaceJournal, type WorkspaceJournalEntry } from './data/workspace-journal';
+import { browserWriterId } from './data/browser-writer';
+import {
+  draftBase,
+  announceWorkspaceAccepted,
+  announceWorkspaceSaved,
+  LocalDraftStore,
+  localDraftsMarkdown,
+  browserDrafts,
+  hasUnstoredDrafts,
+} from './data/local-drafts';
+import { assertRiskLibraryUpdate, riskLibraryMarkdown } from './data/risk-library';
+import { upsertResponse, responseRelationsMarkdown } from './data/response-relations';
+import QuestionAnswerCard from './components/QuestionAnswerCard';
+import { questionDefinitionsMarkdown } from './data/question-definition';
 
 type Page =
   | 'overview'
@@ -123,16 +141,32 @@ function download(name: string, content: string, mime = 'application/json') {
 function readInitial() {
   try {
     const snapshot = loadLocalWorkspace();
+    let recoverable: WorkspaceJournalEntry[] = [],
+      journalError = '';
+    try {
+      recoverable = new WorkspaceJournal(localStorage).recoverable(snapshot);
+    } catch (error) {
+      journalError = `Een tussentijdse versie kon niet worden gelezen en blijft bewaard. ${String(error)}`;
+    }
+    const recovered = recoverable.length === 1 ? recoverable[0] : undefined;
     return {
-      workspace: snapshot?.workspace ?? demoWorkspace(),
+      workspace: recovered?.workspace ?? snapshot?.workspace ?? demoWorkspace(),
       version: snapshot?.version ?? null,
-      error: '',
+      error: journalError,
+      recovered,
+      recoveryNotice: recovered
+        ? 'Een tussentijdse werkruimte is hersteld. De laatste invoer wordt opnieuw lokaal vastgelegd.'
+        : recoverable.length > 1
+          ? 'Meerdere tussentijdse werkruimten gevonden. Bekijk en exporteer ze via Rapportage; er is geen versie gekozen.'
+          : '',
     };
   } catch (error) {
     return {
       workspace: createWorkspace('Herstelwerkruimte'),
       version: null,
       error: `Lokale gegevens kunnen niet worden gelezen. De opgeslagen versie is behouden. ${String(error)}`,
+      recovered: undefined,
+      recoveryNotice: '',
     };
   }
 }
@@ -150,11 +184,12 @@ export default function App() {
   const workspaceRef = useRef(workspace);
   const versionRef = useRef(initial.version);
   const queueRef = useRef(Promise.resolve());
+  const pendingSavesRef = useRef(0);
   const [page, setPage] = useState<Page>('overview');
   const [inventoryDossierId, setInventoryDossierId] = useState('');
   useEffect(() => setInventoryDossierId(''), [workspace.id]);
   const [selectedId, setSelectedId] = useState(workspace.scenarios[0]?.id ?? '');
-  const [notice, setNotice] = useState(initial.error);
+  const [notice, setNotice] = useState(initial.error || initial.recoveryNotice);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(Boolean(initial.error));
   const saveFailedRef = useRef(Boolean(initial.error));
@@ -208,16 +243,42 @@ export default function App() {
       );
       return false;
     }
+    let staged: WorkspaceJournalEntry | undefined;
+    try {
+      staged = new WorkspaceJournal(localStorage).stage(
+        next,
+        versionRef.current,
+        browserWriterId(),
+      );
+    } catch (error) {
+      setNotice(
+        `Tussentijdse opslag niet gelukt: ${String(error)} Exporteer de werkruimte als JSON zolang de normale opslag nog bezig is.`,
+      );
+    }
+    const saveSequence = announceWorkspaceAccepted(next.id);
+    pendingSavesRef.current += 1;
     setWorkspace(next);
     workspaceRef.current = next;
     setSaving(true);
     queueRef.current = queueRef.current
       .then(async () => {
         try {
-          const saved = await saveLocalWorkspace(next, versionRef.current);
+          const expectedAtWrite = versionRef.current;
+          const saved = await saveLocalWorkspace(next, expectedAtWrite);
           versionRef.current = saved.version;
           saveFailedRef.current = false;
           setSaveFailed(false);
+          announceWorkspaceSaved(saveSequence);
+          try {
+            const journal = new WorkspaceJournal(localStorage);
+            if (staged) journal.acknowledge({ ...staged, expectedVersion: expectedAtWrite }, saved);
+            if (initial.recovered && next.id === initial.recovered.workspace.id)
+              journal.acknowledge(initial.recovered, saved);
+          } catch (error) {
+            setNotice(
+              `Werkruimte opgeslagen; de tussentijdse herstelkopie blijft bewaard. ${String(error)}`,
+            );
+          }
         } catch (error) {
           saveFailedRef.current = true;
           setSaveFailed(true);
@@ -226,17 +287,39 @@ export default function App() {
           );
         }
       })
-      .finally(() => setSaving(false));
+      .finally(() => {
+        pendingSavesRef.current -= 1;
+        setSaving(pendingSavesRef.current > 0);
+      });
     return true;
   };
   const started = useRef(false);
   useEffect(() => {
     if (!started.current) {
       started.current = true;
-      if (!initial.version && !initial.error) persist(initial.workspace);
+      if ((!initial.version || initial.recovered) && !initial.error) persist(initial.workspace);
     }
   }, []);
-  const update = (patch: WorkspacePatch) => persist(reviseWorkspace(workspaceRef.current, patch));
+  useEffect(() => {
+    const protectPending = (event: BeforeUnloadEvent) => {
+      if (pendingSavesRef.current || saveFailedRef.current || hasUnstoredDrafts()) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', protectPending);
+    return () => window.removeEventListener('beforeunload', protectPending);
+  }, []);
+  const update = (patch: WorkspacePatch) => {
+    const next = reviseWorkspace(workspaceRef.current, patch);
+    try {
+      assertRiskLibraryUpdate(workspaceRef.current, next);
+    } catch (error) {
+      setNotice(String(error));
+      return false;
+    }
+    return persist(next);
+  };
   const changeScenario = (scenario: Scenario) =>
     update({
       scenarios: workspaceRef.current.scenarios.map((s) => (s.id === scenario.id ? scenario : s)),
@@ -291,20 +374,22 @@ export default function App() {
         ? workspace.scenarios.map((x) => (x.id === s.id ? s : x))
         : [...workspace.scenarios, s],
     });
-    if (!accepted) return;
+    if (!accepted) return false;
     setSelectedId(s.id);
     setPage('risk');
     setModal(null);
+    return true;
   };
   const saveControl = (c: Control) => {
-    if (!selected) return;
-    changeScenario({
+    if (!selected) return false;
+    const accepted = changeScenario({
       ...selected,
       controls: selected.controls.some((x) => x.id === c.id)
         ? selected.controls.map((x) => (x.id === c.id ? c : x))
         : [...selected.controls, c],
     });
-    setModal(null);
+    if (accepted) setModal(null);
+    return accepted;
   };
   const syncMetadata = (
     sha: string | null,
@@ -492,7 +577,7 @@ export default function App() {
             target="_blank"
             rel="noreferrer"
           >
-            <GitBranch size={14} /> IMA Apply 2.2 <ArrowUpRight size={13} />
+            <GitBranch size={14} /> IMA Apply 2.3 <ArrowUpRight size={13} />
           </a>
         </div>
       </aside>
@@ -730,6 +815,7 @@ export default function App() {
               {selected ? (
                 <>
                   <RiskWorkbench
+                    workspaceId={workspace.id}
                     scenario={selected}
                     changeScenario={changeScenario}
                     editScenario={editScenario}
@@ -740,7 +826,8 @@ export default function App() {
                     }}
                   />
                   <RiskAssessmentPanel
-                    key={selected.id}
+                    key={`assessment/${workspace.id}/${selected.id}`}
+                    workspaceId={workspace.id}
                     scenario={selected}
                     records={(workspace.riskAssessments ?? []).filter(
                       (r) => r.scenarioId === selected.id,
@@ -752,7 +839,8 @@ export default function App() {
                     }
                   />
                   <JustificationWorkspace
-                    key={`justification-${selected.id}`}
+                    key={`justification/${workspace.id}/${selected.id}`}
+                    workspaceId={workspace.id}
                     scenarioId={selected.id}
                     assessments={workspace.riskAssessments ?? []}
                     records={workspace.justifications ?? []}
@@ -789,6 +877,8 @@ export default function App() {
           )}
           {page === 'questions' && (
             <Questionnaire
+              workspace={workspace}
+              onUpdate={update}
               questions={
                 workspace.dossiers?.find((d) => d.id === inventoryDossierId)?.questions ??
                 allQuestions
@@ -800,16 +890,27 @@ export default function App() {
               answers={workspace.answers.filter(
                 (a) => a.dossierId === (inventoryDossierId || undefined),
               )}
-              updateAnswer={(answer) =>
-                update({
-                  answers: [
-                    ...workspace.answers.filter(
-                      (a) => a.questionId !== answer.questionId || a.dossierId !== answer.dossierId,
-                    ),
-                    answer,
-                  ],
-                })
-              }
+              updateAnswer={(answer) => {
+                try {
+                  return update(
+                    upsertResponse(workspaceRef.current, {
+                      answer,
+                      respondedBy: answer.respondedBy ?? '',
+                      ...(answer.evidenceIds !== undefined &&
+                      JSON.stringify(answer.evidenceIds) !==
+                        JSON.stringify(
+                          workspaceRef.current.answers.find((existing) => existing.id === answer.id)
+                            ?.evidenceIds,
+                        )
+                        ? { evidenceIds: answer.evidenceIds }
+                        : {}),
+                    }),
+                  );
+                } catch (error) {
+                  setNotice(String(error));
+                  return false;
+                }
+              }}
               addScenario={(q) => {
                 setEditingScenario({
                   ...newScenario(),
@@ -1063,6 +1164,16 @@ export default function App() {
       {modal === 'scenario' && editingScenario && (
         <ScenarioEditor
           scenario={editingScenario}
+          canRestore={(candidate) =>
+            workspace.scenarios.some((s) => s.id === editingScenario.id) ||
+            !workspace.scenarios.some((s) => s.id === candidate.id)
+          }
+          draftKey={`${workspace.id}/scenario/${workspace.scenarios.some((s) => s.id === editingScenario.id) ? editingScenario.id : 'new'}`}
+          draftSource={
+            workspace.scenarios.some((s) => s.id === editingScenario.id)
+              ? draftBase(editingScenario)
+              : 'new/v1'
+          }
           dossiers={workspace.dossiers ?? []}
           departments={workspace.departments ?? []}
           sites={workspace.sites ?? []}
@@ -1073,29 +1184,47 @@ export default function App() {
       {modal === 'control' && editingControl && (
         <ControlEditor
           control={editingControl}
+          canRestore={(candidate) =>
+            Boolean(selected?.controls.some((c) => c.id === editingControl.id)) ||
+            !workspace.scenarios.some((s) => s.controls.some((c) => c.id === candidate.id))
+          }
+          draftKey={`${workspace.id}/control/${selected?.id ?? 'none'}/${selected?.controls.some((c) => c.id === editingControl.id) ? editingControl.id : 'new'}`}
+          draftSource={
+            selected?.controls.some((c) => c.id === editingControl.id)
+              ? draftBase(editingControl)
+              : 'new/v1'
+          }
           onClose={() => setModal(null)}
           onSave={saveControl}
         />
       )}
       {modal === 'action' && (
         <ActionEditor
+          draftKey={`${workspace.id}/action/new`}
+          existingIds={workspace.actions.map((record) => record.id)}
           scenarios={workspace.scenarios}
           onClose={() => setModal(null)}
           onSave={(a) => {
-            update({ actions: [...workspace.actions, a] });
-            setModal(null);
+            const accepted = update({ actions: [...workspace.actions, a] });
+            if (accepted) setModal(null);
+            return accepted;
           }}
         />
       )}
       {modal === 'incident' && (
         <IncidentEditor
+          draftKey={`${workspace.id}/incident/${editingIncident?.id ?? 'new'}`}
           initial={editingIncident}
+          existingIds={workspace.incidents.map((record) => record.id)}
           departments={workspace.departments ?? []}
           scenarios={workspace.scenarios}
           onClose={() => setModal(null)}
           onSave={(i) => {
-            if (update({ incidents: [...workspace.incidents.filter((x) => x.id !== i.id), i] }))
-              setModal(null);
+            const accepted = update({
+              incidents: [...workspace.incidents.filter((x) => x.id !== i.id), i],
+            });
+            if (accepted) setModal(null);
+            return accepted;
           }}
         />
       )}
@@ -1415,14 +1544,16 @@ function Priorities({
 }
 
 function RiskWorkbench({
+  workspaceId,
   scenario,
   changeScenario,
   editScenario,
   addControl,
   editControl,
 }: {
+  workspaceId: string;
   scenario: Scenario;
-  changeScenario: (s: Scenario) => void;
+  changeScenario: (s: Scenario) => boolean;
   editScenario: () => void;
   addControl: () => void;
   editControl: (c: Control) => void;
@@ -1614,26 +1745,32 @@ function RiskWorkbench({
           </div>
         </>
       ) : (
-        <LopaWorkbench scenario={scenario} onChange={changeScenario} />
+        <LopaWorkbench
+          key={`${workspaceId}/${scenario.id}/${draftBase(scenario.lopa ?? null)}`}
+          workspaceId={workspaceId}
+          scenario={scenario}
+          onChange={changeScenario}
+        />
       )}
     </>
   );
 }
 function LopaWorkbench({
+  workspaceId,
   scenario,
   onChange,
 }: {
+  workspaceId: string;
   scenario: Scenario;
-  onChange: (s: Scenario) => void;
+  onChange: (s: Scenario) => boolean;
 }) {
-  const [lopa, setDraft] = useState(scenario.lopa);
+  const [lopa, setDraft, draftStatus] = usePersistentDraft<NonNullable<Scenario['lopa']> | null>(
+    `${workspaceId}/lopa-workbench/${scenario.id}`,
+    scenario.lopa ?? null,
+    draftBase(scenario.lopa ?? null),
+  );
   const [setup, setSetup] = useState(false);
   const [draftError, setDraftError] = useState('');
-  useEffect(() => {
-    setDraft(scenario.lopa);
-    setDraftError('');
-    setSetup(false);
-  }, [scenario.id, scenario.lopa]);
   if (!lopa)
     return (
       <section className="panel empty">
@@ -1648,11 +1785,13 @@ function LopaWorkbench({
         </button>
         {setup && (
           <LopaSetup
+            workspaceId={workspaceId}
             scenario={scenario}
             onClose={() => setSetup(false)}
             onSave={(l) => {
-              onChange({ ...scenario, lopa: l });
-              setSetup(false);
+              const accepted = onChange({ ...scenario, lopa: l });
+              if (accepted) setSetup(false);
+              return accepted;
             }}
           />
         )}
@@ -1677,8 +1816,12 @@ function LopaWorkbench({
           'Leg de aannames en het criteriumbesluit vast voordat je deze LOPA opslaat.',
         );
       calculateLopa(lopa);
-      onChange({ ...scenario, lopa });
-      setDraftError('');
+      if (onChange({ ...scenario, lopa })) {
+        draftStatus.clear();
+        setDraftError('');
+      } else {
+        setDraftError('Opslaan geweigerd. Het lokale LOPA-concept blijft bewaard.');
+      }
     } catch (error) {
       setDraftError(error instanceof Error ? error.message : String(error));
     }
@@ -1687,6 +1830,7 @@ function LopaWorkbench({
     set({ layers: lopa.layers.map((x) => (x.id === layer.id ? layer : x)) });
   return (
     <>
+      <DraftNotice status={draftStatus} />
       <div className="lopa-draft-bar">
         <span>
           {draftError
@@ -2174,28 +2318,35 @@ function EstimateInput({
 }
 function ScenarioEditor({
   scenario,
+  canRestore,
   dossiers,
   departments,
   sites,
   onClose,
+  draftKey,
+  draftSource,
   onSave,
 }: {
   scenario: Scenario;
+  canRestore: (candidate: Scenario) => boolean;
   dossiers: Dossier[];
   departments: Department[];
   sites: Site[];
   onClose: () => void;
-  onSave: (s: Scenario) => void;
+  draftKey: string;
+  draftSource: string;
+  onSave: (s: Scenario) => boolean;
 }) {
-  const [s, set] = useState(scenario);
+  const [s, set, draftStatus] = usePersistentDraft(draftKey, scenario, draftSource, canRestore);
   return (
     <Modal title="Risicoscenario" onClose={onClose}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSave(s);
+          if (onSave(s)) draftStatus.clear();
         }}
       >
+        <DraftNotice status={draftStatus} />
         <Field label="Titel">
           <input
             required
@@ -2299,20 +2450,48 @@ function ScenarioEditor({
 }
 function ControlEditor({
   control,
+  canRestore,
   onClose,
+  draftKey,
+  draftSource,
   onSave,
 }: {
   control: Control;
+  canRestore: (candidate: Control) => boolean;
   onClose: () => void;
-  onSave: (c: Control) => void;
+  draftKey: string;
+  draftSource: string;
+  onSave: (c: Control) => boolean;
 }) {
-  const [c, set] = useState(control);
-  const [conditionalBasis, setConditionalBasis] = useState('');
-  const [conditionsConfirmed, setConditionsConfirmed] = useState(false);
-  const [potential, setPotential] = useState(80),
-    [coverage, setCoverage] = useState(100),
-    [availability, setAvailability] = useState(95),
-    [use, setUse] = useState(90);
+  const [session, setSession, draftStatus] = usePersistentDraft(
+    draftKey,
+    {
+      control,
+      helper: {
+        conditionalBasis: '',
+        conditionsConfirmed: false,
+        potential: 80,
+        coverage: 100,
+        availability: 95,
+        use: 90,
+      },
+    },
+    draftSource,
+    (candidate) => canRestore(candidate.control),
+  );
+  const c = session.control;
+  const set = (control: Control) => setSession((current) => ({ ...current, control }));
+  const { conditionalBasis, conditionsConfirmed, potential, coverage, availability, use } =
+    session.helper;
+  const setHelper = (patch: Partial<typeof session.helper>) =>
+    setSession((current) => ({ ...current, helper: { ...current.helper, ...patch } }));
+  const setConditionalBasis = (conditionalBasis: string) => setHelper({ conditionalBasis });
+  const setConditionsConfirmed = (conditionsConfirmed: boolean) =>
+    setHelper({ conditionsConfirmed });
+  const setPotential = (potential: number) => setHelper({ potential });
+  const setCoverage = (coverage: number) => setHelper({ coverage });
+  const setAvailability = (availability: number) => setHelper({ availability });
+  const setUse = (use: number) => setHelper({ use });
   const suggestion = (potential / 100) * (coverage / 100) * (availability / 100) * (use / 100);
   const applySuggestion = (
     key: 'probabilityReduction' | 'exposureReduction' | 'effectReduction',
@@ -2338,9 +2517,10 @@ function ControlEditor({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSave(c);
+          if (onSave(c)) draftStatus.clear();
         }}
       >
+        <DraftNotice status={draftStatus} />
         <Field label="Maatregel">
           <input
             autoFocus
@@ -2560,6 +2740,8 @@ function ControlEditor({
   );
 }
 function Questionnaire({
+  workspace,
+  onUpdate,
   questions,
   answers,
   updateAnswer,
@@ -2569,18 +2751,21 @@ function Questionnaire({
   onDossierChange,
   evidence,
 }: {
+  workspace: WorkspaceState;
+  onUpdate: (patch: WorkspacePatch) => boolean;
   dossierId?: string;
   dossiers: Dossier[];
   onDossierChange: (id: string) => void;
   evidence: Evidence[];
   questions: Question[];
   answers: WorkspaceAnswer[];
-  updateAnswer: (a: WorkspaceAnswer) => void;
+  updateAnswer: (a: WorkspaceAnswer) => boolean;
   addScenario: (q: Question) => void;
 }) {
   const [filter, setFilter] = useState('all'),
     [search, setSearch] = useState(''),
     [pack, setPack] = useState('all');
+  const [respondedBy, setRespondedBy] = useState('');
   const locked = ['completed', 'archived'].includes(
     dossiers.find((d) => d.id === dossierId)?.status ?? '',
   );
@@ -2593,25 +2778,6 @@ function Questionnaire({
       (!packThemes || packThemes.includes(q.themeId)) &&
       `${q.prompt} ${q.assessmentGuidance}`.toLowerCase().includes(search.toLowerCase()),
   );
-  const update = (q: Question, patch: Partial<WorkspaceAnswer>) => {
-    const existing = answers.find((a) => a.questionId === q.id);
-    updateAnswer({
-      ...existing,
-      id: existing?.id ?? id(),
-      questionId: q.id,
-      dossierId,
-      ...(dossierId ? { questionSha256: questionHash(q) } : {}),
-      choice: existing?.choice ?? 'unknown',
-      evidence: existing?.evidence ?? '',
-      note: existing?.note ?? '',
-      answeredAt: new Date().toISOString(),
-      questionSnapshot: q.prompt,
-      sourceIds: q.sourceIds,
-      contentVersion:
-        'version' in q && typeof q.version === 'string' ? q.version : 'IMA-catalogus-2.0.0',
-      ...patch,
-    });
-  };
   return (
     <>
       <div className="page-heading">
@@ -2627,6 +2793,16 @@ function Questionnaire({
         </Badge>
       </div>
       <section className="panel inventory-scope">
+        <Field
+          label="Respondent / actor voor deze invoer"
+          hint="Vul bewust de naam of actorcode in. Deze wordt bij iedere antwoordwijziging vastgelegd."
+        >
+          <input
+            aria-label="Respondent / actor voor deze invoer"
+            value={respondedBy}
+            onChange={(e) => setRespondedBy(e.target.value)}
+          />
+        </Field>
         <Field label="Beoordelingsdossier">
           <select value={dossierId ?? ''} onChange={(e) => onDossierChange(e.target.value)}>
             <option value="">Algemene inventarisatie</option>
@@ -2688,79 +2864,28 @@ function Questionnaire({
             {shown.length} vragen · Publieke vragen zijn eigen formuleringen. Geïmporteerde private
             vragen blijven onderdeel van je eigen dossier.
           </p>
-          {shown.map((q, i) => {
-            const a = answers.find((a) => a.questionId === q.id);
-            return (
-              <section className="panel question-card" key={q.id}>
-                <div className="question-title">
-                  <span className="question-number">{String(i + 1).padStart(2, '0')}</span>
-                  <div>
-                    <small>{themed.get(q.themeId)?.title ?? q.themeId}</small>
-                    <h3>{q.prompt}</h3>
-                  </div>
-                  {a && <CheckCircle2 size={17} className="green-text" />}
-                </div>
-                <div className="answer-options">
-                  {Object.entries(answerLabels).map(([choice, label]) => (
-                    <button
-                      key={choice}
-                      className={a?.choice === choice ? `chosen ${choice}` : ''}
-                      disabled={locked}
-                      onClick={() => update(q, { choice: choice as WorkspaceAnswer['choice'] })}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <details>
-                  <summary>Toetsingsrichting & bewijs</summary>
-                  <p>{q.assessmentGuidance}</p>
-                  <ul>
-                    {q.evidenceHints.map((h) => (
-                      <li key={h}>{h}</li>
-                    ))}
-                  </ul>
-                  <p className="caption">Bronroutes: {q.sourceIds.join(', ')}</p>
-                  {q.legalReferences && (
-                    <p>Normen / verwijzingen uit de private bron: {q.legalReferences}</p>
-                  )}
-                </details>
-                <div className="form-grid">
-                  <Field label="Bewijs / waarneming">
-                    <textarea
-                      rows={2}
-                      disabled={locked}
-                      value={a?.evidence ?? ''}
-                      onChange={(e) => update(q, { evidence: e.target.value })}
-                      placeholder="Bron, observatie, interview of meting…"
-                    />
-                  </Field>
-                  <Field label="Toelichting / vervolg">
-                    <textarea
-                      rows={2}
-                      disabled={locked}
-                      value={a?.note ?? ''}
-                      onChange={(e) => update(q, { note: e.target.value })}
-                    />
-                  </Field>
-                </div>
-                {dossierId && !locked && (
-                  <MultiSelect
-                    label="Gekoppelde bewijsrecords"
-                    items={evidence.filter((e) => !e.dossierId || e.dossierId === dossierId)}
-                    values={a?.evidenceIds ?? []}
-                    onChange={(v) => update(q, { evidenceIds: v })}
-                  />
-                )}
-                {a?.choice === 'yes' && !a.evidence && !a.evidenceIds?.length && (
-                  <p className="warning-line">Antwoord ‘Ja’ is nog niet onderbouwd met bewijs.</p>
-                )}
-                <button className="text-link" onClick={() => addScenario(q)}>
-                  Werk een risicoscenario uit <ArrowRight size={14} />
-                </button>
-              </section>
-            );
-          })}
+          {shown.map((question, index) => (
+            <QuestionAnswerCard
+              key={draftBase({
+                workspaceId: workspace.id,
+                dossierId: dossierId ?? null,
+                questionId: question.id,
+                questionSha256: questionHash(question),
+              })}
+              workspace={workspace}
+              question={question}
+              answer={answers.find((answer) => answer.questionId === question.id)}
+              dossierId={dossierId}
+              respondedBy={respondedBy}
+              locked={locked}
+              index={index}
+              themeLabel={themed.get(question.themeId)?.title ?? question.themeId}
+              evidence={evidence}
+              updateAnswer={updateAnswer}
+              onUpdate={onUpdate}
+              addScenario={addScenario}
+            />
+          ))}
           {!shown.length && <p className="muted">Geen vragen bij deze selectie.</p>}
         </div>
       </div>
@@ -2832,29 +2957,39 @@ function actionNeedsFollowup(action: WorkspaceAction): boolean {
 }
 function ActionEditor({
   scenarios,
+  existingIds,
   onSave,
   onClose,
+  draftKey,
 }: {
   scenarios: Scenario[];
-  onSave: (a: WorkspaceAction) => void;
+  existingIds: string[];
+  onSave: (a: WorkspaceAction) => boolean;
   onClose: () => void;
+  draftKey: string;
 }) {
-  const [a, set] = useState<WorkspaceAction>({
-    id: id(),
-    title: '',
-    owner: '',
-    dueDate: '',
-    status: 'open',
-    notes: '',
-  });
+  const [a, set, draftStatus] = usePersistentDraft<WorkspaceAction>(
+    draftKey,
+    {
+      id: id(),
+      title: '',
+      owner: '',
+      dueDate: '',
+      status: 'open',
+      notes: '',
+    },
+    'new/v1',
+    (candidate) => !existingIds.includes(candidate.id),
+  );
   return (
     <Modal title="Nieuwe verbeteractie" onClose={onClose}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSave(a);
+          if (onSave(a)) draftStatus.clear();
         }}
       >
+        <DraftNotice status={draftStatus} />
         <Field label="Actie">
           <input
             required
@@ -3027,19 +3162,24 @@ function Incidents({
 }
 function IncidentEditor({
   scenarios,
+  existingIds,
   initial,
   departments,
   onSave,
   onClose,
+  draftKey,
 }: {
   scenarios: Scenario[];
+  existingIds: string[];
   initial?: WorkspaceIncident;
   departments: Department[];
-  onSave: (i: WorkspaceIncident) => void;
+  onSave: (i: WorkspaceIncident) => boolean;
   onClose: () => void;
+  draftKey: string;
 }) {
   const localDate = new Date().toLocaleDateString('sv-SE');
-  const [i, set] = useState<WorkspaceIncident>(
+  const [i, set, draftStatus] = usePersistentDraft<WorkspaceIncident>(
+    draftKey,
     initial ?? {
       id: id(),
       title: '',
@@ -3049,15 +3189,18 @@ function IncidentEditor({
       description: '',
       actionIds: [],
     },
+    initial ? draftBase(initial) : 'new/v1',
+    (candidate) => Boolean(initial) || !existingIds.includes(candidate.id),
   );
   return (
     <Modal title="Incident of signaal vastleggen" onClose={onClose}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSave(i);
+          if (onSave(i)) draftStatus.clear();
         }}
       >
+        <DraftNotice status={draftStatus} />
         <Field label="Titel">
           <input
             required
@@ -3528,6 +3671,13 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
     lines.push(...dossierMarkdown(workspace));
     lines.push(...riskAssessmentMarkdown(workspace.riskAssessments ?? []));
     lines.push(...justificationMarkdown(workspace.justifications ?? []));
+    lines.push(questionDefinitionsMarkdown(workspace));
+    lines.push(...riskLibraryMarkdown(workspace));
+    try {
+      lines.push(...localDraftsMarkdown(browserDrafts(workspace.id)));
+    } catch (error) {
+      lines.push('', `Concepten konden niet worden gelezen: ${String(error)}`);
+    }
     download('ima-rie-rapport.md', lines.join('\n'), 'text/markdown');
   };
   return (
@@ -3552,6 +3702,7 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
           </button>
         </div>
       </div>
+      <DraftRecoveryPanel workspaceId={workspace.id} />
       <article className="panel report">
         <div className="report-top">
           <div className="brand-mark">
@@ -3655,40 +3806,59 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
 }
 
 function LopaSetup({
+  workspaceId,
   scenario,
   onClose,
   onSave,
 }: {
+  workspaceId: string;
   scenario: Scenario;
   onClose: () => void;
-  onSave: (l: NonNullable<Scenario['lopa']>) => void;
+  onSave: (l: NonNullable<Scenario['lopa']>) => boolean;
 }) {
-  const [event, setEvent] = useState(''),
-    [frequency, setFrequency] = useState(0.1),
-    [evidence, setEvidence] = useState(''),
-    [criterion, setCriterion] = useState(0.0001),
-    [basis, setBasis] = useState('');
+  const [draft, setDraft, draftStatus] = usePersistentDraft(
+    `${workspaceId}/lopa-setup/${scenario.id}`,
+    { event: '', frequency: '0.1', evidence: '', criterion: '0.0001', basis: '' },
+    draftBase({ lopa: scenario.lopa ?? null, consequence: scenario.consequence }),
+  );
+  const [error, setError] = useState('');
   return (
     <Modal title="LOPA-scenario opzetten" onClose={onClose}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          const l = {
-            initiatingEvent: event.trim(),
-            initiatingFrequency: { min: frequency, value: frequency, max: frequency },
-            frequencyEvidence: evidence.trim(),
-            consequence: scenario.consequence,
-            layers: [],
-            modifiers: [],
-            targetFrequency: criterion,
-            assumptions: basis.trim(),
-          };
-          calculateLopa(l);
-          onSave(l);
+          try {
+            const frequency = Number(draft.frequency);
+            const l = {
+              initiatingEvent: draft.event.trim(),
+              initiatingFrequency: { min: frequency, value: frequency, max: frequency },
+              frequencyEvidence: draft.evidence.trim(),
+              consequence: scenario.consequence,
+              layers: [],
+              modifiers: [],
+              targetFrequency: Number(draft.criterion),
+              assumptions: draft.basis.trim(),
+            };
+            calculateLopa(l);
+            if (onSave(l)) draftStatus.clear();
+          } catch (error) {
+            setError(String(error));
+          }
         }}
       >
+        <DraftNotice status={draftStatus} />
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
         <Field label="Eén initiërende gebeurtenis">
-          <input required autoFocus value={event} onChange={(e) => setEvent(e.target.value)} />
+          <input
+            required
+            autoFocus
+            value={draft.event}
+            onChange={(e) => setDraft({ ...draft, event: e.target.value })}
+          />
         </Field>
         <Field
           label="Initiatorfrequentie per jaar"
@@ -3699,12 +3869,16 @@ function LopaSetup({
             type="number"
             min="0.000000000001"
             step="any"
-            value={frequency}
-            onChange={(e) => setFrequency(Number(e.target.value))}
+            value={draft.frequency}
+            onChange={(e) => setDraft({ ...draft, frequency: e.target.value })}
           />
         </Field>
         <Field label="Onderbouwing / bron initiatorfrequentie">
-          <textarea required value={evidence} onChange={(e) => setEvidence(e.target.value)} />
+          <textarea
+            required
+            value={draft.evidence}
+            onChange={(e) => setDraft({ ...draft, evidence: e.target.value })}
+          />
         </Field>
         <Field
           label="Projectcriterium per jaar"
@@ -3715,12 +3889,16 @@ function LopaSetup({
             type="number"
             min="0.000000000001"
             step="any"
-            value={criterion}
-            onChange={(e) => setCriterion(Number(e.target.value))}
+            value={draft.criterion}
+            onChange={(e) => setDraft({ ...draft, criterion: e.target.value })}
           />
         </Field>
         <Field label="Aannames en vaststelling criterium">
-          <textarea required value={basis} onChange={(e) => setBasis(e.target.value)} />
+          <textarea
+            required
+            value={draft.basis}
+            onChange={(e) => setDraft({ ...draft, basis: e.target.value })}
+          />
         </Field>
         <button className="primary" type="submit">
           LOPA-scenario vastleggen

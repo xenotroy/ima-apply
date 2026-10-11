@@ -15,6 +15,72 @@ export function questionArtifact(question: Question): string {
     sourceIds: question.sourceIds,
     suggestedHierarchy: question.suggestedHierarchy,
     roles: question.roles,
+    ...(question.acceptanceCriteria !== undefined
+      ? { acceptanceCriteria: question.acceptanceCriteria }
+      : {}),
+    ...(question.expectedEvidence !== undefined
+      ? { expectedEvidence: question.expectedEvidence }
+      : {}),
+    ...(question.richFields !== undefined
+      ? {
+          richFields: {
+            ...(question.richFields.number !== undefined
+              ? { number: question.richFields.number }
+              : {}),
+            ...(question.richFields.hazard !== undefined
+              ? { hazard: question.richFields.hazard }
+              : {}),
+            ...(question.richFields.risk !== undefined ? { risk: question.richFields.risk } : {}),
+            ...(question.richFields.riskFactor !== undefined
+              ? { riskFactor: question.richFields.riskFactor }
+              : {}),
+            ...(question.richFields.technicalControls !== undefined
+              ? { technicalControls: question.richFields.technicalControls }
+              : {}),
+            ...(question.richFields.organisationalControls !== undefined
+              ? { organisationalControls: question.richFields.organisationalControls }
+              : {}),
+            ...(question.richFields.rootCauses !== undefined
+              ? { rootCauses: question.richFields.rootCauses }
+              : {}),
+            ...(question.richFields.culture !== undefined
+              ? { culture: question.richFields.culture }
+              : {}),
+            ...(question.richFields.sortOrder !== undefined
+              ? { sortOrder: question.richFields.sortOrder }
+              : {}),
+          },
+        }
+      : {}),
+    ...(question.definition !== undefined
+      ? {
+          definition: {
+            schema: question.definition.schema,
+            version: question.definition.version,
+            status: question.definition.status,
+            contentPackageId: question.definition.contentPackageId,
+            contentPackageVersion: question.definition.contentPackageVersion,
+            ...(question.definition.supersedesId !== undefined
+              ? { supersedesId: question.definition.supersedesId }
+              : {}),
+            topicIds: question.definition.topicIds,
+            legalIds: question.definition.legalIds,
+            tags: question.definition.tags,
+            ...(question.definition.createdAt !== undefined
+              ? { createdAt: question.definition.createdAt }
+              : {}),
+            ...(question.definition.updatedAt !== undefined
+              ? { updatedAt: question.definition.updatedAt }
+              : {}),
+            ...(question.definition.sourcePath !== undefined
+              ? { sourcePath: question.definition.sourcePath }
+              : {}),
+            ...(question.definition.sourceSha256 !== undefined
+              ? { sourceSha256: question.definition.sourceSha256 }
+              : {}),
+          },
+        }
+      : {}),
     ...(question.legalReferences !== undefined
       ? { legalReferences: question.legalReferences }
       : {}),

@@ -22,6 +22,10 @@ Referentiechecks bewaken bestaan, organisatie, dossierscope en compatibiliteit v
 
 ## Rekenen en opslaan
 
+Versie 2.3 voegt optionele beheerde vraagmetadata, volledige contentpakketsnapshots, getypeerde response-relaties, bibliotheekgraphs/reviews/layouts en compacte PI-routerrecords toe. Oude werkruimten blijven zonder verzonnen metadata geldig. Beheerde pakketfreezes bewaren alle definities; bronvraagselectie en onderzoekslagen blijven afzonderlijk. De router bewaart unieke geselecteerde occurrencebindings en regel-ID's; herberekening en hash controleren de bevroren uitkomst. Zie [vraagdefinities](question-definitions.md), [bibliotheek](risk-library.md) en [PI-router](pi-risk-library-router.md).
+
+Het schrijfjournaal valideert een volledige werkruimte vóór iedere gequeue-de gewone opslag. Een herstelkopie behoudt haar verwachte basisversie en eigen schrijverslot. Alleen één passend herstelrecord wordt automatisch gekozen; andere versies blijven exporteerbaar. Conceptopslag gebruikt een apart slot per pagina, basisvingerafdruk en bevestigde exacte schrijfvolgorde. Een geslaagde oude schrijfoperatie verwijdert geen nieuwere tekst of slot van een ander tabblad. Identiteiten van reeds vastgelegde nieuwe records en veranderde bronnen blokkeren automatische restore. Tokens blijven uitsluitend in tabbladgeheugen. [Interviewopslag](interview-saving.md) beschrijft de gebruikersroute en beperkingen.
+
 Alle projectmutaties worden vóór vervanging van de UI-state gevalideerd. De lokale opslagschrijver serialiseert wijzigingen met Web Locks en controleert de verwachte opslagversie. Een storageconflict laat de oude opgeslagen versie intact; de gebruiker kan de nieuwe werkversie exporteren.
 
 LOPA-bewerkingen blijven een lokaal formulierconcept totdat expliciet opslaan slaagt. Ongeldige conceptinvoer verandert geen opgeslagen scenario; de grafiek toont dan de laatste opgeslagen beoordeling met een foutmelding. Maatregelcredit vergt geschikte status, onderbouwing en expliciete beoordeling van afhankelijkheid.

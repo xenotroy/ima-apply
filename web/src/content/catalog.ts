@@ -20,6 +20,36 @@ export interface SourceRecord {
   url?: string;
 }
 
+/** Metadata belongs to the same authoritative question content, never an editable copy. */
+export type QuestionDefinitionMetadata = {
+  schema: 'ima.question-definition/v1';
+  version: string;
+  status: 'draft' | 'active' | 'retired';
+  contentPackageId: string;
+  contentPackageVersion: string;
+  supersedesId?: string;
+  topicIds: string[];
+  legalIds: string[];
+  tags: string[];
+  /** Missing historical provenance remains unknown. */
+  createdAt?: string;
+  updatedAt?: string;
+  sourcePath?: string;
+  sourceSha256?: string;
+};
+
+export type QuestionRichFields = {
+  number?: string;
+  hazard?: string;
+  risk?: string;
+  riskFactor?: string;
+  technicalControls?: string;
+  organisationalControls?: string;
+  rootCauses?: string;
+  culture?: string;
+  sortOrder?: number;
+};
+
 export interface Question {
   id: string;
   themeId: string;
@@ -33,6 +63,11 @@ export interface Question {
   roles: string[];
   /** Original private norms/references, only present after a private import. */
   legalReferences?: string;
+  /** assessmentGuidance is the separate explanation; these preserve exact criteria/evidence. */
+  acceptanceCriteria?: string;
+  expectedEvidence?: string;
+  richFields?: QuestionRichFields;
+  definition?: QuestionDefinitionMetadata;
 }
 
 export interface Theme {

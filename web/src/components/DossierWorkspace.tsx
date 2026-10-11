@@ -1,4 +1,13 @@
 import { useState } from 'react';
+import QuestionDefinitionWorkspace from './QuestionDefinitionWorkspace';
+import RiskLibraryWorkspace from './RiskLibraryWorkspace';
+import PiRouterWorkspace from './PiRouterWorkspace';
+import { createDossierFromModulePlan, type ModulePlan } from '../data/module-plan';
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import { draftBase } from '../data/local-drafts';
+import DraftNotice from './DraftNotice';
+import { captureQuestionPackages } from '../data/question-definition';
+import { piRouterQuestionBindings } from '../data/pi-router';
 import { Building2, ClipboardCheck, FileCheck2, Plus, ArrowRight } from 'lucide-react';
 import { sources as builtinSources, type Question } from '../content/catalog';
 import { freezeQuestion, evidenceHash } from '../data/frozen';
@@ -73,9 +82,9 @@ export default function DossierWorkspace({
   openInventory: (dossierId: string) => void;
   openScenario: (scenarioId: string) => void;
 }) {
-  const [tab, setTab] = useState<'dossiers' | 'organisation' | 'knowledge' | 'context' | 'modules'>(
-    'dossiers',
-  );
+  const [tab, setTab] = useState<
+    'dossiers' | 'organisation' | 'knowledge' | 'context' | 'modules' | 'managed' | 'library' | 'pi'
+  >('dossiers');
   const [selectedId, setSelectedId] = useState('');
   const [modal, setModal] = useState<
     | 'organisation'
@@ -103,7 +112,9 @@ export default function DossierWorkspace({
     legal = workspace.legalRecords ?? [];
   const selected = dossiers.find((d) => d.id === selectedId) ?? dossiers[0];
   const add = (patch: WorkspacePatch) => {
-    if (onUpdate(patch)) setModal(null);
+    const accepted = onUpdate(patch);
+    if (accepted) setModal(null);
+    return accepted;
   };
   return (
     <>
@@ -129,6 +140,9 @@ export default function DossierWorkspace({
             ['organisation', 'Organisatie'],
             ['context', 'Projectcontext & rondgangen'],
             ['modules', 'Modules & scope'],
+            ['managed', 'Beheerde vragen'],
+            ['library', 'Risicobibliotheek'],
+            ['pi', 'PI-bibliotheek & router'],
             ['knowledge', 'Onderwerpen & regelgeving'],
           ] as const
         ).map(([key, label]) => (
@@ -137,6 +151,78 @@ export default function DossierWorkspace({
           </button>
         ))}
       </div>
+      {tab === 'pi' && (
+        <PiRouterWorkspace
+          workspace={workspace}
+          onUpdate={onUpdate}
+          onUseQuestionSet={(record) => {
+            const bindings = piRouterQuestionBindings(record);
+            const groups = new Map<string, typeof bindings>();
+            for (const binding of bindings) {
+              const group = groups.get(binding.process) ?? [];
+              if (!group.some((item) => item.questionId === binding.questionId))
+                group.push(binding);
+              groups.set(binding.process, group);
+            }
+            const original = dossiers.find((dossier) => dossier.id === record.inputs.dossierId);
+            const plan: ModulePlan = {
+              id: id(),
+              title: `Onderzoeksset: ${record.title}`,
+              scope: original?.departmentIds.length === 1 ? 'department' : 'project',
+              ...((original?.organisationId ?? record.inputs.organisationId)
+                ? { organisationId: original?.organisationId ?? record.inputs.organisationId }
+                : {}),
+              ...(original?.projectContextId
+                ? { projectContextId: original.projectContextId }
+                : {}),
+              ...(original?.departmentIds.length === 1
+                ? { departmentId: original.departmentIds[0] }
+                : {}),
+              modules: [...groups].map(([process, questions], index) => ({
+                id: `${record.id}:process:${index}`,
+                origin: 'imported_theme',
+                code: process,
+                title: process,
+                questionIds: questions.map((question) => question.questionId),
+                enabled: true,
+                scopeNotes:
+                  'Routervoorstel met exacte bronvraagkoppelingen. Mappingstatus, procesblokdekking, lokale aanwezigheid en werking vereisen menselijke controle. Dit is geen uitgevoerde wijziging in RI&E Porter.',
+                sortOrder: index,
+                sourceIds: [...new Set(questions.map((question) => question.sourceId))],
+              })),
+              revision: 1,
+              sourceIds: record.sourceIds,
+            };
+            const dossier = createDossierFromModulePlan(plan, questions, workspace, {
+              id: id(),
+              title: `Onderzoeksdossier: ${record.title}`,
+              scope: record.inputs.scopeTitle,
+              assessor: record.inputs.assessor,
+              createdAt: new Date().toISOString(),
+            });
+            if (original) dossier.departmentIds = [...original.departmentIds];
+            if (
+              add({
+                modulePlans: [...(workspace.modulePlans ?? []), plan],
+                dossiers: [...dossiers, dossier],
+              })
+            ) {
+              setSelectedId(dossier.id);
+              setTab('dossiers');
+            }
+          }}
+        />
+      )}
+      {tab === 'managed' && (
+        <QuestionDefinitionWorkspace workspace={workspace} onUpdate={onUpdate} />
+      )}
+      {tab === 'library' && (
+        <RiskLibraryWorkspace
+          workspace={workspace}
+          onUpdate={onUpdate}
+          onScenario={(scenario) => onUpdate({ scenarios: [...workspace.scenarios, scenario] })}
+        />
+      )}
       {tab === 'modules' && (
         <ModulePlanWorkspace workspace={workspace} questions={questions} onUpdate={onUpdate} />
       )}
@@ -490,14 +576,19 @@ export default function DossierWorkspace({
               workspace={workspace}
               questions={questions}
               onSave={(d) => {
-                add({ dossiers: [...dossiers, d] });
-                setSelectedId(d.id);
-                setTab('dossiers');
+                const accepted = add({ dossiers: [...dossiers, d] });
+                if (accepted) {
+                  setSelectedId(d.id);
+                  setTab('dossiers');
+                }
+                return accepted;
               }}
             />
           )}
           {modal === 'evidence' && selected && (
             <EvidenceForm
+              workspaceId={workspace.id}
+              existingIds={evidence.map((record) => record.id)}
               initial={editingEvidence}
               dossierId={selected.id}
               onSave={(e) => add({ evidence: [...evidence.filter((x) => x.id !== e.id), e] })}
@@ -639,17 +730,46 @@ function DossierForm({
 }: {
   workspace: WorkspaceState;
   questions: Question[];
-  onSave: (d: Dossier) => void;
+  onSave: (d: Dossier) => boolean;
 }) {
-  const [title, setTitle] = useState(''),
-    [scope, setScope] = useState(''),
-    [assessor, setAssessor] = useState(''),
-    [organisationId, setOrganisation] = useState(''),
-    [projectContextId, setProjectContext] = useState(''),
-    [departmentIds, setDepartments] = useState<string[]>([]),
-    [theme, setTheme] = useState('all'),
-    [selection, setSelection] = useState<string[]>([]);
-  const available = questions.filter((q) => theme === 'all' || q.themeId === theme);
+  const [draft, setDraft, draftStatus] = usePersistentDraft(
+    `${workspace.id}/dossier/new`,
+    {
+      title: '',
+      scope: '',
+      assessor: '',
+      organisationId: '',
+      projectContextId: '',
+      departmentIds: [] as string[],
+      theme: 'all',
+      selection: [] as string[],
+    },
+    `new/v1:${draftBase((workspace.dossiers ?? []).map((record) => record.id))}`,
+  );
+  const {
+    title,
+    scope,
+    assessor,
+    organisationId,
+    projectContextId,
+    departmentIds,
+    theme,
+    selection,
+  } = draft;
+  const setTitle = (title: string) => setDraft((value) => ({ ...value, title }));
+  const setScope = (scope: string) => setDraft((value) => ({ ...value, scope }));
+  const setAssessor = (assessor: string) => setDraft((value) => ({ ...value, assessor }));
+  const setOrganisation = (organisationId: string) =>
+    setDraft((value) => ({ ...value, organisationId }));
+  const setProjectContext = (projectContextId: string) =>
+    setDraft((value) => ({ ...value, projectContextId }));
+  const setDepartments = (departmentIds: string[]) =>
+    setDraft((value) => ({ ...value, departmentIds }));
+  const setTheme = (theme: string) => setDraft((value) => ({ ...value, theme }));
+  const setSelection = (selection: string[]) => setDraft((value) => ({ ...value, selection }));
+  const [formError, setFormError] = useState('');
+  const eligible = questions.filter((q) => !q.definition || q.definition.status === 'active');
+  const available = eligible.filter((q) => theme === 'all' || q.themeId === theme);
   const allowedDepartments = (workspace.departments ?? []).filter(
     (d) => !organisationId || departmentOrganisationId(d, workspace.sites ?? []) === organisationId,
   );
@@ -657,48 +777,61 @@ function DossierForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        const selected = questions.filter((q) => selection.includes(q.id));
-        const usedIds = new Set(selected.flatMap((q) => q.sourceIds));
-        const sourceSnapshots = JSON.parse(
-          JSON.stringify(
-            [...builtinSources, ...workspace.sources].filter((s) => usedIds.has(s.id)),
-          ),
-        ) as WorkspaceRecord[];
-        const frozen = selected.map((q) => {
-          const imported = workspace.questions.some((entry) => entry.id === q.id);
-          const versions = sourceSnapshots
-            .filter((s) => q.sourceIds.includes(s.id))
-            .flatMap((s) => {
-              const metadata = s.sourceMetadata;
-              return metadata &&
-                typeof metadata === 'object' &&
-                !Array.isArray(metadata) &&
-                typeof metadata.version === 'string'
-                ? [metadata.version]
-                : [];
-            });
-          return freezeQuestion(
-            q,
-            imported
-              ? [...new Set(versions)].join(' + ') || 'bronversie-niet-vastgelegd'
-              : 'IMA-catalogus-2.0.0',
+        try {
+          const selected = eligible.filter((q) => selection.includes(q.id));
+          const contentPackageSnapshots = captureQuestionPackages(
+            selected.map((q) => q.id),
+            workspace,
           );
-        });
-        onSave({
-          id: id(),
-          title,
-          scope,
-          assessor,
-          ...(organisationId ? { organisationId } : {}),
-          ...(projectContextId ? { projectContextId } : {}),
-          departmentIds,
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          questions: frozen,
-          sourceSnapshots,
-        });
+          const usedIds = new Set(selected.flatMap((q) => q.sourceIds));
+          const sourceSnapshots = JSON.parse(
+            JSON.stringify(
+              [...builtinSources, ...workspace.sources].filter((s) => usedIds.has(s.id)),
+            ),
+          ) as WorkspaceRecord[];
+          const frozen = selected.map((q) => {
+            const imported = workspace.questions.some((entry) => entry.id === q.id);
+            const versions = sourceSnapshots
+              .filter((s) => q.sourceIds.includes(s.id))
+              .flatMap((s) => {
+                const metadata = s.sourceMetadata;
+                return metadata &&
+                  typeof metadata === 'object' &&
+                  !Array.isArray(metadata) &&
+                  typeof metadata.version === 'string'
+                  ? [metadata.version]
+                  : [];
+              });
+            return freezeQuestion(
+              q,
+              q.definition?.version ??
+                (imported
+                  ? [...new Set(versions)].join(' + ') || 'bronversie-niet-vastgelegd'
+                  : 'IMA-catalogus-2.0.0'),
+            );
+          });
+          const accepted = onSave({
+            id: id(),
+            title,
+            scope,
+            assessor,
+            ...(organisationId ? { organisationId } : {}),
+            ...(projectContextId ? { projectContextId } : {}),
+            departmentIds,
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            questions: frozen,
+            sourceSnapshots,
+            ...(contentPackageSnapshots.length ? { contentPackageSnapshots } : {}),
+          });
+          if (accepted) draftStatus.clear();
+        } catch (error) {
+          setFormError(String(error));
+        }
       }}
     >
+      <DraftNotice status={draftStatus} />
+      {formError && <p role="alert">{formError}</p>}
       <Field label="Dossiertitel">
         <input required autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
       </Field>
@@ -804,14 +937,19 @@ function DossierForm({
 }
 function EvidenceForm({
   initial,
+  workspaceId,
+  existingIds,
   dossierId,
   onSave,
 }: {
   initial?: Evidence;
+  workspaceId: string;
+  existingIds: string[];
   dossierId: string;
-  onSave: (e: Evidence) => void;
+  onSave: (e: Evidence) => boolean;
 }) {
-  const [record, set] = useState<Evidence>(
+  const [record, set, draftStatus] = usePersistentDraft<Evidence>(
+    `${workspaceId}/evidence/${dossierId}/${initial?.id ?? 'new'}`,
     initial ?? {
       id: id(),
       title: '',
@@ -824,6 +962,8 @@ function EvidenceForm({
       verifiedBy: '',
       verificationNote: '',
     },
+    initial ? draftBase(initial) : 'new/v1',
+    (candidate) => Boolean(initial) || !existingIds.includes(candidate.id),
   );
   const changeContent = (patch: Partial<Evidence>) =>
     set({
@@ -839,14 +979,16 @@ function EvidenceForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave({
+        const accepted = onSave({
           ...record,
           ...(record.status === 'verified'
             ? { verifiedAt: new Date().toISOString(), verifiedContentSha256: evidenceHash(record) }
             : { verifiedAt: undefined, verifiedContentSha256: undefined }),
         });
+        if (accepted) draftStatus.clear();
       }}
     >
+      <DraftNotice status={draftStatus} />
       <Field label="Bewijstitel">
         <input
           required
@@ -921,24 +1063,30 @@ function ObservationForm({
 }: {
   dossier: Dossier;
   workspace: WorkspaceState;
-  onSave: (o: Observation) => void;
+  onSave: (o: Observation) => boolean;
 }) {
-  const [record, set] = useState<Observation>({
-    id: id(),
-    title: '',
-    dossierId: dossier.id,
-    date: today(),
-    observer: '',
-    facts: '',
-    evidenceIds: [],
-  });
+  const [record, set, draftStatus] = usePersistentDraft<Observation>(
+    `${workspace.id}/observation/${dossier.id}/new`,
+    {
+      id: id(),
+      title: '',
+      dossierId: dossier.id,
+      date: today(),
+      observer: '',
+      facts: '',
+      evidenceIds: [],
+    },
+    'new/v1',
+    (candidate) => !(workspace.observations ?? []).some((existing) => existing.id === candidate.id),
+  );
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave(record);
+        if (onSave(record)) draftStatus.clear();
       }}
     >
+      <DraftNotice status={draftStatus} />
       <Field label="Waarnemingstitel">
         <input
           required
@@ -1031,9 +1179,10 @@ function FindingForm({
   initial?: Finding;
   dossier: Dossier;
   workspace: WorkspaceState;
-  onSave: (f: Finding) => void;
+  onSave: (f: Finding) => boolean;
 }) {
-  const [record, set] = useState<Finding>(
+  const [record, set, draftStatus] = usePersistentDraft<Finding>(
+    `${workspace.id}/finding/${dossier.id}/${initial?.id ?? 'new'}`,
     initial ?? {
       id: id(),
       title: '',
@@ -1047,15 +1196,20 @@ function FindingForm({
       decisionBy: '',
       decisionNote: '',
     },
+    initial ? draftBase(initial) : 'new/v1',
+    (candidate) =>
+      Boolean(initial) ||
+      !(workspace.findings ?? []).some((existing) => existing.id === candidate.id),
   );
   const decision = ['risk_accepted', 'resolved', 'closed'].includes(record.status);
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave(record);
+        if (onSave(record)) draftStatus.clear();
       }}
     >
+      <DraftNotice status={draftStatus} />
       <Field label="Bevindingstitel">
         <input
           required

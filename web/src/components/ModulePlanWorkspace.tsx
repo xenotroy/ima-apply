@@ -3,6 +3,9 @@ import { Layers, Plus, ArrowUp, ArrowDown } from 'lucide-react';
 import type { Question } from '../content/catalog';
 import type { WorkspaceState, WorkspacePatch } from '../data/model';
 import { departmentLabel, departmentOrganisationId } from '../data/dossier';
+import { draftBase } from '../data/local-drafts';
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import DraftNotice from './DraftNotice';
 import {
   assertModulePlans,
   createDossierFromModulePlan,
@@ -92,6 +95,7 @@ export default function ModulePlanWorkspace({
       {editing && (
         <Modal title="Moduleplan vastleggen" wide onClose={() => setEditing(undefined)}>
           <PlanForm
+            key={editing === 'new' ? 'new' : editing.id}
             workspace={workspace}
             questions={questions}
             original={editing === 'new' ? undefined : editing}
@@ -123,6 +127,7 @@ export default function ModulePlanWorkspace({
       {creating && (
         <Modal title="Dossier uit moduleplan" wide onClose={() => setCreating(undefined)}>
           <DossierFromPlan
+            key={creating.id}
             workspace={workspace}
             questions={questions}
             plan={creating}
@@ -164,17 +169,39 @@ function PlanForm({
   original?: ModulePlan;
   onSave: (plan: ModulePlan) => string;
 }) {
-  const [title, setTitle] = useState(original?.title ?? '');
-  const [scope, setScope] = useState<ModulePlan['scope']>(original?.scope ?? 'project');
-  const [projectContextId, setContext] = useState(original?.projectContextId ?? '');
-  const [organisationId, setOrganisation] = useState(original?.organisationId ?? '');
-  const [departmentId, setDepartment] = useState(original?.departmentId ?? '');
-  const [modules, setModules] = useState<PlannedModule[]>(() => [
-    ...(original?.modules.map((module) => structuredClone(module)) ?? []),
-    ...modulePlanOptions(workspace, questions).filter(
-      (module) => !original?.modules.some((item) => item.id === module.id),
-    ),
-  ]);
+  const [draft, setDraft, draftStatus] = usePersistentDraft(
+    `${workspace.id}/module-plan/${original?.id ?? 'new'}`,
+    () => ({
+      title: original?.title ?? '',
+      scope: original?.scope ?? ('project' as ModulePlan['scope']),
+      projectContextId: original?.projectContextId ?? '',
+      organisationId: original?.organisationId ?? '',
+      departmentId: original?.departmentId ?? '',
+      modules: [
+        ...(original?.modules.map((module) => structuredClone(module)) ?? []),
+        ...modulePlanOptions(workspace, questions).filter(
+          (module) => !original?.modules.some((item) => item.id === module.id),
+        ),
+      ],
+    }),
+    original
+      ? draftBase(original)
+      : `new/v1:${draftBase((workspace.modulePlans ?? []).map((record) => record.id))}`,
+  );
+  const { title, scope, projectContextId, organisationId, departmentId, modules } = draft;
+  const setTitle = (title: string) => setDraft((current) => ({ ...current, title }));
+  const setScope = (scope: ModulePlan['scope']) => setDraft((current) => ({ ...current, scope }));
+  const setContext = (projectContextId: string) =>
+    setDraft((current) => ({ ...current, projectContextId }));
+  const setOrganisation = (organisationId: string) =>
+    setDraft((current) => ({ ...current, organisationId }));
+  const setDepartment = (departmentId: string) =>
+    setDraft((current) => ({ ...current, departmentId }));
+  const setModules = (change: PlannedModule[] | ((modules: PlannedModule[]) => PlannedModule[])) =>
+    setDraft((current) => ({
+      ...current,
+      modules: typeof change === 'function' ? change(current.modules) : change,
+    }));
   const [error, setError] = useState('');
   const context = workspace.projectContexts?.find((item) => item.id === projectContextId);
   const organisations = (workspace.organisations ?? []).filter(
@@ -203,21 +230,22 @@ function PlanForm({
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        setError(
-          onSave({
-            id: original?.id ?? crypto.randomUUID(),
-            title,
-            scope,
-            ...(projectContextId ? { projectContextId } : {}),
-            ...(organisationId ? { organisationId } : {}),
-            ...(scope === 'department' && departmentId ? { departmentId } : {}),
-            modules,
-            revision: (original?.revision ?? -1) + 1,
-            sourceIds: original?.sourceIds ?? [],
-          }),
-        );
+        const result = onSave({
+          id: original?.id ?? crypto.randomUUID(),
+          title,
+          scope,
+          ...(projectContextId ? { projectContextId } : {}),
+          ...(organisationId ? { organisationId } : {}),
+          ...(scope === 'department' && departmentId ? { departmentId } : {}),
+          modules,
+          revision: (original?.revision ?? -1) + 1,
+          sourceIds: original?.sourceIds ?? [],
+        });
+        setError(result);
+        if (!result) draftStatus.clear();
       }}
     >
+      <DraftNotice status={draftStatus} />
       <Field label="Plantitel">
         <input required value={title} onChange={(event) => setTitle(event.target.value)} />
       </Field>
@@ -362,9 +390,15 @@ function DossierFromPlan({
   plan: ModulePlan;
   onSave: (fields: { title: string; scope: string; assessor: string }) => string;
 }) {
-  const [title, setTitle] = useState('');
-  const [scope, setScope] = useState('');
-  const [assessor, setAssessor] = useState('');
+  const [draft, setDraft, draftStatus] = usePersistentDraft(
+    `${workspace.id}/module-plan-dossier/${plan.id}`,
+    { title: '', scope: '', assessor: '' },
+    draftBase(plan),
+  );
+  const { title, scope, assessor } = draft;
+  const setTitle = (title: string) => setDraft((current) => ({ ...current, title }));
+  const setScope = (scope: string) => setDraft((current) => ({ ...current, scope }));
+  const setAssessor = (assessor: string) => setDraft((current) => ({ ...current, assessor }));
   const [error, setError] = useState('');
   const missing = modulePlanQuestionIds(plan).filter(
     (id) => !questions.some((question) => question.id === id),
@@ -373,9 +407,12 @@ function DossierFromPlan({
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        setError(onSave({ title, scope, assessor }));
+        const result = onSave({ title, scope, assessor });
+        setError(result);
+        if (!result) draftStatus.clear();
       }}
     >
+      <DraftNotice status={draftStatus} />
       <p>
         {plan.title} · revisie {plan.revision} · {modulePlanQuestionIds(plan).length} vragen.
         Organisatie en afdeling volgen uitsluitend de opgeslagen planrelaties.

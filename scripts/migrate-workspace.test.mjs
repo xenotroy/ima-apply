@@ -591,3 +591,181 @@ test('SQLite module assignment ambiguities and unavailable department scopes rem
   assert(!unavailable.workspace.modulePlans.some(plan => plan.scope === 'department'));
   assert(unavailable.report.warnings.some(warning => warning.code === 'department_module_plan_raw_only'));
 });
+
+async function managedMarkdownFixture(t) {
+  const fixture = await markdownFixture(t);
+  const qfile = path.join(fixture.root, 'rie/questions/q.md');
+  const qtext = (await fs.readFile(qfile, 'utf8')).replace('content_package_id: "pack:1"', 'content_package_id: "pack:1"\ncontent_package_version: "1.0.0"\ncreated_at: "2026-10-01T08:00:00Z"\nupdated_at: "2026-10-02T08:00:00Z"\ntags: ["Exact bronlabel", "inspectie"]');
+  await fs.writeFile(qfile, qtext);
+  const companion = md('ima.rie-question-definition/v1', 'q:companion', { title: 'Niet geselecteerde conceptdefinitie', version: '1.0.0', status: 'draft', content_package_id: 'pack:1', content_package_version: '1.0.0', topic_ids: [], legal_ids: [], tags: [] }, '# Concept\n\n## Vraag\n\nOorspronkelijke niet geselecteerde vraag?\n\n## Toelichting\n\nExacte toelichting.\n\n## Acceptatiecriteria\n\nEigen criteria.\n\n## Verwacht bewijs\n\nEigen bewijsveld.');
+  await put(fixture.root, 'rie/questions/companion.md', companion);
+  const successor = md('ima.rie-question-definition/v1', 'q:successor', { title: 'Werkelijke tweede versie', version: '2.0.0', status: 'active', content_package_id: 'pack:1', content_package_version: '2.0.0', supersedes_id: 'q:1', topic_ids: [], legal_ids: [], tags: [] }, '# Opvolger\n\n## Vraag\n\nOorspronkelijke tweede controle?\n\n## Toelichting\n\nTweede uitleg.');
+  await put(fixture.root, 'rie/questions/successor.md', successor);
+  const questionSha = hash(qtext);
+  const packageSha = hash(['ima.rie-question-content-package/v1', 'pack:1', '1.0.0', ...[`q:1@1.0.0#sha256:${questionSha}`, `q:companion@1.0.0#sha256:${hash(companion)}`].sort()].join('\n'));
+  const assessmentFile = path.join(fixture.root, 'rie/assessments/a.md');
+  await fs.writeFile(assessmentFile, (await fs.readFile(assessmentFile, 'utf8')).replace(fixture.originalHash, questionSha).replace('question_refs:', `content_package_refs: ["pack:1@1.0.0#sha256:${packageSha}"]\nquestion_refs:`));
+  const responseFile = path.join(fixture.root, 'rie/responses/r.md');
+  await fs.writeFile(responseFile, (await fs.readFile(responseFile, 'utf8')).replace(fixture.originalHash, questionSha));
+  return { ...fixture, questionSha, packageSha, qfile, qtext };
+}
+
+test('Markdown preserves authoritative separate content, actual managed versions, predecessor and ALL frozen package definitions', async t => {
+  const fixture = await managedMarkdownFixture(t);
+  const result = await migrateMarkdown(fixture.root, { now: NOW });
+  const api = await loadWorkspaceApi();
+  const q = result.workspace.questions.find(q => q.title === 'Inspectie afscherming');
+  assert.equal(q.assessmentGuidance, 'Controleer de hele knelzone.');
+  assert.equal(q.acceptanceCriteria, 'Afscherming dekt toegang tot bewegende delen.');
+  assert.equal(q.expectedEvidence, 'Een inspectierapport.');
+  assert.deepEqual(q.evidenceHints, []);
+  assert.equal(q.definition.version, '1.0.0'); assert.equal(q.definition.contentPackageVersion, '1.0.0');
+  assert.equal(q.definition.status, 'active'); assert.equal(q.definition.sourceSha256, fixture.questionSha);
+  assert.equal(q.definition.createdAt, '2026-10-01T08:00:00.000Z');
+  assert.deepEqual(q.definition.tags, ['Exact bronlabel', 'inspectie']);
+  assert.deepEqual(q.definition.topicIds, [result.workspace.topics[0].id]);
+  assert.deepEqual(q.definition.legalIds, [result.workspace.legalRecords[0].id]);
+  const successor = result.workspace.questions.find(q => q.title === 'Werkelijke tweede versie');
+  assert.equal(successor.definition.supersedesId, q.id); assert.equal(successor.definition.version, '2.0.0');
+  assert.equal(successor.definition.createdAt, undefined);
+  const dossier = result.workspace.dossiers[0];
+  assert.equal(dossier.questions.length, 1); assert.equal(dossier.questions[0].version, '1.0.0');
+  assert.equal(dossier.contentPackageSnapshots.length, 1); assert.equal(dossier.contentPackageSnapshots[0].version, '1.0.0');
+  assert.equal(dossier.contentPackageSnapshots[0].questions.length, 2);
+  assert(dossier.contentPackageSnapshots[0].questions.some(q => q.definition.status === 'draft'));
+  assert.equal(result.workspace.answers[0].respondedBy, 'Vastgelegde beoordelaar');
+  assert(!result.report.warnings.some(w => ['package_frozen_at_export', 'package_reference_unconfirmed'].includes(w.code)));
+  assert.deepEqual(api.importWorkspace(result.serialized).dossiers, result.workspace.dossiers);
+  assert.deepEqual(await fs.readFile(fixture.qfile, 'utf8'), fixture.qtext);
+  assert(result.workspace.sources.some(source => source.raw?.text === fixture.qtext));
+});
+
+test('unusable managed source version/status/precedessor metadata remains explicitly unmanaged with full raw provenance', async t => {
+  const root = await temporary(t);
+  for (const [id, fields] of [
+    ['status', { version: '1.0.0', status: 'unconfirmed', content_package_version: '1.0.0' }],
+    ['version', { version: '1.0.0-beta.1', status: 'active', content_package_version: '1.0.0' }],
+    ['package', { version: '1.0.0', status: 'active' }],
+    ['predecessor', { version: '2.0.0', status: 'active', content_package_version: '2.0.0', supersedes_id: 'absent:question' }],
+  ]) await put(root, `questions/${id}.md`, md('ima.rie-question-definition/v1', `q:${id}`, { title: id, content_package_id: 'actual:pack', ...fields }, `# ${id}\n\n## Vraag\n\nExacte bronvraag ${id}?\n\n## Acceptatiecriteria\n\nExact criterium.`));
+  const result = await migrateMarkdown(root, { now: NOW });
+  assert.equal(result.workspace.questions.length, 4);
+  assert(result.workspace.questions.every(q => q.definition === undefined && q.acceptanceCriteria === 'Exact criterium.'));
+  assert.equal(result.workspace.sources.filter(source => source.format === 'legacy-markdown').length, 4);
+  assert.equal(result.report.warnings.filter(w => w.code === 'question_definition_unmanaged').length, 4);
+});
+
+test('an unconfirmed original package hash keeps exact frozen questions but does not claim a managed historical package freeze', async t => {
+  const fixture = await managedMarkdownFixture(t);
+  const file = path.join(fixture.root, 'rie/assessments/a.md');
+  await fs.writeFile(file, (await fs.readFile(file, 'utf8')).replace(fixture.packageSha, 'f'.repeat(64)));
+  const result = await migrateMarkdown(fixture.root, { now: NOW });
+  assert.equal(result.workspace.questions.find(q => q.title === 'Inspectie afscherming').definition.status, 'active');
+  assert.equal(result.workspace.dossiers[0].contentPackageSnapshots, undefined);
+  assert.equal(result.workspace.dossiers[0].questions[0].definition, undefined);
+  assert.equal(result.workspace.dossiers[0].questions[0].acceptanceCriteria, 'Afscherming dekt toegang tot bewegende delen.');
+  assert.equal(result.workspace.answers[0].questionSha256, result.workspace.dossiers[0].questions[0].sha256);
+  assert(result.report.warnings.some(w => w.code === 'package_reference_unconfirmed'));
+});
+
+test('a missing nonselected package definition cannot be silently excluded from a claimed full package freeze', async t => {
+  const fixture = await managedMarkdownFixture(t);
+  const companionFile = path.join(fixture.root, 'rie/questions/companion.md');
+  await fs.writeFile(companionFile, (await fs.readFile(companionFile, 'utf8')).replace('status: "draft"', 'status: "unknown"'));
+  const result = await migrateMarkdown(fixture.root, { now: NOW });
+  assert.equal(result.workspace.dossiers[0].contentPackageSnapshots, undefined);
+  assert(result.report.warnings.some(w => w.code === 'package_reference_unconfirmed'));
+  assert(result.workspace.sources.some(source => source.raw?.text.includes('status: "unknown"')));
+});
+
+test('Markdown response actors and multiple known links survive in both directions while missing/foreign-scope links stay raw', async t => {
+  const { root, originalHash } = await markdownFixture(t);
+  const responseFile = path.join(root, 'rie/responses/r.md');
+  await fs.writeFile(responseFile, (await fs.readFile(responseFile, 'utf8')).replace('evidence_ids:', 'observation_ids: ["observation:1", "observation:missing", "observation:other"]\nfinding_ids: ["finding:1", "finding:other"]\nevidence_ids:'));
+  await put(root, 'rie/assessments/other.md', md('ima.rie-assessment/v1', 'assessment:other', { title: 'Tweede echte scope', assessor: 'Andere beoordelaar', question_refs: [`q:1@1.0.0#sha256:${originalHash}`] }, '# Ander dossier\n\n## Doel en reikwijdte\n\nAndere afgebakende scope.'));
+  await put(root, 'rie/observations/second.md', md('ima.rie-observation/v1', 'observation:second', { assessment_id: 'assessment:1', observed_at: '2026-10-06T10:00:00Z', observer: 'Werkelijke bronactor', question_response_ids: ['response:1'] }, '# Tweede waarneming\n\n## Feit\n\nTweede zelfstandig bronfeit.'));
+  await put(root, 'rie/observations/other.md', md('ima.rie-observation/v1', 'observation:other', { assessment_id: 'assessment:other', observed_at: '2026-10-06T10:00:00Z', observer: 'Werkelijke andere actor', question_response_ids: ['response:1'] }, '# Andere waarneming\n\n## Feit\n\nDeze scope mag niet worden samengevoegd.'));
+  await put(root, 'rie/findings/second.md', md('ima.rie-finding/v2', 'finding:second', { assessment_id: 'assessment:1', title: 'Tweede bevinding', status: 'open', question_response_ids: ['response:1'] }, '# Feitelijke tweede bevinding'));
+  await put(root, 'rie/findings/other.md', md('ima.rie-finding/v2', 'finding:other', { assessment_id: 'assessment:other', title: 'Andere bevinding', status: 'open' }, '# Feitelijke andere bevinding'));
+  const result = await migrateMarkdown(root, { now: NOW });
+  const answer = result.workspace.answers[0];
+  assert.equal(answer.respondedBy, 'Vastgelegde beoordelaar');
+  assert.equal(answer.observationIds.length, 2); assert.equal(answer.findingIds.length, 2);
+  for (const target of [...result.workspace.observations, ...result.workspace.findings]) {
+    if (target.dossierId === answer.dossierId) assert.deepEqual(target.responseIds, [answer.id]);
+    else assert.equal(target.responseIds, undefined);
+  }
+  assert(result.report.warnings.filter(w => w.code === 'response_relation_not_transferred').length >= 3);
+  assert.deepEqual((await loadWorkspaceApi()).importWorkspace(result.serialized).answers, result.workspace.answers);
+  await fs.writeFile(responseFile, (await fs.readFile(responseFile, 'utf8')).replace('responded_by: "Vastgelegde beoordelaar"\n', ''));
+  const unknown = await migrateMarkdown(root, { now: NOW });
+  assert.equal(unknown.workspace.answers[0].respondedBy, undefined);
+  assert(unknown.report.warnings.some(w => w.code === 'response_actor_unknown'));
+});
+
+test('SQLite separates criteria and preserves ALL original rich fields without fabricated version, respondent or effect metadata', async t => {
+  const { filename } = await sqliteFixture(t);
+  const db = new DatabaseSync(filename);
+  for (const field of ['Nummer', 'Gevaar', 'Risico', 'Risicofactor', 'TechnischeMaatregelen', 'OrganisatorischeMaatregelen', 'Basisoorzaken', 'Cultuur']) {
+    db.exec(`ALTER TABLE Vragen ADD COLUMN ${field} TEXT;`);
+    db.prepare(`UPDATE Vragen SET ${field}=? WHERE Id=1`).run(`Exacte ${field}\nTweede bronregel.`);
+  }
+  db.exec('ALTER TABLE Vragen ADD COLUMN SortOrder INTEGER;'); db.prepare('UPDATE Vragen SET SortOrder=? WHERE Id=1').run(23); db.close();
+  const bytes = await fs.readFile(filename);
+  const result = await migrateSqlite(filename, { now: NOW });
+  const q = result.workspace.questions[0];
+  assert.equal(q.assessmentGuidance, ''); assert.equal(q.acceptanceCriteria, 'Observeer de situatie.');
+  assert.equal(q.expectedEvidence, undefined); assert.equal(q.definition, undefined);
+  assert.deepEqual(q.richFields, { number: 'Exacte Nummer\nTweede bronregel.', hazard: 'Exacte Gevaar\nTweede bronregel.', risk: 'Exacte Risico\nTweede bronregel.', riskFactor: 'Exacte Risicofactor\nTweede bronregel.', technicalControls: 'Exacte TechnischeMaatregelen\nTweede bronregel.', organisationalControls: 'Exacte OrganisatorischeMaatregelen\nTweede bronregel.', rootCauses: 'Exacte Basisoorzaken\nTweede bronregel.', culture: 'Exacte Cultuur\nTweede bronregel.', sortOrder: 23 });
+  assert.deepEqual(result.workspace.dossiers.find(d => d.departmentIds.length).questions[0].richFields, q.richFields);
+  assert.equal(result.workspace.answers[0].respondedBy, undefined); assert.equal(result.workspace.answers[0].observationIds, undefined);
+  assert(result.report.warnings.some(w => w.code === 'response_actor_unknown'));
+  assert.deepEqual(await fs.readFile(filename), bytes);
+});
+
+test('SQLite typed library keeps shared controls, exact ordinal reviews, separate scopes and typed layouts without extra raw records', async t => {
+  const { filename } = await sqliteFixture(t);
+  const db = new DatabaseSync(filename);
+  db.exec(`ALTER TABLE Modules ADD COLUMN Omschrijving TEXT; ALTER TABLE Modules ADD COLUMN SortOrder INTEGER;
+    ALTER TABLE Risicos ADD COLUMN GevaarItemId INTEGER; ALTER TABLE Risicos ADD COLUMN Code TEXT; ALTER TABLE Risicos ADD COLUMN Omschrijving TEXT; ALTER TABLE Risicos ADD COLUMN SortOrder INTEGER;
+    ALTER TABLE Risicofactoren ADD COLUMN Code TEXT; ALTER TABLE Risicofactoren ADD COLUMN LodBeschrijving TEXT; ALTER TABLE Risicofactoren ADD COLUMN DefaultWaarschijnlijkheidScore INTEGER; ALTER TABLE Risicofactoren ADD COLUMN SortOrder INTEGER;
+    CREATE TABLE Gevaren (Id INTEGER PRIMARY KEY, ModuleId INTEGER, Code TEXT, Titel TEXT, Omschrijving TEXT, SortOrder INTEGER);
+    CREATE TABLE Beheersmaatregelen (Id INTEGER PRIMARY KEY, Code TEXT, Titel TEXT, Omschrijving TEXT, Type INTEGER, SortOrder INTEGER);
+    CREATE TABLE BeheersmaatregelRisicofactoren (Id INTEGER PRIMARY KEY, RisicofactorItemId INTEGER, BeheersmaatregelId INTEGER, ReductieScore INTEGER, KostenNiveau INTEGER, SortOrder INTEGER);
+    CREATE TABLE BeoordelingsVragen (Id INTEGER PRIMARY KEY, RisicofactorItemId INTEGER, Vraagtekst TEXT, Toelichting TEXT, SortOrder INTEGER);
+    CREATE TABLE RiskMapNodeLayouts (Id INTEGER PRIMARY KEY, RieProjectId INTEGER, CompanyId INTEGER, DepartmentId INTEGER, NodeType TEXT, NodeId INTEGER, X REAL, Y REAL, UpdatedAt TEXT);
+    ALTER TABLE MaatregelBeoordelingen ADD COLUMN CompanyId INTEGER; ALTER TABLE MaatregelBeoordelingen ADD COLUMN DepartmentId INTEGER; ALTER TABLE MaatregelBeoordelingen ADD COLUMN BeheersmaatregelRisicofactorId INTEGER; ALTER TABLE MaatregelBeoordelingen ADD COLUMN UpdatedAt TEXT;`);
+  db.prepare('UPDATE Modules SET Omschrijving=?,SortOrder=? WHERE Id=1').run('Exacte modulebron.', 1);
+  db.prepare('INSERT INTO Gevaren VALUES (?,?,?,?,?,?)').run(1, 1, 'G', 'Gevaar', 'Oorspronkelijke gevaarbeschrijving.', 1);
+  db.prepare('UPDATE Risicos SET GevaarItemId=?,Code=?,Omschrijving=?,SortOrder=? WHERE Id=1').run(1, 'R', 'Risico exact', 1);
+  db.prepare('UPDATE Risicofactoren SET Code=?,LodBeschrijving=?,DefaultWaarschijnlijkheidScore=?,SortOrder=? WHERE Id=1').run('F1', 'LoD-bron.', 2, 1);
+  db.prepare('INSERT INTO Risicofactoren VALUES (?,?,?,?,?,?,?,?)').run(2,1,'Tweede factor','Andere factoromschrijving.','F2','Andere LoD-bron.',1,2);
+  db.prepare('INSERT INTO Beheersmaatregelen VALUES (?,?,?,?,?,?)').run(1,'C1','Gedeelde technische maatregel','Exacte bronmaatregel.',0,1);
+  db.prepare('INSERT INTO BeheersmaatregelRisicofactoren VALUES (?,?,?,?,?,?)').run(1,1,1,3,0,1);
+  db.prepare('INSERT INTO BeheersmaatregelRisicofactoren VALUES (?,?,?,?,?,?)').run(2,2,1,1,2,2);
+  db.prepare('INSERT INTO BeoordelingsVragen VALUES (?,?,?,?,?)').run(1,1,'Factorvraag?','Afzonderlijke vraagtoelichting.',1);
+  db.prepare('INSERT INTO Departments VALUES (?,?,?)').run(2,1,'Tweede afdeling');
+  db.prepare('INSERT INTO RisicofactorBeoordelingen VALUES (?,?,?,?,?,?,?,?,?)').run(2,1,1,2,1,1,2,2,'Andere scope-rating.');
+  db.prepare('UPDATE MaatregelBeoordelingen SET CompanyId=?,DepartmentId=?,BeheersmaatregelRisicofactorId=?,UpdatedAt=? WHERE Id=1').run(1,1,1,'2026-10-06 10:00:00');
+  for (const [id,type,nodeId] of [[1,'Gevaar',1],[2,'Risico',1],[3,'Risicofactor',1],[4,'Maatregel',1]]) db.prepare('INSERT INTO RiskMapNodeLayouts VALUES (?,?,?,?,?,?,?,?,?)').run(id,1,1,1,type,nodeId,id*17,id*11,'2026-10-06 10:00:00');
+  db.close();
+  const before = await fs.readFile(filename); const result = await migrateSqlite(filename, { now: NOW });
+  const api = await loadWorkspaceApi(); api.importWorkspace(result.serialized);
+  assert.equal(result.workspace.riskLibraries.length, 1); const library = result.workspace.riskLibraries[0];
+  assert.equal(library.origin, 'legacy_sqlite'); assert.equal(library.sourceSha256, hash(before));
+  assert.equal(library.controls.length,1); assert.equal(library.links.length,2);
+  assert.equal(library.links[0].controlId,library.links[1].controlId);
+  assert.equal(library.controls[0].type,'technical'); assert.equal(library.controls[0].hierarchy,undefined);
+  assert.equal(library.questions[0].explanation,'Afzonderlijke vraagtoelichting.');
+  assert.equal(library.risks[0].effectRating,3); assert.equal(library.links[0].reductionRating,3);
+  const factors = result.workspace.riskLibraryReviews.filter(review=>review.kind==='factor');
+  assert.equal(factors.length,2); assert.notEqual(factors[0].scope.departmentId,factors[1].scope.departmentId);
+  assert.deepEqual(factors.map(review=>review.relevance),['relevant','not_relevant']);
+  const control = result.workspace.riskLibraryReviews.find(review=>review.kind==='control_link');
+  assert.equal(control.isInPlace,true); assert.equal(control.reductionRating,3); assert.equal(control.costLevel,'low');
+  assert.equal(control.reviewedAt,undefined); assert.equal(control.assessor,undefined); assert.equal(control.legacyUpdatedAt,'2026-10-06 10:00:00');
+  assert.equal(result.workspace.riskLibraryLayouts.length,4);
+  assert(result.workspace.riskLibraryLayouts.some(layout=>layout.nodeType==='control_link'&&layout.nodeId===library.links[0].id));
+  assert.equal(result.workspace.sources.filter(source=>source.format==='legacy-sqlite-row'&&source.raw.table==='RiskMapNodeLayouts').length,4);
+  assert.equal(result.workspace.scenarios.length,0); assert.deepEqual(await fs.readFile(filename),before);
+});

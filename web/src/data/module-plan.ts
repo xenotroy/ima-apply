@@ -8,6 +8,7 @@ import {
 import type { WorkspaceState, WorkspaceRecord } from './model';
 import { departmentOrganisationId, type Dossier } from './dossier';
 import { freezeQuestion } from './frozen';
+import { captureQuestionPackages } from './question-definition';
 
 export interface PlannedModule {
   id: string;
@@ -322,11 +323,13 @@ export function createDossierFromModulePlan(
       });
     return freezeQuestion(
       question,
-      imported
-        ? [...new Set(versions)].join(' + ') || 'bronversie-niet-vastgelegd'
-        : 'IMA-catalogus-2.0.0',
+      question.definition?.version ??
+        (imported
+          ? [...new Set(versions)].join(' + ') || 'bronversie-niet-vastgelegd'
+          : 'IMA-catalogus-2.0.0'),
     );
   });
+  const contentPackageSnapshots = captureQuestionPackages(questionIds, workspace);
   return {
     ...fields,
     ...(plan.organisationId ? { organisationId: plan.organisationId } : {}),
@@ -335,6 +338,7 @@ export function createDossierFromModulePlan(
     status: 'active',
     questions: frozen,
     sourceSnapshots,
+    ...(contentPackageSnapshots.length ? { contentPackageSnapshots } : {}),
     modulePlanSnapshot: snapshot,
     modulePlanSnapshotSha256: modulePlanHash(snapshot),
   };

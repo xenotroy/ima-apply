@@ -111,6 +111,9 @@ test('planned and unverified controls never reduce current risk; evidence is req
 
 test('inventory answer, supporting evidence and note survive a reload', async ({ page }) => {
   await page.getByRole('button', { name: 'Inventarisatie', exact: true }).click();
+  await page
+    .getByLabel('Respondent / actor voor deze invoer', { exact: true })
+    .fill('E2E interviewactor');
   let card = page.locator('.question-card').first();
   const question = await card.getByRole('heading', { level: 3 }).textContent();
   await card.getByRole('button', { name: 'Deels', exact: true }).click();
@@ -164,14 +167,12 @@ test('implementation, negative effect check and reopening preserve history witho
   );
   await page.reload();
   await page.getByRole('button', { name: /Plan van aanpak/ }).click();
-  const card = page
-    .locator('.action-card')
-    .filter({
-      has: page.getByRole('heading', {
-        name: 'Isolatievoorziening ontwerpen en verifiëren',
-        exact: true,
-      }),
-    });
+  const card = page.locator('.action-card').filter({
+    has: page.getByRole('heading', {
+      name: 'Isolatievoorziening ontwerpen en verifiëren',
+      exact: true,
+    }),
+  });
   async function editor() {
     const details = card.locator('.action-revision-editor');
     if (!(await details.evaluate((node) => (node as HTMLDetailsElement).open)))
@@ -306,7 +307,9 @@ test('malformed import leaves the existing persisted dossier intact', async ({ p
     mimeType: 'application/json',
     buffer: Buffer.from('{"schemaVersion":1,"scenarios":"broken"}'),
   });
-  await expect(page.getByRole('status')).toContainText('Import gestopt');
+  await expect(page.getByRole('status').filter({ hasText: 'Import gestopt:' })).toContainText(
+    'Import gestopt',
+  );
   const after = await page.evaluate((key) => localStorage.getItem(key), storageKey);
   expect(after).toBe(before);
   await expect(page.locator('.scenario-context h2')).toHaveText(

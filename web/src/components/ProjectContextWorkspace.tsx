@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import { draftBase } from '../data/local-drafts';
+import DraftNotice from './DraftNotice';
 import { Plus } from 'lucide-react';
 import {
   departmentLabel,
@@ -28,7 +31,7 @@ export default function ProjectContextWorkspace({
   const contexts = workspace.projectContexts ?? [],
     reports = workspace.walkthroughs ?? [];
   function save(record: ProjectContext | Walkthrough) {
-    if (!editing) return;
+    if (!editing) return false;
     const collection = editing.kind === 'context' ? contexts : reports;
     if (
       editing.record &&
@@ -38,7 +41,7 @@ export default function ProjectContextWorkspace({
       setError(
         'Dit record is ondertussen gewijzigd. Sluit het formulier en open de huidige versie.',
       );
-      return;
+      return false;
     }
     const values = editing.record
       ? collection.map((item) => (item.id === record.id ? record : item))
@@ -50,7 +53,9 @@ export default function ProjectContextWorkspace({
     if (onUpdate(patch)) {
       setEditing(undefined);
       setError('');
+      return true;
     }
+    return false;
   }
   return (
     <div className="project-context-workspace">
@@ -268,9 +273,10 @@ function ContextForm({
 }: {
   workspace: WorkspaceState;
   initial?: ProjectContext;
-  onSave: (record: ProjectContext) => void;
+  onSave: (record: ProjectContext) => boolean;
 }) {
-  const [record, set] = useState<ProjectContext>(
+  const [record, set, draftStatus] = usePersistentDraft<ProjectContext>(
+    `${workspace.id}/project-context/${initial?.id ?? 'new'}`,
     () =>
       initial ?? {
         id: newId(),
@@ -284,14 +290,19 @@ function ContextForm({
         sourceIds: [],
         createdAt: new Date().toISOString(),
       },
+    initial ? draftBase(initial) : 'new/v1',
+    (candidate) =>
+      Boolean(initial) ||
+      !(workspace.projectContexts ?? []).some((existing) => existing.id === candidate.id),
   );
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        onSave({ ...record, updatedAt: new Date().toISOString() });
+        if (onSave({ ...record, updatedAt: new Date().toISOString() })) draftStatus.clear();
       }}
     >
+      <DraftNotice status={draftStatus} />
       <Field label="Projectnaam">
         <input
           required
@@ -370,9 +381,10 @@ function WalkthroughForm({
   workspace: WorkspaceState;
   initial?: Walkthrough;
   selectedDossier?: Dossier;
-  onSave: (record: Walkthrough) => void;
+  onSave: (record: Walkthrough) => boolean;
 }) {
-  const [record, set] = useState<Walkthrough>(
+  const [record, set, draftStatus] = usePersistentDraft<Walkthrough>(
+    `${workspace.id}/walkthrough/${initial?.id ?? 'new'}`,
     () =>
       initial ?? {
         id: newId(),
@@ -394,6 +406,10 @@ function WalkthroughForm({
         sourceIds: [],
         createdAt: new Date().toISOString(),
       },
+    initial ? draftBase(initial) : 'new/v1',
+    (candidate) =>
+      Boolean(initial) ||
+      !(workspace.walkthroughs ?? []).some((existing) => existing.id === candidate.id),
   );
   const departments = (workspace.departments ?? []).filter(
     (department) =>
@@ -413,9 +429,10 @@ function WalkthroughForm({
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        onSave({ ...record, updatedAt: new Date().toISOString() });
+        if (onSave({ ...record, updatedAt: new Date().toISOString() })) draftStatus.clear();
       }}
     >
+      <DraftNotice status={draftStatus} />
       <Field label="Verslagtitel">
         <input
           required

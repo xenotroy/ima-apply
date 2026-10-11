@@ -9,6 +9,8 @@ import {
   type JustificationRecord,
 } from '../data/justification';
 import { Field } from './Primitives';
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import DraftNotice from './DraftNotice';
 
 const number = (value: number) =>
   new Intl.NumberFormat('nl-NL', { maximumFractionDigits: 4 }).format(value);
@@ -26,28 +28,34 @@ const initialDraft: JustificationDraft = {
 
 export default function JustificationWorkspace({
   scenarioId,
+  workspaceId,
   assessments,
   records,
   onSave,
 }: {
   scenarioId: string;
+  workspaceId: string;
   assessments: RiskAssessment[];
   records: JustificationRecord[];
   onSave: (record: JustificationRecord) => boolean;
 }) {
   const scoped = assessments.filter((item) => item.scenarioId === scenarioId);
-  const [assessmentId, setAssessmentId] = useState(scoped.at(-1)?.id ?? '');
-  const [draft, setDraft] = useState<JustificationDraft>(() => structuredClone(initialDraft));
+  const [form, setForm, draftStatus] = usePersistentDraft(
+    `${workspaceId}/justification/${scenarioId}`,
+    () => ({
+      assessmentId: scoped.at(-1)?.id ?? '',
+      draft: structuredClone(initialDraft),
+    }),
+  );
+  const { assessmentId, draft } = form;
+  const setAssessmentId = (assessmentId: string) =>
+    setForm((previous) => ({ ...previous, assessmentId }));
+  const setDraft = (change: (draft: JustificationDraft) => JustificationDraft) =>
+    setForm((previous) => ({ ...previous, draft: change(previous.draft) }));
   const [error, setError] = useState('');
   useEffect(() => {
-    if (!scoped.some((item) => item.id === assessmentId)) {
-      const nextId = scoped.at(-1)?.id ?? '';
-      if (nextId !== assessmentId) {
-        setAssessmentId(nextId);
-        setDraft((previous) => ({ ...previous, controlIds: [] }));
-      }
-    }
-  }, [assessmentId, scoped]);
+    if (!assessmentId && scoped.length) setAssessmentId(scoped.at(-1)!.id);
+  }, [assessmentId, scoped.length]);
   const assessment = scoped.find((item) => item.id === assessmentId);
   const plans = assessment?.input.controls.filter((control) => control.status === 'planned') ?? [];
   const preview = useMemo(() => {
@@ -86,12 +94,19 @@ export default function JustificationWorkspace({
                   'De justificatie is niet opgeslagen. Je invoer blijft beschikbaar; controleer de bronbeoordeling.',
                 );
               setError('');
-              change('rationale', '');
+              draftStatus.clear();
             } catch (caught) {
               setError(caught instanceof Error ? caught.message : 'Opslaan mislukt.');
             }
           }}
         >
+          <DraftNotice status={draftStatus} />
+          {assessmentId && !assessment && (
+            <p role="alert">
+              De bronbeoordeling van dit concept ontbreekt. Bewaar het concept via Rapportage
+              voordat je een andere bron kiest.
+            </p>
+          )}
           <div className="form-grid">
             <Field label="Bronbeoordeling voor justificatie">
               <select

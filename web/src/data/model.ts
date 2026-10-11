@@ -2,6 +2,7 @@ import type { Scenario } from '../domain/types';
 import type { RiskAssessment } from './risk-history';
 import type { JustificationRecord } from './justification';
 import type { ModulePlan } from './module-plan';
+import type { RiskLibrary, RiskLibraryReview, RiskLibraryLayout } from './risk-library';
 export * from './module-plan';
 export * from './justification';
 import type { ActionLifecycle } from './action';
@@ -45,6 +46,9 @@ export interface WorkspaceAnswer {
   dossierId?: string;
   questionSha256?: string;
   evidenceIds?: string[];
+  respondedBy?: string;
+  observationIds?: string[];
+  findingIds?: string[];
 }
 
 export interface WorkspaceAction {
@@ -132,6 +136,9 @@ export interface WorkspaceState {
   riskAssessments?: RiskAssessment[];
   justifications?: JustificationRecord[];
   modulePlans?: ModulePlan[];
+  riskLibraries?: RiskLibrary[];
+  riskLibraryReviews?: RiskLibraryReview[];
+  riskLibraryLayouts?: RiskLibraryLayout[];
 }
 
 export type WorkspacePatch = Partial<
@@ -162,6 +169,9 @@ export type WorkspacePatch = Partial<
     | 'riskAssessments'
     | 'justifications'
     | 'modulePlans'
+    | 'riskLibraries'
+    | 'riskLibraryReviews'
+    | 'riskLibraryLayouts'
   >
 >;
 
@@ -207,6 +217,9 @@ export function createWorkspace(name: string, initial: WorkspacePatch = {}): Wor
     riskAssessments: [],
     justifications: [],
     modulePlans: [],
+    riskLibraries: [],
+    riskLibraryReviews: [],
+    riskLibraryLayouts: [],
     projectContexts: [],
     walkthroughs: [],
     basisRiskFactorRecords: [],

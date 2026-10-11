@@ -63,7 +63,10 @@ export async function loadWorkspaceApi() {
   }
   const model = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/data/model.ts')));
   const validation = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/data/validation.ts')));
-  return { ...model, ...validation };
+  const questionDefinitions = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/data/question-definition.ts')));
+  const riskLibrary = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/data/risk-library.ts')));
+  const frozen = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/data/frozen.ts')));
+  return { ...model, ...validation, ...questionDefinitions, ...riskLibrary, ...frozen };
 }
 
 function scalar(input) {
@@ -163,11 +166,15 @@ function question(fields) {
   return { id: fields.id, themeId: fields.themeId || 'legacy-unclassified', title: fields.title || fields.prompt,
     prompt: fields.prompt, route: 'verdieping', evidenceHints: fields.evidenceHints ?? [],
     assessmentGuidance: fields.assessmentGuidance ?? '', sourceIds: fields.sourceIds,
-    suggestedHierarchy: [], roles: [], ...(fields.legalReferences !== undefined ? { legalReferences: fields.legalReferences } : {}) };
+    suggestedHierarchy: [], roles: [],
+    ...(fields.acceptanceCriteria !== undefined ? { acceptanceCriteria: fields.acceptanceCriteria } : {}),
+    ...(fields.expectedEvidence !== undefined ? { expectedEvidence: fields.expectedEvidence } : {}),
+    ...(fields.richFields !== undefined ? { richFields: fields.richFields } : {}),
+    ...(fields.definition !== undefined ? { definition: fields.definition } : {}),
+    ...(fields.legalReferences !== undefined ? { legalReferences: fields.legalReferences } : {}) };
 }
-function freezeQuestion(value, version) { return { ...value, version: version || 'legacy-import/1.0.0', sha256: hash(JSON.stringify(value)) }; }
 function addFrozen(context, dossier, value, version) {
-  const frozen = freezeQuestion(value, version);
+  const frozen = context.api.freezeQuestion(value, value.definition?.version ?? (version || 'legacy-import/1.0.0'));
   const existing = dossier.questions.find(item => item.id === value.id);
   if (existing && existing.sha256 !== frozen.sha256) throw new Error('Conflicting frozen question projection');
   if (!existing) dossier.questions.push(frozen);
@@ -243,8 +250,10 @@ export async function migrateMarkdown(root, options = {}) {
     return matches.length === 1 ? matches[0] : null;
   };
   const projectedQuestion = record => question({ id: record.targetId, title: string(record.metadata.title), prompt: record.sections.vraag,
-    themeId: strings(record.metadata.topic_ids)[0], evidenceHints: record.sections['verwacht bewijs'] ? [record.sections['verwacht bewijs']] : [],
-    assessmentGuidance: [record.sections.toelichting, record.sections.acceptatiecriteria].filter(Boolean).join('\n\n'), sourceIds: [record.sourceId],
+    themeId: strings(record.metadata.topic_ids)[0], evidenceHints: [],
+    assessmentGuidance: record.sections.toelichting ?? '',
+    ...(record.sections.acceptatiecriteria !== undefined ? { acceptanceCriteria: record.sections.acceptatiecriteria } : {}),
+    ...(record.sections['verwacht bewijs'] !== undefined ? { expectedEvidence: record.sections['verwacht bewijs'] } : {}), sourceIds: [record.sourceId],
     ...(record.sections.wetgeving !== undefined ? { legalReferences: record.sections.wetgeving } : {}) });
   const workspaceRecord = bySchema('ima.workspace/v1')[0];
   if (!options.name && string(workspaceRecord?.metadata.title)) workspace.name = workspaceRecord.metadata.title;
@@ -297,6 +306,52 @@ export async function migrateMarkdown(root, options = {}) {
     workspace.legalRecords.push({ id: record.targetId, title: string(m.title), officialUrl: m.official_uri, citation: string(m.citation), jurisdiction: string(m.jurisdiction), status: m.status,
       effectiveOn: calendarDate(m.effective_on), lastVerifiedOn: calendarDate(m.last_verified_on), summary: record.sections.samenvatting || '', impact: record.sections.impact || '', topicIds: strings(m.topic_ids).flatMap(id => topicMap.has(id.toLowerCase()) ? [topicMap.get(id.toLowerCase())] : []) });
   }
+  // Definitions are enriched only after their actual relation targets are known.
+  // A source snapshot is never promoted to managed status by a migration default.
+  const managedCandidates = new Map();
+  for (const record of bySchema('ima.rie-question-definition/v1')) {
+    const m = record.metadata; const q = workspace.questions.find(item => item.id === record.targetId);
+    if (!q) continue;
+    const predecessor = string(m.supersedes_id) ? unique('ima.rie-question-definition/v1', m.supersedes_id) : undefined;
+    const listFieldsValid = ['topic_ids', 'legal_ids', 'tags'].every(key => m[key] === undefined || Array.isArray(m[key]) && m[key].every(value => typeof value === 'string' && value.trim()));
+    if (!listFieldsValid || unique('ima.rie-question-definition/v1', m.id) !== record || string(m.supersedes_id) && !predecessor) {
+      warning(context, 'question_definition_unmanaged', record.sourceId, 'Beheerde bronmetadata heeft onbruikbare/dubbele identiteit, lijsten of voorganger; exacte inhoud blijft onbeheerd met volledig raw bronrecord.'); continue;
+    }
+    const definition = { schema: 'ima.question-definition/v1', version: m.version, status: m.status,
+      contentPackageId: m.content_package_id, contentPackageVersion: m.content_package_version,
+      ...(predecessor ? { supersedesId: predecessor.targetId } : {}),
+      topicIds: [...new Set(mappedRefs(m.topic_ids, 'ima.topic/v1', record.sourceId).filter(id => workspace.topics.some(item => item.id === id)))],
+      legalIds: [...new Set(mappedRefs(m.legal_ids, 'ima.legal-update/v1', record.sourceId).filter(id => workspace.legalRecords.some(item => item.id === id)))],
+      tags: strings(m.tags), sourcePath: workspace.sources.find(source => source.id === record.sourceId).raw.relativePath, sourceSha256: record.legacySha256 };
+    for (const [sourceKey, targetKey] of [['created_at', 'createdAt'], ['updated_at', 'updatedAt']]) {
+      const time = timestamp(m[sourceKey], context, record.sourceId);
+      if (time) definition[targetKey] = time;
+      else if (string(m[sourceKey])) warning(context, 'legacy_time_unresolved', record.sourceId, `${sourceKey} blijft historisch onbekend wegens ontbrekende/ongeldige tijdzone; bronwaarde blijft raw.`);
+    }
+    try { context.api.assertManagedQuestion({ ...q, definition }); managedCandidates.set(record.targetId, { record, q, definition }); }
+    catch { warning(context, 'question_definition_unmanaged', record.sourceId, 'Vraag-/pakketversie of status is niet bruikbaar in het beheerde browsermodel; geen versie/status afgeleid. Afzonderlijke brontekst en metadata blijven behouden.'); }
+  }
+  // An unusable predecessor invalidates the complete successor chain. Do not
+  // silently drop supersedes_id merely to make a definition pass validation.
+  let candidateChanged;
+  do {
+    candidateChanged = false;
+    for (const [id, candidate] of managedCandidates) {
+      const meta = candidate.definition, previous = meta.supersedesId && managedCandidates.get(meta.supersedesId);
+      if (meta.supersedesId && (!previous || previous.definition.contentPackageId.toLowerCase() !== meta.contentPackageId.toLowerCase() ||
+          !context.api.isHigherQuestionVersion(meta.version, previous.definition.version) || !context.api.isHigherQuestionVersion(meta.contentPackageVersion, previous.definition.contentPackageVersion) ||
+          meta.createdAt && previous.definition.createdAt && Date.parse(meta.createdAt) < Date.parse(previous.definition.createdAt))) {
+        managedCandidates.delete(id); candidateChanged = true;
+        warning(context, 'question_definition_unmanaged', candidate.record.sourceId, 'Opvolger mist een aantoonbare bruikbare voorganger in hetzelfde pakket met hogere vraag- én pakketversie; relatie blijft raw zonder een versie te raden.');
+      }
+    }
+  } while (candidateChanged);
+  for (const candidate of managedCandidates.values()) candidate.q.definition = candidate.definition;
+  const originalPackageHash = (id, version) => {
+    const definitions = bySchema('ima.rie-question-definition/v1').filter(record => string(record.metadata.content_package_id).toLowerCase() === id.toLowerCase() && record.metadata.content_package_version === version);
+    if (!definitions.length || definitions.some(record => unique('ima.rie-question-definition/v1', record.metadata.id) !== record)) return null;
+    return hash(['ima.rie-question-content-package/v1', id, version, ...definitions.map(record => `${record.metadata.id}@${record.metadata.version}#sha256:${record.legacySha256}`).sort()].join('\n'));
+  };
   for (const record of bySchema('ima.rie-assessment/v1')) {
     const m = record.metadata;
     if (!string(m.title)) { warning(context, 'assessment_raw_only', record.sourceId, 'Assessment zonder titel blijft raw.'); continue; }
@@ -308,8 +363,30 @@ export async function migrateMarkdown(root, options = {}) {
       if (!original || !original.sections.vraag) {
         warning(context, 'frozen_reference_unavailable', record.sourceId, 'Bevroren vraagreferentie kan niet tegen de geselecteerde vraagbron worden bevestigd; raw referentie blijft behouden.'); continue;
       }
-      addFrozen(context, dossier, projectedQuestion(original), ref[2]);
+      addFrozen(context, dossier, workspace.questions.find(q => q.id === original.targetId), ref[2]);
     }
+    const downgradePackages = new Set();
+    const selectedVersions = new Map();
+    for (const q of dossier.questions.filter(q => q.definition)) {
+      const meta = q.definition, key = meta.contentPackageId.toLowerCase();
+      if (bySchema('ima.rie-question-definition/v1').some(source => string(source.metadata.content_package_id).toLowerCase() === key && source.metadata.content_package_version === meta.contentPackageVersion && !managedCandidates.has(source.targetId))) downgradePackages.add(key);
+      if (meta.status !== 'active' || selectedVersions.has(key) && selectedVersions.get(key) !== meta.contentPackageVersion) downgradePackages.add(key);
+      selectedVersions.set(key, meta.contentPackageVersion);
+      const refs = strings(m.content_package_refs).map(ref => ref.match(/^(.+)@([^@#]+)#sha256:([a-f0-9]{64})$/i)).filter(Boolean)
+        .filter(ref => ref[1].toLowerCase() === key && ref[2] === meta.contentPackageVersion);
+      if (refs.length > 1 || refs.length === 1 && originalPackageHash(refs[0][1], refs[0][2]) !== refs[0][3].toLowerCase()) downgradePackages.add(key);
+      if (!refs.length) warning(context, 'package_frozen_at_export', record.sourceId, 'Originele pakketreferentie ontbreekt. Volledige beschikbare bronpakketversie wordt bij deze export vastgelegd; een historische pakketfreeze is niet bewezen.');
+    }
+    if (downgradePackages.size) {
+      dossier.questions = dossier.questions.map(q => {
+        if (!q.definition || !downgradePackages.has(q.definition.contentPackageId.toLowerCase())) return q;
+        const { definition, version, sha256, ...content } = q;
+        return context.api.freezeQuestion(content, version);
+      });
+      warning(context, 'package_reference_unconfirmed', record.sourceId, 'Pakketbronhash/inhoud, actieve selectie of enkele pakketversie is niet bevestigd. Exacte vragen blijven bevroren, maar dit dossier claimt voor die vragen geen beheerde pakketfreeze.');
+    }
+    const snapshots = context.api.captureQuestionPackages(dossier.questions.filter(q => q.definition).map(q => q.id), { ...workspace, dossiers: workspace.dossiers.filter(item => item !== dossier) });
+    if (snapshots.length) dossier.contentPackageSnapshots = snapshots;
   }
   const dossierFor = (oldId, sourceId) => {
     const record = unique('ima.rie-assessment/v1', oldId);
@@ -378,7 +455,8 @@ export async function migrateMarkdown(root, options = {}) {
     }
     const evidenceIds = evidenceRefs(m.evidence_ids, record);
     workspace.answers.push({ id: record.targetId, questionId: frozen.id, dossierId: dossier.id, choice, evidence: evidenceIds.length ? `Legacy bewijskoppelingen: ${strings(m.evidence_ids).join(', ')}` : '',
-      evidenceIds, note: record.sections.motivering || '', answeredAt: time, questionSnapshot: frozen.prompt, sourceIds: [record.sourceId], contentVersion: frozen.version, questionSha256: frozen.sha256 });
+      evidenceIds, ...(string(m.responded_by).trim() ? { respondedBy: m.responded_by } : {}), note: record.sections.motivering || '', answeredAt: time, questionSnapshot: frozen.prompt, sourceIds: [record.sourceId], contentVersion: frozen.version, questionSha256: frozen.sha256 });
+    if (!string(m.responded_by).trim()) warning(context, 'response_actor_unknown', record.sourceId, 'Historische respondent ontbreekt in de bron; geen assessor, migratieactor of andere persoon ingevuld.');
   }
   for (const record of bySchema('ima.rie-observation/v1')) {
     const m = record.metadata; const dossier = dossierFor(m.assessment_id, record.sourceId);
@@ -401,6 +479,31 @@ export async function migrateMarkdown(root, options = {}) {
       observationIds: observations, evidenceIds: evidenceRefs(m.evidence_ids, record), topicIds: strings(m.topic_ids).flatMap(id => topicMap.has(id.toLowerCase()) ? [topicMap.get(id.toLowerCase())] : []),
       legalIds: mappedRefs(m.legal_ids, 'ima.legal-update/v1', record.sourceId).filter(id => workspace.legalRecords.some(item => item.id === id)), decisionBy: '', decisionNote: '' });
     findingProjected.add(record.targetId);
+  }
+  // Second pass: responses, observations and findings must already be projected.
+  // Each edge requires an actual source reference; reverse indexes preserve that
+  // same relationship, without inferring extra links from textual similarity.
+  const connectResponse = (response, target, key, sourceId) => {
+    if (!response || !target || response.dossierId !== target.dossierId) {
+      warning(context, 'response_relation_not_transferred', sourceId, 'Response-relatie mist een uniek getypeerd doel in hetzelfde dossier; oorspronkelijke verwijzing blijft raw.'); return;
+    }
+    response[key] = [...new Set([...(response[key] ?? []), target.id])];
+    target.responseIds = [...new Set([...(target.responseIds ?? []), response.id])];
+  };
+  for (const record of bySchema('ima.rie-response/v1')) {
+    const response = workspace.answers.find(answer => answer.id === record.targetId);
+    for (const [sourceKey, schema, collection, key] of [['observation_ids', 'ima.rie-observation/v1', workspace.observations, 'observationIds'], ['finding_ids', 'ima.rie-finding/v2', workspace.findings, 'findingIds']]) {
+      for (const originalId of strings(record.metadata[sourceKey])) {
+        const targetSource = unique(schema, originalId);
+        connectResponse(response, targetSource && collection.find(item => item.id === targetSource.targetId), key, record.sourceId);
+      }
+    }
+  }
+  for (const [schema, collection, key] of [['ima.rie-observation/v1', workspace.observations, 'observationIds'], ['ima.rie-finding/v2', workspace.findings, 'findingIds']]) {
+    for (const record of bySchema(schema)) for (const originalId of strings(record.metadata.question_response_ids)) {
+      const responseSource = unique('ima.rie-response/v1', originalId);
+      connectResponse(responseSource && workspace.answers.find(item => item.id === responseSource.targetId), collection.find(item => item.id === record.targetId), key, record.sourceId);
+    }
   }
   for (const record of records.filter(item => ['ima.action/v1', 'ima.action/v2'].includes(item.metadata.schema))) {
     const m = record.metadata;
@@ -608,8 +711,15 @@ export async function migrateSqlite(filename, options = {}) {
   const questionByOriginalId = new Map();
   for (const original of [...rows.Vragen].sort(originalQuestionOrder)) {
     if (!string(original.Vraagtekst).trim()) continue;
+    const richFields = {};
+    for (const [sourceKey, targetKey] of [['Nummer', 'number'], ['Gevaar', 'hazard'], ['Risico', 'risk'], ['Risicofactor', 'riskFactor'], ['TechnischeMaatregelen', 'technicalControls'], ['OrganisatorischeMaatregelen', 'organisationalControls'], ['Basisoorzaken', 'rootCauses'], ['Cultuur', 'culture']]) {
+      if (typeof original[sourceKey] === 'string') richFields[targetKey] = original[sourceKey];
+    }
+    if (Number.isSafeInteger(original.SortOrder)) richFields.sortOrder = original.SortOrder;
     const q = question({ id: targetFor('Vragen', original), title: string(original.Titel), prompt: original.Vraagtekst,
-      themeId: string(original.ModuleCode) || String(original.ModuleId), assessmentGuidance: string(original.Toetscriteria),
+      themeId: string(original.ModuleCode) || String(original.ModuleId), assessmentGuidance: '',
+      ...(typeof original.Toetscriteria === 'string' ? { acceptanceCriteria: original.Toetscriteria } : {}),
+      ...(Object.keys(richFields).length ? { richFields } : {}),
       sourceIds: [sourceFor('Vragen', original)], legalReferences: string(original.Wetgeving) });
     questionByOriginalId.set(original.Id, q);
     if (!workspace.questions.some(item => item.id === q.id)) workspace.questions.push(q);
@@ -676,14 +786,15 @@ export async function migrateSqlite(filename, options = {}) {
     if (!original || !time || !choice || !string(original.Vraagtekst)) { warning(context, 'sqlite_answer_raw_only', sourceId, 'Antwoord mist leesbare vraag, exacte datumtijdzone of bekend enum; raw behouden.'); continue; }
     const dossier = getDossier(answer, sourceId);
     if (!dossier) continue;
-    const q = question({ id: targetFor('Vragen', original), title: string(original.Titel), prompt: original.Vraagtekst, themeId: string(original.ModuleCode) || String(original.ModuleId),
-      assessmentGuidance: string(original.Toetscriteria), sourceIds: [sourceFor('Vragen', original)], legalReferences: string(original.Wetgeving) });
+    const q = questionByOriginalId.get(original.Id);
+    if (!q) continue;
     const frozen = addFrozen(context, dossier, q, 'legacy-import/1.0.0');
     // SQLite did not freeze question text historically. This is the exported current
     // database definition, not a claim that it was exactly the definition at answer time.
     warning(context, 'sqlite_question_not_historically_frozen', sourceId, 'Vraag bij export bevroren; de legacy SQLite-antwoorden bevatten geen oorspronkelijke vraaghash/snapshot.');
     workspace.answers.push({ id: targetFor('Antwoorden', answer), questionId: q.id, dossierId: dossier.id, choice, evidence: '', evidenceIds: [], note: string(answer.Toelichting),
-      answeredAt: time, questionSnapshot: q.prompt, questionSha256: frozen.sha256, contentVersion: frozen.version, sourceIds: [sourceId] });
+      ...(string(answer.RespondedBy).trim() ? { respondedBy: answer.RespondedBy } : {}), answeredAt: time, questionSnapshot: q.prompt, questionSha256: frozen.sha256, contentVersion: frozen.version, sourceIds: [sourceId] });
+    if (!string(answer.RespondedBy).trim()) warning(context, 'response_actor_unknown', sourceId, 'SQLite-antwoord heeft geen bekende respondent in de bron; contactpersoon en assessor zijn niet als auteur ingevuld.');
   }
   for (const rating of rows.RisicofactorBeoordelingen ?? []) {
     const factor = (rows.Risicofactoren ?? []).find(row => row.Id === rating.RisicofactorItemId);
@@ -694,10 +805,36 @@ export async function migrateSqlite(filename, options = {}) {
     const dossier = getDossier(rating, sourceId);
     if (!dossier) continue;
     workspace.findings.push({ id: targetFor('RisicofactorBeoordelingen', rating), title: factor.Titel, dossierId: dossier.id,
-      description: `Legacy risicofactor: ${string(factor.Omschrijving)}\nLegacy risico: ${string(risk.Titel)}\nOorspronkelijke beoordeling: ${string(rating.Toelichting)}\nNumerieke ratings staan uitsluitend in het raw bronrecord; herbeoordeling vereist.`,
+      description: `Legacy risicofactor: ${string(factor.Omschrijving)}\nLegacy risico: ${string(risk.Titel)}\nOorspronkelijke beoordeling: ${string(rating.Toelichting)}\nNumerieke ratings behouden hun oorspronkelijke ordinale betekenis in de bron en, bij aantoonbare relaties, de getypeerde bibliotheek; herbeoordeling vereist.`,
       status: 'open', observationIds: [], evidenceIds: [], topicIds: [], legalIds: [], decisionBy: '', decisionNote: '' });
   }
-  for (const rating of rows.MaatregelBeoordelingen ?? []) warning(context, 'legacy_control_raw_only', sourceFor('MaatregelBeoordelingen', rating), 'ReductieScore/KostenNiveau/IsInPlace raw behouden. Geen procenten, bewijsstatus, AHS-broncredit of nieuwe actie-inspanning uit ratings gegokt.');
+  const libraryProjection = context.api.projectLegacyRiskLibrary(rows, {
+    id: stableId('risk-library-version', `${project.Id}|${sourceHash}`), libraryId: stableId('risk-library', project.Id),
+    title: `${string(project.Naam) || 'Geselecteerd project'} — oorspronkelijke risicobibliotheek`, sourceSha256: sourceHash, version: '1.0.0',
+    targetIdFor: targetFor, sourceIdFor: sourceFor,
+    scopeFor: row => {
+      if (row.RieProjectId !== project.Id || !projectContextId) return undefined;
+      const scope = resolveScope(row);
+      if (scope.conflict || row.CompanyId != null && !organisationByCompany.has(row.CompanyId) || row.DepartmentId != null && !scope.departmentId) return undefined;
+      return { projectContextId,
+        ...(row.CompanyId != null || row.DepartmentId != null ? { organisationId: scope.organisationId } : {}),
+        ...(row.DepartmentId != null ? { departmentId: scope.departmentId } : {}) };
+    },
+    warning: (code, table, row, message) => warning(context, code, sourceFor(table, row), message),
+  });
+  if (libraryProjection.library) {
+    workspace.riskLibraries.push(libraryProjection.library);
+    workspace.riskLibraryReviews.push(...libraryProjection.reviews);
+    workspace.riskLibraryLayouts.push(...libraryProjection.layouts);
+    warning(context, 'risk_library_projection_version', libraryProjection.library.id, 'Versie 1.0.0 is de nieuwe getypeerde exportprojectie met exacte databasebronhash; een historische bibliotheekversie of actor wordt niet afgeleid. Oorspronkelijke 1–3-ratings blijven ordinaal; aanwezigheid is geen effectbewijs.');
+  }
+  for (const rating of rows.MaatregelBeoordelingen ?? []) {
+    const sourceId = sourceFor('MaatregelBeoordelingen', rating);
+    const projected = libraryProjection.reviews.some(review => review.kind === 'control_link' && review.sourceIds.includes(sourceId));
+    warning(context, projected ? 'legacy_control_not_effectiveness' : 'legacy_control_raw_only', sourceId, projected
+      ? 'Oorspronkelijke maatregelrating als ordinale scopebeoordeling én raw behouden. Aanwezigheid is geen effectbewijs; geen percentage, PFD of AHS-broncredit afgeleid.'
+      : 'ReductieScore/KostenNiveau/IsInPlace raw behouden zonder bruikbare getypeerde relatie. Geen procenten, bewijsstatus, AHS-broncredit of nieuwe actie-inspanning uit ratings gegokt.');
+  }
   for (const walkthrough of rows.WalkthroughReports) {
     const sourceId = sourceFor('WalkthroughReports', walkthrough);
     const scope = resolveScope(walkthrough);
@@ -734,7 +871,7 @@ function finish(context) {
     contentSha256: '', raw: {} };
   // Count this summary source too; never put a self-referential workspace digest inside it.
   context.workspace.sources.push(review);
-  context.report.counts = Object.fromEntries(['scenarios', 'questions', 'answers', 'actions', 'incidents', 'sources', 'organisations', 'sites', 'departments', 'dossiers', 'evidence', 'observations', 'findings', 'topics', 'legalRecords', 'investigations', 'exposure', 'projectContexts', 'walkthroughs', 'basisRiskFactorRecords', 'modulePlans'].map(key => [key, context.workspace[key]?.length ?? 0]));
+  context.report.counts = Object.fromEntries(['scenarios', 'questions', 'answers', 'actions', 'incidents', 'sources', 'organisations', 'sites', 'departments', 'dossiers', 'evidence', 'observations', 'findings', 'topics', 'legalRecords', 'investigations', 'exposure', 'projectContexts', 'walkthroughs', 'basisRiskFactorRecords', 'modulePlans', 'riskLibraries', 'riskLibraryReviews', 'riskLibraryLayouts'].map(key => [key, context.workspace[key]?.length ?? 0]));
   review.raw = JSON.parse(canonicalMigrationReportJson(context.report));
   review.contentSha256 = hash(canonicalMigrationReportJson(review.raw));
   const serialized = context.api.exportWorkspace(context.workspace);

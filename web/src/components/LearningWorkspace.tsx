@@ -6,6 +6,9 @@ import { newId } from '../data/model';
 import { calculateSafetyAnalytics } from '../data/analytics';
 import { basisRiskFactorStatusLabels, freezeInvestigationBasisRiskFactors } from '../data/brf';
 import BasisRiskFactorRegister from './BasisRiskFactorRegister';
+import { draftBase } from '../data/local-drafts';
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import DraftNotice from './DraftNotice';
 
 interface Props {
   workspace: WorkspaceState;
@@ -92,10 +95,8 @@ function newInvestigation(workspace: WorkspaceState): Investigation | null {
 
 export default function LearningWorkspace({ workspace, onUpdate }: Props) {
   const [page, setPage] = useState<Page>('investigations');
-  const [draft, setDraft] = useState<Investigation | null>(null);
-  const [loadedSource, setLoadedSource] = useState<string | null>(null);
-  const [exposureDraft, setExposureDraft] = useState<ExposureDraft | null>(null);
-  const [loadedExposure, setLoadedExposure] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Investigation | 'new' | null>(null);
+  const [editingExposure, setEditingExposure] = useState<Exposure | 'new' | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [from, setFrom] = useState(previousMonth);
@@ -103,7 +104,6 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
   const [departmentId, setDepartmentId] = useState('');
   const [asOf, setAsOf] = useState(localToday);
   const investigations = workspace.investigations ?? [];
-  const basisRiskFactorRecords = workspace.basisRiskFactorRecords ?? [];
   const exposure = workspace.exposure ?? [];
   const departments = workspace.departments ?? [];
   const labelDepartment = (id: string) => {
@@ -129,157 +129,13 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
     setMessage('');
     setError('');
   };
-  const patchDraft = (patch: Partial<Investigation>, contentChange = true) => {
-    setDraft((current) =>
-      current
-        ? {
-            ...current,
-            ...(contentChange && current.status === 'reviewed'
-              ? { status: 'draft' as const, reviewedBy: '', reviewNote: '' }
-              : {}),
-            ...(contentChange ? { basisRiskFactorSnapshots: undefined } : {}),
-            ...patch,
-          }
-        : null,
-    );
-    clearMessages();
-  };
   const beginInvestigation = () => {
     clearMessages();
-    setLoadedSource(null);
-    setDraft(newInvestigation(workspace));
-  };
-  const saveInvestigation = (event: FormEvent) => {
-    event.preventDefault();
-    clearMessages();
-    if (!draft) return;
-    const current = investigations.find((record) => record.id === draft.id);
-    if ((current ? JSON.stringify(current) : null) !== loadedSource) {
-      setError(
-        'Dit onderzoek is intussen gewijzigd. Open de opgeslagen versie opnieuw voordat je verder werkt.',
-      );
-      return;
-    }
-    const saved: Investigation = {
-      ...draft,
-      title: draft.title.trim(),
-      facts: draft.facts.trim(),
-      whyChain: cleanLines(draft.whyChain),
-      topEvent: draft.topEvent.trim(),
-      threats: cleanLines(draft.threats),
-      preventiveBarriers: cleanLines(draft.preventiveBarriers),
-      recoveryBarriers: cleanLines(draft.recoveryBarriers),
-      consequences: cleanLines(draft.consequences),
-      basisRiskFactors: cleanLines(draft.basisRiskFactors),
-      conclusion: draft.conclusion.trim(),
-      reviewedBy: draft.reviewedBy.trim(),
-      reviewNote: draft.reviewNote.trim(),
-    };
-    if (
-      saved.status === 'reviewed' &&
-      (!saved.facts ||
-        !saved.conclusion ||
-        !saved.reviewedBy ||
-        !saved.reviewNote ||
-        !saved.evidenceIds.length ||
-        (saved.method === 'five_whys' && !saved.whyChain.length) ||
-        (saved.method === 'bow_tie' &&
-          (!saved.topEvent || !saved.threats.length || !saved.consequences.length)))
-    ) {
-      setError(
-        'Een beoordeeld onderzoek vraagt feiten, de uitgewerkte methode, gekoppeld bewijs, een conclusie, een beoordelaar en een reviewtoelichting.',
-      );
-      return;
-    }
-    try {
-      if (saved.status === 'reviewed') {
-        if (!(current?.status === 'reviewed' && saved.basisRiskFactorSnapshots)) {
-          saved.basisRiskFactorSnapshots = freezeInvestigationBasisRiskFactors(
-            saved,
-            basisRiskFactorRecords,
-          ).basisRiskFactorSnapshots;
-        }
-      } else delete saved.basisRiskFactorSnapshots;
-    } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : 'De BRF-versies konden niet worden bevroren.',
-      );
-      return;
-    }
-    const updated = current
-      ? investigations.map((record) => (record.id === saved.id ? saved : record))
-      : [...investigations, saved];
-    if (!onUpdate({ investigations: updated })) {
-      setError(
-        'Opslaan is niet gelukt. Controleer de melding over dossiergegevens of opslag. Je concept blijft hier beschikbaar.',
-      );
-      return;
-    }
-    setDraft(saved);
-    setLoadedSource(JSON.stringify(saved));
-    setMessage('Onderzoek opgeslagen.');
+    setEditing('new');
   };
   const beginExposure = () => {
     clearMessages();
-    setLoadedExposure(null);
-    setExposureDraft({
-      id: newId(),
-      period: previousMonth(),
-      departmentId: '',
-      hours: '',
-      source: '',
-    });
-  };
-  const saveExposure = (event: FormEvent) => {
-    event.preventDefault();
-    clearMessages();
-    if (!exposureDraft) return;
-    const current = exposure.find((record) => record.id === exposureDraft.id);
-    if ((current ? JSON.stringify(current) : null) !== loadedExposure) {
-      setError('Deze urenbron is intussen gewijzigd. Open het opgeslagen record opnieuw.');
-      return;
-    }
-    const hours = Number(exposureDraft.hours);
-    if (
-      !exposureDraft.hours.trim() ||
-      !Number.isFinite(hours) ||
-      hours < 0 ||
-      !exposureDraft.source.trim()
-    ) {
-      setError('Vul een expliciet aantal gewerkte uren en de bron voor deze hele maand in.');
-      return;
-    }
-    if (
-      exposure.some(
-        (record) =>
-          record.id !== exposureDraft.id &&
-          record.period === exposureDraft.period &&
-          record.departmentId === exposureDraft.departmentId,
-      )
-    ) {
-      setError('Voor deze maand en scope staat al een urenbron. Bewerk dat bestaande record.');
-      return;
-    }
-    const saved: Exposure = {
-      id: exposureDraft.id,
-      period: exposureDraft.period,
-      departmentId: exposureDraft.departmentId,
-      hoursWorked: hours,
-      source: exposureDraft.source.trim(),
-    };
-    if (
-      !onUpdate({
-        exposure: current
-          ? exposure.map((record) => (record.id === saved.id ? saved : record))
-          : [...exposure, saved],
-      })
-    ) {
-      setError('Opslaan is niet gelukt. Controleer de melding over brongegevens of opslag.');
-      return;
-    }
-    setExposureDraft({ ...saved, hours: String(saved.hoursWorked) });
-    setLoadedExposure(JSON.stringify(saved));
-    setMessage('Urenbron opgeslagen.');
+    setEditingExposure('new');
   };
 
   return (
@@ -350,10 +206,11 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
               {investigations.map((record) => (
                 <button
                   key={record.id}
-                  className={draft?.id === record.id ? 'primary' : 'secondary'}
+                  className={
+                    editing !== 'new' && editing?.id === record.id ? 'primary' : 'secondary'
+                  }
                   onClick={() => {
-                    setDraft(structuredClone(record));
-                    setLoadedSource(JSON.stringify(record));
+                    setEditing(structuredClone(record));
                     clearMessages();
                   }}
                 >
@@ -362,282 +219,18 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
               ))}
             </div>
           </section>
-          {draft && (
-            <form className="panel" onSubmit={saveInvestigation}>
-              <div className="panel-heading">
-                <h2>{draft.method === 'five_whys' ? '5× Waarom' : 'BowTie'} — onderzoek</h2>
-                <span className="muted">
-                  {draft.status === 'reviewed' ? 'Beoordeeld' : 'Concept'} · methodeversie{' '}
-                  {draft.methodVersion}
-                </span>
-              </div>
-              <p className="caption">
-                Sla je concept op voordat je een ander onderzoek opent. Een inhoudelijke wijziging
-                vraagt een nieuwe review.
-              </p>
-              <div className="form-grid">
-                <Field label="Titel">
-                  <input
-                    required
-                    value={draft.title}
-                    onChange={(event) => patchDraft({ title: event.target.value })}
-                  />
-                </Field>
-                <Field label="Gebeurtenis">
-                  <select
-                    required
-                    value={draft.incidentId}
-                    onChange={(event) => patchDraft({ incidentId: event.target.value })}
-                  >
-                    {workspace.incidents.map((incident) => (
-                      <option key={incident.id} value={incident.id}>
-                        {incident.date} · {incident.title}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Onderzoeksmethode">
-                  <select
-                    value={draft.method}
-                    onChange={(event) =>
-                      patchDraft({ method: event.target.value as Investigation['method'] })
-                    }
-                  >
-                    <option value="five_whys">5× Waarom</option>
-                    <option value="bow_tie">BowTie</option>
-                  </select>
-                </Field>
-              </div>
-              <Field
-                label="Feiten en afbakening"
-                hint="Benoem wat werkelijk is waargenomen, door wie en binnen welke activiteit."
-              >
-                <textarea
-                  rows={4}
-                  value={draft.facts}
-                  onChange={(event) => patchDraft({ facts: event.target.value })}
-                />
-              </Field>
-              {draft.method === 'five_whys' ? (
-                <div className="analysis-template">
-                  <p>
-                    Onderbouw elke stap. Een waaromketen is een verklaringshypothese totdat het
-                    bewijs de verbinding ondersteunt.
-                  </p>
-                  {Array.from({ length: Math.max(5, draft.whyChain.length) }, (_, index) => (
-                    <Field key={index} label={`Waarom ${index + 1}`}>
-                      <textarea
-                        value={draft.whyChain[index] ?? ''}
-                        onChange={(event) => {
-                          const chain = [...draft.whyChain];
-                          while (chain.length <= index) chain.push('');
-                          chain[index] = event.target.value;
-                          patchDraft({ whyChain: chain });
-                        }}
-                      />
-                    </Field>
-                  ))}
-                </div>
-              ) : (
-                <>
-                  <Field label="Top event — verlies van beheersing">
-                    <input
-                      value={draft.topEvent}
-                      onChange={(event) => patchDraft({ topEvent: event.target.value })}
-                    />
-                  </Field>
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                      gap: 16,
-                    }}
-                  >
-                    <div>
-                      <Lines
-                        label="Dreigingen / oorzaken"
-                        value={draft.threats}
-                        onChange={(threats) => patchDraft({ threats })}
-                      />
-                      <Lines
-                        label="Preventieve barrières"
-                        value={draft.preventiveBarriers}
-                        onChange={(preventiveBarriers) => patchDraft({ preventiveBarriers })}
-                      />
-                    </div>
-                    <div>
-                      <Lines
-                        label="Gevolgen"
-                        value={draft.consequences}
-                        onChange={(consequences) => patchDraft({ consequences })}
-                      />
-                      <Lines
-                        label="Mitigerende / herstelbarrières"
-                        value={draft.recoveryBarriers}
-                        onChange={(recoveryBarriers) => patchDraft({ recoveryBarriers })}
-                      />
-                    </div>
-                  </div>
-                  <p className="caption">
-                    Beschrijf per barrière de werking, faalwijze en het passende bewijs. Het aantal
-                    barrières levert geen zelfstandig reductiepercentage op.
-                  </p>
-                </>
-              )}
-              <Lines
-                label="Onderliggende systeemcondities / basisrisicofactoren"
-                value={draft.basisRiskFactors}
-                onChange={(basisRiskFactors) => patchDraft({ basisRiskFactors })}
-                hint="Gebruik eigen projectcodes met hun betekenis, één per regel. Motiveer de koppeling; deze codes zijn geen vastgestelde Tripod-taxonomie."
-              />
-              <fieldset>
-                <legend>Beheerde BRF-definitieversies</legend>
-                <p className="caption">
-                  Kies expliciet de gebruikte versie uit het lokale register en motiveer de
-                  verbinding in de conclusie. Een koppeling is geen oorzaakbewijs. Bij review wordt
-                  de volledige gebruikte definitie bevroren.
-                </p>
-                {!basisRiskFactorRecords.length && (
-                  <p className="muted">
-                    Leg eigen definities vast in het BRF-register. Bestaande vrije codes blijven
-                    hierboven bewaard.
-                  </p>
-                )}
-                {basisRiskFactorRecords.map((record) => (
-                  <label className="check-row" key={record.id}>
-                    <input
-                      type="checkbox"
-                      checked={draft.basisRiskFactorIds?.includes(record.id) ?? false}
-                      onChange={() =>
-                        patchDraft({
-                          basisRiskFactorIds: toggleId(draft.basisRiskFactorIds ?? [], record.id),
-                        })
-                      }
-                    />
-                    <span>
-                      {record.code} · {record.title} @{record.version} ·{' '}
-                      {basisRiskFactorStatusLabels[record.status]}
-                    </span>
-                  </label>
-                ))}
-                {draft.basisRiskFactorSnapshots?.length ? (
-                  <details>
-                    <summary>Gebruikte definitieversies bij review</summary>
-                    {draft.basisRiskFactorSnapshots.map((snapshot) => (
-                      <p key={snapshot.record.id}>
-                        {snapshot.record.code} @{snapshot.record.version}:{' '}
-                        {snapshot.record.description}
-                        <br />
-                        Bron: {snapshot.record.sourceReference} · SHA256 {snapshot.sha256}
-                      </p>
-                    ))}
-                  </details>
-                ) : null}
-              </fieldset>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                  gap: 20,
-                }}
-              >
-                <fieldset>
-                  <legend>Gekoppeld bewijs</legend>
-                  {!workspace.evidence?.length && (
-                    <p className="muted">
-                      Voeg bewijs toe in het dossier voordat je het onderzoek beoordeelt.
-                    </p>
-                  )}
-                  {(workspace.evidence ?? []).map((evidence) => (
-                    <label className="check-row" key={evidence.id}>
-                      <input
-                        type="checkbox"
-                        checked={draft.evidenceIds.includes(evidence.id)}
-                        onChange={() =>
-                          patchDraft({ evidenceIds: toggleId(draft.evidenceIds, evidence.id) })
-                        }
-                      />
-                      <span>
-                        {evidence.title} ·{' '}
-                        {evidence.status === 'verified' ? 'Geverifieerd' : 'Niet geverifieerd'}
-                      </span>
-                    </label>
-                  ))}
-                </fieldset>
-                <fieldset>
-                  <legend>Verbeteracties</legend>
-                  {!workspace.actions.length && (
-                    <p className="muted">Maak zo nodig een actie in het plan van aanpak.</p>
-                  )}
-                  {workspace.actions.map((action) => (
-                    <label className="check-row" key={action.id}>
-                      <input
-                        type="checkbox"
-                        checked={draft.actionIds.includes(action.id)}
-                        onChange={() =>
-                          patchDraft({ actionIds: toggleId(draft.actionIds, action.id) })
-                        }
-                      />
-                      <span>
-                        {action.title} · {action.owner || 'Eigenaar ontbreekt'}
-                      </span>
-                    </label>
-                  ))}
-                </fieldset>
-              </div>
-              <Field label="Conclusie, bewijs en beperkingen">
-                <textarea
-                  rows={4}
-                  value={draft.conclusion}
-                  onChange={(event) => patchDraft({ conclusion: event.target.value })}
-                />
-              </Field>
-              <div className="form-grid">
-                <Field label="Status">
-                  <select
-                    value={draft.status}
-                    onChange={(event) =>
-                      patchDraft({ status: event.target.value as Investigation['status'] }, false)
-                    }
-                  >
-                    <option value="draft">Concept</option>
-                    <option value="reviewed">Beoordeeld</option>
-                  </select>
-                </Field>
-                <Field label="Beoordelaar">
-                  <input
-                    value={draft.reviewedBy}
-                    onChange={(event) => patchDraft({ reviewedBy: event.target.value }, false)}
-                  />
-                </Field>
-              </div>
-              <Field label="Reviewtoelichting">
-                <textarea
-                  value={draft.reviewNote}
-                  onChange={(event) => patchDraft({ reviewNote: event.target.value }, false)}
-                />
-              </Field>
-              <p className="caption">
-                Een beoordeeld onderzoek vraagt feiten, een uitgewerkte methode, gekoppeld bewijs,
-                een conclusie en een benoemde review. Risicoreductie wordt afzonderlijk in de
-                risicowerkbank beoordeeld.
-              </p>
-              <div className="button-row">
-                <button type="submit" className="primary">
-                  <Save size={16} /> Onderzoek opslaan
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    setDraft(null);
-                    clearMessages();
-                  }}
-                >
-                  Concept sluiten
-                </button>
-              </div>
-            </form>
+          {editing && (
+            <InvestigationEditor
+              key={editing === 'new' ? 'new' : editing.id}
+              workspace={workspace}
+              original={editing === 'new' ? undefined : editing}
+              onUpdate={onUpdate}
+              onClose={() => setEditing(null)}
+              onSaved={() => {
+                setEditing(null);
+                setMessage('Onderzoek opgeslagen.');
+              }}
+            />
           )}
         </>
       )}
@@ -695,8 +288,7 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
                             <button
                               className="secondary"
                               onClick={() => {
-                                setExposureDraft({ ...record, hours: String(record.hoursWorked) });
-                                setLoadedExposure(JSON.stringify(record));
+                                setEditingExposure(structuredClone(record));
                                 clearMessages();
                               }}
                             >
@@ -710,77 +302,18 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
               </div>
             )}
           </section>
-          {exposureDraft && (
-            <form className="panel" onSubmit={saveExposure}>
-              <h2>Gewerkte uren vastleggen</h2>
-              <div className="form-grid">
-                <Field label="Hele kalendermaand">
-                  <input
-                    required
-                    type="month"
-                    value={exposureDraft.period}
-                    onChange={(event) =>
-                      setExposureDraft({ ...exposureDraft, period: event.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Scope">
-                  <select
-                    value={exposureDraft.departmentId}
-                    onChange={(event) =>
-                      setExposureDraft({ ...exposureDraft, departmentId: event.target.value })
-                    }
-                  >
-                    <option value="">Hele werkruimte</option>
-                    {departments.map((department) => (
-                      <option key={department.id} value={department.id}>
-                        {labelDepartment(department.id)}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Werkelijk gewerkte uren">
-                  <input
-                    required
-                    type="number"
-                    min="0"
-                    max="1000000000"
-                    step="any"
-                    value={exposureDraft.hours}
-                    onChange={(event) =>
-                      setExposureDraft({ ...exposureDraft, hours: event.target.value })
-                    }
-                  />
-                </Field>
-              </div>
-              <Field
-                label="Bron en afbakening"
-                hint="Bijvoorbeeld: urenadministratie, alle medewerkers en relevante contractors, met de betreffende selectie."
-              >
-                <textarea
-                  required
-                  value={exposureDraft.source}
-                  onChange={(event) =>
-                    setExposureDraft({ ...exposureDraft, source: event.target.value })
-                  }
-                />
-              </Field>
-              <div className="button-row">
-                <button type="submit" className="primary">
-                  <Check size={16} /> Uren opslaan
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    setExposureDraft(null);
-                    clearMessages();
-                  }}
-                >
-                  Concept sluiten
-                </button>
-              </div>
-            </form>
+          {editingExposure && (
+            <ExposureEditor
+              key={editingExposure === 'new' ? 'new' : editingExposure.id}
+              workspace={workspace}
+              original={editingExposure === 'new' ? undefined : editingExposure}
+              onUpdate={onUpdate}
+              onClose={() => setEditingExposure(null)}
+              onSaved={() => {
+                setEditingExposure(null);
+                setMessage('Urenbron opgeslagen.');
+              }}
+            />
           )}
         </>
       )}
@@ -945,5 +478,555 @@ export default function LearningWorkspace({ workspace, onUpdate }: Props) {
         </>
       )}
     </>
+  );
+}
+
+interface InvestigationSession {
+  record: Investigation;
+  loadedSource: string | null;
+}
+function InvestigationEditor({
+  workspace,
+  original,
+  onUpdate,
+  onClose,
+  onSaved,
+}: Props & {
+  original?: Investigation;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [session, setSession, draftStatus] = usePersistentDraft<InvestigationSession>(
+    `${workspace.id}/investigation/${original?.id ?? 'new'}`,
+    () => ({
+      record: original ? structuredClone(original) : newInvestigation(workspace)!,
+      loadedSource: original ? JSON.stringify(original) : null,
+    }),
+    original ? draftBase(original) : 'new/v1',
+    (candidate) =>
+      Boolean(original) ||
+      !(workspace.investigations ?? []).some((record) => record.id === candidate.record.id),
+  );
+  const draft = session.record;
+  const loadedSource = session.loadedSource;
+  const investigations = workspace.investigations ?? [];
+  const basisRiskFactorRecords = workspace.basisRiskFactorRecords ?? [];
+  const [error, setError] = useState('');
+  const clearMessages = () => setError('');
+  const patchDraft = (patch: Partial<Investigation>, contentChange = true) => {
+    setSession((current) => ({
+      ...current,
+      record: {
+        ...current.record,
+        ...(contentChange && current.record.status === 'reviewed'
+          ? { status: 'draft' as const, reviewedBy: '', reviewNote: '' }
+          : {}),
+        ...(contentChange ? { basisRiskFactorSnapshots: undefined } : {}),
+        ...patch,
+      },
+    }));
+    clearMessages();
+  };
+  const saveInvestigation = (event: FormEvent) => {
+    event.preventDefault();
+    clearMessages();
+    if (!draft) return;
+    const current = investigations.find((record) => record.id === draft.id);
+    if ((current ? JSON.stringify(current) : null) !== loadedSource) {
+      setError(
+        'Dit onderzoek is intussen gewijzigd. Open de opgeslagen versie opnieuw voordat je verder werkt.',
+      );
+      return;
+    }
+    const saved: Investigation = {
+      ...draft,
+      title: draft.title.trim(),
+      facts: draft.facts.trim(),
+      whyChain: cleanLines(draft.whyChain),
+      topEvent: draft.topEvent.trim(),
+      threats: cleanLines(draft.threats),
+      preventiveBarriers: cleanLines(draft.preventiveBarriers),
+      recoveryBarriers: cleanLines(draft.recoveryBarriers),
+      consequences: cleanLines(draft.consequences),
+      basisRiskFactors: cleanLines(draft.basisRiskFactors),
+      conclusion: draft.conclusion.trim(),
+      reviewedBy: draft.reviewedBy.trim(),
+      reviewNote: draft.reviewNote.trim(),
+    };
+    if (
+      saved.status === 'reviewed' &&
+      (!saved.facts ||
+        !saved.conclusion ||
+        !saved.reviewedBy ||
+        !saved.reviewNote ||
+        !saved.evidenceIds.length ||
+        (saved.method === 'five_whys' && !saved.whyChain.length) ||
+        (saved.method === 'bow_tie' &&
+          (!saved.topEvent || !saved.threats.length || !saved.consequences.length)))
+    ) {
+      setError(
+        'Een beoordeeld onderzoek vraagt feiten, de uitgewerkte methode, gekoppeld bewijs, een conclusie, een beoordelaar en een reviewtoelichting.',
+      );
+      return;
+    }
+    try {
+      if (saved.status === 'reviewed') {
+        if (!(current?.status === 'reviewed' && saved.basisRiskFactorSnapshots)) {
+          saved.basisRiskFactorSnapshots = freezeInvestigationBasisRiskFactors(
+            saved,
+            basisRiskFactorRecords,
+          ).basisRiskFactorSnapshots;
+        }
+      } else delete saved.basisRiskFactorSnapshots;
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : 'De BRF-versies konden niet worden bevroren.',
+      );
+      return;
+    }
+    const updated = current
+      ? investigations.map((record) => (record.id === saved.id ? saved : record))
+      : [...investigations, saved];
+    if (!onUpdate({ investigations: updated })) {
+      setError(
+        'Opslaan is niet gelukt. Controleer de melding over dossiergegevens of opslag. Je concept blijft hier beschikbaar.',
+      );
+      return;
+    }
+    draftStatus.clear();
+    onSaved();
+  };
+
+  return (
+    <form className="panel" onSubmit={saveInvestigation}>
+      <DraftNotice status={draftStatus} />
+      {error && (
+        <p role="alert" className="rose-text">
+          {error}
+        </p>
+      )}
+      <div className="panel-heading">
+        <h2>{draft.method === 'five_whys' ? '5× Waarom' : 'BowTie'} — onderzoek</h2>
+        <span className="muted">
+          {draft.status === 'reviewed' ? 'Beoordeeld' : 'Concept'} · methodeversie{' '}
+          {draft.methodVersion}
+        </span>
+      </div>
+      <p className="caption">
+        Je volledige invoer wordt lokaal als concept bewaard. Vastleggen maakt er een dossierrecord
+        van. Een inhoudelijke wijziging vraagt een nieuwe review.
+      </p>
+      <div className="form-grid">
+        <Field label="Titel">
+          <input
+            required
+            value={draft.title}
+            onChange={(event) => patchDraft({ title: event.target.value })}
+          />
+        </Field>
+        <Field label="Gebeurtenis">
+          <select
+            required
+            value={draft.incidentId}
+            onChange={(event) => patchDraft({ incidentId: event.target.value })}
+          >
+            {workspace.incidents.map((incident) => (
+              <option key={incident.id} value={incident.id}>
+                {incident.date} · {incident.title}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Onderzoeksmethode">
+          <select
+            value={draft.method}
+            onChange={(event) =>
+              patchDraft({ method: event.target.value as Investigation['method'] })
+            }
+          >
+            <option value="five_whys">5× Waarom</option>
+            <option value="bow_tie">BowTie</option>
+          </select>
+        </Field>
+      </div>
+      <Field
+        label="Feiten en afbakening"
+        hint="Benoem wat werkelijk is waargenomen, door wie en binnen welke activiteit."
+      >
+        <textarea
+          rows={4}
+          value={draft.facts}
+          onChange={(event) => patchDraft({ facts: event.target.value })}
+        />
+      </Field>
+      {draft.method === 'five_whys' ? (
+        <div className="analysis-template">
+          <p>
+            Onderbouw elke stap. Een waaromketen is een verklaringshypothese totdat het bewijs de
+            verbinding ondersteunt.
+          </p>
+          {Array.from({ length: Math.max(5, draft.whyChain.length) }, (_, index) => (
+            <Field key={index} label={`Waarom ${index + 1}`}>
+              <textarea
+                value={draft.whyChain[index] ?? ''}
+                onChange={(event) => {
+                  const chain = [...draft.whyChain];
+                  while (chain.length <= index) chain.push('');
+                  chain[index] = event.target.value;
+                  patchDraft({ whyChain: chain });
+                }}
+              />
+            </Field>
+          ))}
+        </div>
+      ) : (
+        <>
+          <Field label="Top event — verlies van beheersing">
+            <input
+              value={draft.topEvent}
+              onChange={(event) => patchDraft({ topEvent: event.target.value })}
+            />
+          </Field>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: 16,
+            }}
+          >
+            <div>
+              <Lines
+                label="Dreigingen / oorzaken"
+                value={draft.threats}
+                onChange={(threats) => patchDraft({ threats })}
+              />
+              <Lines
+                label="Preventieve barrières"
+                value={draft.preventiveBarriers}
+                onChange={(preventiveBarriers) => patchDraft({ preventiveBarriers })}
+              />
+            </div>
+            <div>
+              <Lines
+                label="Gevolgen"
+                value={draft.consequences}
+                onChange={(consequences) => patchDraft({ consequences })}
+              />
+              <Lines
+                label="Mitigerende / herstelbarrières"
+                value={draft.recoveryBarriers}
+                onChange={(recoveryBarriers) => patchDraft({ recoveryBarriers })}
+              />
+            </div>
+          </div>
+          <p className="caption">
+            Beschrijf per barrière de werking, faalwijze en het passende bewijs. Het aantal
+            barrières levert geen zelfstandig reductiepercentage op.
+          </p>
+        </>
+      )}
+      <Lines
+        label="Onderliggende systeemcondities / basisrisicofactoren"
+        value={draft.basisRiskFactors}
+        onChange={(basisRiskFactors) => patchDraft({ basisRiskFactors })}
+        hint="Gebruik eigen projectcodes met hun betekenis, één per regel. Motiveer de koppeling; deze codes zijn geen vastgestelde Tripod-taxonomie."
+      />
+      <fieldset>
+        <legend>Beheerde BRF-definitieversies</legend>
+        <p className="caption">
+          Kies expliciet de gebruikte versie uit het lokale register en motiveer de verbinding in de
+          conclusie. Een koppeling is geen oorzaakbewijs. Bij review wordt de volledige gebruikte
+          definitie bevroren.
+        </p>
+        {!basisRiskFactorRecords.length && (
+          <p className="muted">
+            Leg eigen definities vast in het BRF-register. Bestaande vrije codes blijven hierboven
+            bewaard.
+          </p>
+        )}
+        {basisRiskFactorRecords.map((record) => (
+          <label className="check-row" key={record.id}>
+            <input
+              type="checkbox"
+              checked={draft.basisRiskFactorIds?.includes(record.id) ?? false}
+              onChange={() =>
+                patchDraft({
+                  basisRiskFactorIds: toggleId(draft.basisRiskFactorIds ?? [], record.id),
+                })
+              }
+            />
+            <span>
+              {record.code} · {record.title} @{record.version} ·{' '}
+              {basisRiskFactorStatusLabels[record.status]}
+            </span>
+          </label>
+        ))}
+        {draft.basisRiskFactorSnapshots?.length ? (
+          <details>
+            <summary>Gebruikte definitieversies bij review</summary>
+            {draft.basisRiskFactorSnapshots.map((snapshot) => (
+              <p key={snapshot.record.id}>
+                {snapshot.record.code} @{snapshot.record.version}: {snapshot.record.description}
+                <br />
+                Bron: {snapshot.record.sourceReference} · SHA256 {snapshot.sha256}
+              </p>
+            ))}
+          </details>
+        ) : null}
+      </fieldset>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gap: 20,
+        }}
+      >
+        <fieldset>
+          <legend>Gekoppeld bewijs</legend>
+          {!workspace.evidence?.length && (
+            <p className="muted">
+              Voeg bewijs toe in het dossier voordat je het onderzoek beoordeelt.
+            </p>
+          )}
+          {(workspace.evidence ?? []).map((evidence) => (
+            <label className="check-row" key={evidence.id}>
+              <input
+                type="checkbox"
+                checked={draft.evidenceIds.includes(evidence.id)}
+                onChange={() =>
+                  patchDraft({ evidenceIds: toggleId(draft.evidenceIds, evidence.id) })
+                }
+              />
+              <span>
+                {evidence.title} ·{' '}
+                {evidence.status === 'verified' ? 'Geverifieerd' : 'Niet geverifieerd'}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        <fieldset>
+          <legend>Verbeteracties</legend>
+          {!workspace.actions.length && (
+            <p className="muted">Maak zo nodig een actie in het plan van aanpak.</p>
+          )}
+          {workspace.actions.map((action) => (
+            <label className="check-row" key={action.id}>
+              <input
+                type="checkbox"
+                checked={draft.actionIds.includes(action.id)}
+                onChange={() => patchDraft({ actionIds: toggleId(draft.actionIds, action.id) })}
+              />
+              <span>
+                {action.title} · {action.owner || 'Eigenaar ontbreekt'}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      </div>
+      <Field label="Conclusie, bewijs en beperkingen">
+        <textarea
+          rows={4}
+          value={draft.conclusion}
+          onChange={(event) => patchDraft({ conclusion: event.target.value })}
+        />
+      </Field>
+      <div className="form-grid">
+        <Field label="Status">
+          <select
+            value={draft.status}
+            onChange={(event) =>
+              patchDraft({ status: event.target.value as Investigation['status'] }, false)
+            }
+          >
+            <option value="draft">Concept</option>
+            <option value="reviewed">Beoordeeld</option>
+          </select>
+        </Field>
+        <Field label="Beoordelaar">
+          <input
+            value={draft.reviewedBy}
+            onChange={(event) => patchDraft({ reviewedBy: event.target.value }, false)}
+          />
+        </Field>
+      </div>
+      <Field label="Reviewtoelichting">
+        <textarea
+          value={draft.reviewNote}
+          onChange={(event) => patchDraft({ reviewNote: event.target.value }, false)}
+        />
+      </Field>
+      <p className="caption">
+        Een beoordeeld onderzoek vraagt feiten, een uitgewerkte methode, gekoppeld bewijs, een
+        conclusie en een benoemde review. Risicoreductie wordt afzonderlijk in de risicowerkbank
+        beoordeeld.
+      </p>
+      <div className="button-row">
+        <button type="submit" className="primary">
+          <Save size={16} /> Onderzoek opslaan
+        </button>
+        <button type="button" className="secondary" onClick={onClose}>
+          Concept sluiten
+        </button>
+      </div>
+    </form>
+  );
+}
+
+interface ExposureSession {
+  record: ExposureDraft;
+  loadedExposure: string | null;
+}
+function ExposureEditor({
+  workspace,
+  original,
+  onUpdate,
+  onClose,
+  onSaved,
+}: Props & {
+  original?: Exposure;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [session, setSession, draftStatus] = usePersistentDraft<ExposureSession>(
+    `${workspace.id}/exposure/${original?.id ?? 'new'}`,
+    () => ({
+      record: original
+        ? { ...structuredClone(original), hours: String(original.hoursWorked) }
+        : { id: newId(), period: previousMonth(), departmentId: '', hours: '', source: '' },
+      loadedExposure: original ? JSON.stringify(original) : null,
+    }),
+    original ? draftBase(original) : 'new/v1',
+    (candidate) =>
+      Boolean(original) ||
+      !(workspace.exposure ?? []).some((record) => record.id === candidate.record.id),
+  );
+  const exposureDraft = session.record;
+  const loadedExposure = session.loadedExposure;
+  const setExposureDraft = (record: ExposureDraft) =>
+    setSession((current) => ({ ...current, record }));
+  const exposure = workspace.exposure ?? [];
+  const departments = workspace.departments ?? [];
+  const labelDepartment = (id: string) => {
+    const department = departments.find((record) => record.id === id);
+    return department
+      ? departmentLabel(department, workspace.sites ?? [], workspace.organisations ?? [])
+      : 'Onbekende afdeling';
+  };
+  const [error, setError] = useState('');
+  const clearMessages = () => setError('');
+  const saveExposure = (event: FormEvent) => {
+    event.preventDefault();
+    clearMessages();
+    if (!exposureDraft) return;
+    const current = exposure.find((record) => record.id === exposureDraft.id);
+    if ((current ? JSON.stringify(current) : null) !== loadedExposure) {
+      setError('Deze urenbron is intussen gewijzigd. Open het opgeslagen record opnieuw.');
+      return;
+    }
+    const hours = Number(exposureDraft.hours);
+    if (
+      !exposureDraft.hours.trim() ||
+      !Number.isFinite(hours) ||
+      hours < 0 ||
+      !exposureDraft.source.trim()
+    ) {
+      setError('Vul een expliciet aantal gewerkte uren en de bron voor deze hele maand in.');
+      return;
+    }
+    if (
+      exposure.some(
+        (record) =>
+          record.id !== exposureDraft.id &&
+          record.period === exposureDraft.period &&
+          record.departmentId === exposureDraft.departmentId,
+      )
+    ) {
+      setError('Voor deze maand en scope staat al een urenbron. Bewerk dat bestaande record.');
+      return;
+    }
+    const saved: Exposure = {
+      id: exposureDraft.id,
+      period: exposureDraft.period,
+      departmentId: exposureDraft.departmentId,
+      hoursWorked: hours,
+      source: exposureDraft.source.trim(),
+    };
+    if (
+      !onUpdate({
+        exposure: current
+          ? exposure.map((record) => (record.id === saved.id ? saved : record))
+          : [...exposure, saved],
+      })
+    ) {
+      setError('Opslaan is niet gelukt. Controleer de melding over brongegevens of opslag.');
+      return;
+    }
+    draftStatus.clear();
+    onSaved();
+  };
+  return (
+    <form className="panel" onSubmit={saveExposure}>
+      <DraftNotice status={draftStatus} />
+      {error && (
+        <p role="alert" className="rose-text">
+          {error}
+        </p>
+      )}
+      <h2>Gewerkte uren vastleggen</h2>
+      <div className="form-grid">
+        <Field label="Hele kalendermaand">
+          <input
+            required
+            type="month"
+            value={exposureDraft.period}
+            onChange={(event) => setExposureDraft({ ...exposureDraft, period: event.target.value })}
+          />
+        </Field>
+        <Field label="Scope">
+          <select
+            value={exposureDraft.departmentId}
+            onChange={(event) =>
+              setExposureDraft({ ...exposureDraft, departmentId: event.target.value })
+            }
+          >
+            <option value="">Hele werkruimte</option>
+            {departments.map((department) => (
+              <option key={department.id} value={department.id}>
+                {labelDepartment(department.id)}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Werkelijk gewerkte uren">
+          <input
+            required
+            type="number"
+            min="0"
+            max="1000000000"
+            step="any"
+            value={exposureDraft.hours}
+            onChange={(event) => setExposureDraft({ ...exposureDraft, hours: event.target.value })}
+          />
+        </Field>
+      </div>
+      <Field
+        label="Bron en afbakening"
+        hint="Bijvoorbeeld: urenadministratie, alle medewerkers en relevante contractors, met de betreffende selectie."
+      >
+        <textarea
+          required
+          value={exposureDraft.source}
+          onChange={(event) => setExposureDraft({ ...exposureDraft, source: event.target.value })}
+        />
+      </Field>
+      <div className="button-row">
+        <button type="submit" className="primary">
+          <Check size={16} /> Uren opslaan
+        </button>
+        <button type="button" className="secondary" onClick={onClose}>
+          Concept sluiten
+        </button>
+      </div>
+    </form>
   );
 }

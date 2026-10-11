@@ -5,6 +5,9 @@ import { basisRiskFactorMarkdown } from '../data/brf';
 import { riskAssessmentMarkdown } from './RiskAssessmentPanel';
 import { justificationMarkdown } from '../data/justification';
 import { modulePlanMarkdown } from '../data/module-plan';
+import { questionPackagesMarkdown } from '../data/question-definition';
+import { piRouterMarkdown } from '../data/pi-router';
+import { responseRelationsMarkdown } from '../data/response-relations';
 import { readMigrationReviews } from '../data/migration-review';
 
 /** Readable projection; the JSON export remains the complete portable record. */
@@ -27,6 +30,7 @@ export function dossierMarkdown(workspace: WorkspaceState): string[] {
   }
   lines.push(...projectContextMarkdown(workspace));
   lines.push(...modulePlanMarkdown(workspace));
+  lines.push(...piRouterMarkdown(workspace));
   if (workspace.organisations?.length) {
     lines.push('', '## Organisatie', '');
     for (const o of workspace.organisations) lines.push(`- ${o.name} [${o.id}] — ${o.description}`);
@@ -37,7 +41,10 @@ export function dossierMarkdown(workspace: WorkspaceState): string[] {
         `- Afdeling ${d.name} [${d.id}], ${d.siteId ? `locatie ${d.siteId}` : `organisatie ${d.organisationId}; locatie niet vastgelegd`}: ${d.activity}`,
       );
   }
+  lines.push(...responseRelationsMarkdown(workspace));
   for (const dossier of workspace.dossiers ?? []) {
+    const packageText = questionPackagesMarkdown(dossier);
+    if (packageText) lines.push(packageText);
     lines.push(
       '',
       `## Beoordelingsdossier: ${dossier.title}`,
@@ -72,6 +79,10 @@ export function dossierMarkdown(workspace: WorkspaceState): string[] {
         `Vraag ${q.id} | versie ${q.version} | SHA256 ${q.sha256}`,
         `Bronroutes: ${q.sourceIds.join(', ')}`,
         `Toetsingsrichting: ${q.assessmentGuidance}`,
+        ...(q.acceptanceCriteria !== undefined
+          ? [`Acceptatiecriteria: ${q.acceptanceCriteria}`]
+          : []),
+        ...(q.expectedEvidence !== undefined ? [`Verwacht bewijs: ${q.expectedEvidence}`] : []),
         `Bewijsaanwijzingen: ${q.evidenceHints.join('; ')}`,
         ...(q.legalReferences ? [`Normverwijzingen: ${q.legalReferences}`] : []),
         `Antwoord: ${a?.choice ?? 'Niet beantwoord'} | ${a?.answeredAt ?? ''}`,

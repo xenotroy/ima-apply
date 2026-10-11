@@ -28,10 +28,16 @@ test('separate dossiers freeze questions and retain distinct answers across relo
 }) => {
   await createDossier(page, 'E2E dossier A');
   await page.getByRole('button', { name: 'Inventariseren', exact: true }).click();
+  await page
+    .getByLabel('Respondent / actor voor deze invoer', { exact: true })
+    .fill('E2E interviewactor');
   await expect(page.locator('.question-card')).toHaveCount(1);
   await page.locator('.question-card').getByRole('button', { name: 'Ja', exact: true }).click();
   await createDossier(page, 'E2E dossier B');
   await page.getByRole('button', { name: 'Inventariseren', exact: true }).click();
+  await page
+    .getByLabel('Respondent / actor voor deze invoer', { exact: true })
+    .fill('E2E interviewactor');
   await page.locator('.question-card').getByRole('button', { name: 'Nee', exact: true }).click();
   await expect.poll(async () => (await state(page)).answers.length).toBe(2);
   const w = await state(page);
@@ -75,9 +81,13 @@ test('finding closure needs verified evidence and reporting preserves traceabili
     .getByRole('combobox', { name: 'Bevindingstatus', exact: true })
     .selectOption('closed');
   await dialog.getByLabel('Besluitnemer', { exact: true }).fill('E2E verantwoordelijke');
-  await dialog.getByLabel('Besluit en onderbouwing', { exact: true }).fill('Verificatie positief.');
+  await dialog
+    .getByRole('textbox', { name: 'Besluit en onderbouwing', exact: true })
+    .fill('Verificatie positief.');
   await dialog.getByRole('button', { name: 'Bevinding opslaan', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('geverifieerd bewijs');
+  await expect(page.getByRole('status').filter({ hasText: 'Wijziging geweigerd:' })).toContainText(
+    'geverifieerd bewijs',
+  );
   expect((await state(page)).findings).toEqual([]);
   await dialog.getByRole('button', { name: 'Sluiten', exact: true }).click();
   await page.getByRole('button', { name: 'Bewijs beoordelen / wijzigen', exact: true }).click();
@@ -93,13 +103,17 @@ test('finding closure needs verified evidence and reporting preserves traceabili
   await page.getByRole('button', { name: 'Bevinding', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Bevinding vastleggen en beoordelen' });
   await dialog.getByLabel('Bevindingstitel', { exact: true }).fill('E2E beveiliging');
-  await dialog.getByLabel('Bevinding en criterium', { exact: true }).fill('Werking getoetst.');
+  await dialog
+    .getByRole('textbox', { name: 'Bevinding en criterium', exact: true })
+    .fill('Werking getoetst.');
   await dialog.getByRole('checkbox', { name: 'E2E functietest', exact: true }).check();
   await dialog
     .getByRole('combobox', { name: 'Bevindingstatus', exact: true })
     .selectOption('closed');
   await dialog.getByLabel('Besluitnemer', { exact: true }).fill('E2E verantwoordelijke');
-  await dialog.getByLabel('Besluit en onderbouwing', { exact: true }).fill('Verificatie positief.');
+  await dialog
+    .getByRole('textbox', { name: 'Besluit en onderbouwing', exact: true })
+    .fill('Verificatie positief.');
   await dialog.getByRole('button', { name: 'Bevinding opslaan', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect.poll(async () => (await state(page)).findings[0]?.status).toBe('closed');

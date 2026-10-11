@@ -2,6 +2,14 @@ import type { WorkspaceState, WorkspaceAction } from './model';
 import { assertRiskAssessment, type RiskAssessment } from './risk-history';
 import { assertJustification } from './justification';
 import {
+  assertQuestionContentExtensions,
+  assertQuestionDefinitions,
+  assertQuestionPackageSnapshot,
+} from './question-definition';
+import { assertResponseRelations } from './response-relations';
+import { assertPiRouterCollections } from './pi-router';
+import { assertRiskLibraryCollections } from './risk-library';
+import {
   assertModulePlan,
   assertModulePlans,
   assertDossierModulePlanSnapshot,
@@ -359,6 +367,9 @@ function answer(value: unknown, path: string): void {
     'dossierId',
     'questionSha256',
     'evidenceIds',
+    'respondedBy',
+    'observationIds',
+    'findingIds',
   ]);
   id(item.id, `${path}.id`);
   id(item.questionId, `${path}.questionId`);
@@ -366,6 +377,9 @@ function answer(value: unknown, path: string): void {
   text(item.evidence, `${path}.evidence`);
   text(item.note, `${path}.note`);
   timestamp(item.answeredAt, `${path}.answeredAt`);
+  if (item.respondedBy !== undefined) text(item.respondedBy, `${path}.respondedBy`, true, 1000);
+  for (const key of ['observationIds', 'findingIds'])
+    if (item[key] !== undefined) strings(item[key], `${path}.${key}`);
   if (item.questionSnapshot !== undefined) text(item.questionSnapshot, `${path}.questionSnapshot`);
   if (item.sourceIds !== undefined) strings(item.sourceIds, `${path}.sourceIds`);
   if (item.contentVersion !== undefined)
@@ -653,6 +667,7 @@ function dossier(value: unknown, path: string): void {
     'sourceSnapshots',
     'modulePlanSnapshot',
     'modulePlanSnapshotSha256',
+    'contentPackageSnapshots',
     'reviewedBy',
     'reviewedAt',
     'reviewNote',
@@ -666,6 +681,13 @@ function dossier(value: unknown, path: string): void {
   choice(item.status, ['draft', 'active', 'completed', 'archived'], `${path}.status`);
   timestamp(item.createdAt, `${path}.createdAt`);
   list(item.questions, `${path}.questions`, frozenQuestion);
+  if (item.contentPackageSnapshots !== undefined)
+    list(
+      item.contentPackageSnapshots,
+      `${path}.contentPackageSnapshots`,
+      (value) => assertQuestionPackageSnapshot(value),
+      false,
+    );
   if (item.sourceSnapshots !== undefined)
     list(item.sourceSnapshots, `${path}.sourceSnapshots`, genericRecord);
   if (item.modulePlanSnapshot !== undefined) {
@@ -735,7 +757,9 @@ function observation(value: unknown, path: string): void {
     'observer',
     'facts',
     'evidenceIds',
+    'responseIds',
   ]);
+  if (item.responseIds !== undefined) strings(item.responseIds, `${path}.responseIds`);
   text(item.title, `${path}.title`, true);
   id(item.dossierId, `${path}.dossierId`);
   optionalId(item, 'departmentId', path);
@@ -755,11 +779,13 @@ function finding(value: unknown, path: string): void {
     'status',
     'observationIds',
     'evidenceIds',
+    'responseIds',
     'topicIds',
     'legalIds',
     'decisionBy',
     'decisionNote',
   ]);
+  if (item.responseIds !== undefined) strings(item.responseIds, `${path}.responseIds`);
   text(item.title, `${path}.title`, true);
   id(item.dossierId, `${path}.dossierId`);
   optionalId(item, 'questionId', path);
@@ -1294,6 +1320,11 @@ function riskAssessment(value: unknown, path: string): void {
 }
 function question(value: unknown, path: string): void {
   const item = object(value, path);
+  try {
+    assertQuestionContentExtensions(value);
+  } catch (error) {
+    fail(path, String(error));
+  }
   id(item.id, `${path}.id`);
   id(item.themeId, `${path}.themeId`);
   text(item.prompt, `${path}.prompt`, true);
@@ -1345,6 +1376,9 @@ export function validateWorkspace(value: unknown): asserts value is WorkspaceSta
     'riskAssessments',
     'justifications',
     'modulePlans',
+    'riskLibraries',
+    'riskLibraryReviews',
+    'riskLibraryLayouts',
   ]);
   if (item.schemaVersion !== 1)
     fail('Werkruimte', 'niet-ondersteunde schemaversie; verwacht versie 1.');
@@ -1383,7 +1417,16 @@ export function validateWorkspace(value: unknown): asserts value is WorkspaceSta
   for (const [key, validator] of Object.entries(extra))
     if (item[key] !== undefined) list(item[key], key, validator);
   if (item.contentRecords !== undefined) list(item.contentRecords, 'Contentrecords', genericRecord);
-  relations(item as unknown as WorkspaceState);
+  const workspace = item as unknown as WorkspaceState;
+  try {
+    assertQuestionDefinitions(workspace);
+    assertResponseRelations(workspace);
+    assertPiRouterCollections(workspace);
+    assertRiskLibraryCollections(workspace);
+  } catch (error) {
+    fail('Werkruimte', String(error));
+  }
+  relations(workspace);
 }
 
 export function importWorkspace(input: string): WorkspaceState {

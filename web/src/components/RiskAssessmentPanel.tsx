@@ -3,6 +3,9 @@ import type { Scenario } from '../domain/types';
 import { captureRiskAssessment, type RiskAssessment } from '../data/risk-history';
 import { RISK_METHOD_VERSION } from '../domain/risk';
 import { Field } from './Primitives';
+import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import { draftBase } from '../data/local-drafts';
+import DraftNotice from './DraftNotice';
 
 export function riskAssessmentMarkdown(records: RiskAssessment[]): string[] {
   if (!records.length) return [];
@@ -34,16 +37,38 @@ export function riskAssessmentMarkdown(records: RiskAssessment[]): string[] {
 }
 export default function RiskAssessmentPanel({
   scenario,
+  workspaceId,
   records,
   onSave,
 }: {
   scenario: Scenario;
+  workspaceId: string;
   records: RiskAssessment[];
   onSave: (record: RiskAssessment) => boolean;
 }) {
-  const [assessor, setAssessor] = useState(''),
-    [rationale, setRationale] = useState(''),
-    [error, setError] = useState('');
+  const currentSource = draftBase(scenario);
+  const [draft, setDraft, draftStatus] = usePersistentDraft(
+    `${workspaceId}/risk-assessment/${scenario.id}`,
+    () => ({
+      assessor: '',
+      rationale: '',
+      source: currentSource,
+    }),
+  );
+  const { assessor, rationale } = draft;
+  const setAssessor = (assessor: string) =>
+    setDraft((previous) => ({
+      ...previous,
+      assessor,
+      source: previous.assessor || previous.rationale ? previous.source : currentSource,
+    }));
+  const setRationale = (rationale: string) =>
+    setDraft((previous) => ({
+      ...previous,
+      rationale,
+      source: previous.assessor || previous.rationale ? previous.source : currentSource,
+    }));
+  const [error, setError] = useState('');
   return (
     <section className="panel risk-assessment-history">
       <h2>Beoordelingsmomenten bewaren</h2>
@@ -55,16 +80,33 @@ export default function RiskAssessmentPanel({
         onSubmit={(e) => {
           e.preventDefault();
           try {
+            if (draft.source !== currentSource)
+              throw new Error(
+                'Het scenario is gewijzigd sinds deze onderbouwing. Controleer en bevestig de huidige invoer.',
+              );
             const record = captureRiskAssessment(scenario, assessor, rationale);
             if (!onSave(record))
               throw new Error('De beoordeling is niet opgeslagen. Je invoer blijft beschikbaar.');
-            setRationale('');
+            draftStatus.clear();
             setError('');
           } catch (caught) {
             setError(caught instanceof Error ? caught.message : 'Opslaan mislukt.');
           }
         }}
       >
+        <DraftNotice status={draftStatus} />
+        {draft.source !== currentSource && (
+          <p className="warning-line">
+            Het scenario is gewijzigd sinds deze onderbouwing.
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => setDraft((previous) => ({ ...previous, source: currentSource }))}
+            >
+              Onderbouwing bij huidige invoer bevestigen
+            </button>
+          </p>
+        )}
         <div className="form-grid">
           <Field label="Beoordelaar van dit moment">
             <input required value={assessor} onChange={(e) => setAssessor(e.target.value)} />

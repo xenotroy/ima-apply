@@ -109,6 +109,16 @@ De bruikbare volgende bronvormen zijn een cursusback-up, vragenbankexport of ger
 
 ## Verificatie en resterende dekking
 
+### PI-overdracht van 11 oktober 2026
+
+De nieuwe migratieoverdracht en het bronnenmanifest zijn gelezen vanuit de twee onderscheiden Drive-locaties. Alle 250 manifestroutes zijn mechanisch gecontroleerd en acht bewaarde bronbestanden opnieuw gehasht. Twintig gelijknamige A/B-routes verschillen in bytes; deze zijn gemarkeerd en niet samengevoegd. Een route-/hashcontrole is geen inhoudelijke lezing van alle 250 bestanden.
+
+De volledige statische gegevens van de OE-14-bronmomentopname leveren 1.300 unieke vraagvoorkomens: 46 processen en 189 aspecten. Twee zichtbare codes komen meermaals voor; occurrencekeys blijven afzonderlijk. Twaalf eigen vragen zijn apart gelabeld. De vragen zijn machineleesbaar gecontroleerd; niet iedere optie is opnieuw tegen alle 75 PDF-pagina's vergeleken. Alle bronvraagkoppelingen blijven kandidaatmapping. Achtentwintig regels blijven zonder arbeidsrisico-koppeling wegens milieu/informatiebeveiliging of onzekere scope.
+
+De private risicotabel gebruikt algemene vakkennis en expliciet toegeschreven passages uit overdracht, bronanalyses, medicatienotitie en bestaande selectievoorstellen. De oorspronkelijke beleids-PDF's zijn daarbij niet allemaal integraal opnieuw gelezen. Documentclaim, daadwerkelijke lokale bevinding en verificatiehypothese worden niet samengevoegd. De bibliotheek bevat geen verzonnen lokale scores of bewezen maatregelwerking.
+
+De publieke [PI-router](pi-risk-library-router.md) bevat eigen algemene regels en verwijzingen naar officiële SZW-uitleg. Juridische zekerheid blijft matig: geconsolideerde wetstekst en bijzondere uitzonderingen zijn niet integraal bevestigd. Private bronvragen, klantclaims, route-inventaris en concrete broncodes blijven buiten de publieke build.
+
 De tien importer-tests controleren normalisatie, documentgrenzen, CSV, legacy JSON, privacy en uitvoerlocatie. De echte private vragenlijsten zijn daarnaast op aantallen en veldbehoud gecontroleerd: 260 vragen, 177/83 routes, tien bronrecords met documentgegevens en nul ruwe dossierrecords. De drie lesconcepten leveren drie tekstrecords en nul vragen. Beide private outputbestanden vallen onder `.gitignore`; de bronbestanden en de vault zijn niet gewijzigd.
 
 De inhoudelijke herbouw kan nu de volledige private themavragenset gebruiken. Volledige integratie van oorspronkelijke HVK/MVK-lesinhoud en actuele Moodle/LMS-data blijft open door concrete toegangsgrenzen. Bronnen met alleen metadata zijn daarom zichtbaar als bronroute en krijgen geen status van inhoudelijk verwerkt materiaal.

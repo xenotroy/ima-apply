@@ -116,6 +116,10 @@ De browsergrens is **2.000.000 UTF-8 bytes** per werkruimte. De CLI kapt geen br
 
 ## Wat de tests bewijzen
 
+In versie 2.3 worden gescheiden vraaginhoud, echte beheerde vraag-/pakketversies, oorspronkelijke opvolgers en aantoonbare volledige pakketsnapshots getypeerd geprojecteerd. Ontbrekende of niet bevestigde versie-/statusmetadata blijven onbekend en raw; `legacy-import/1.0.0` is uitsluitend een migratieprojectielabel. Respondenten worden alleen uit echte bronvelden overgenomen. Waarneming-/bevindingrelaties worden in twee passen binnen dezelfde dossierscope gekoppeld, inclusief inverse responses. Dubbele, ambigue of onbekende doelen worden niet gerepareerd met fictieve records.
+
+De SQLite-bibliotheekprojectie bewaart gevaar, risico, factor, gedeelde maatregelen, koppelingen, factorvragen, oorspronkelijke scoped ordinale reviews en getypeerde kaartposities. Bronidentiteiten verwijzen naar dezelfde 248 raw records. Reviews zonder historische auteur blijven met oorspronkelijke teksttijd en waarschuwing herkenbaar; zij worden geen nieuwe deskundigenbeoordeling. Oude ratings leveren geen fysische score, percentage of PFD.
+
 ```sh
 node --test scripts/migrate-workspace.test.mjs
 ```

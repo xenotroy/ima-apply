@@ -2,7 +2,7 @@
 
 Een browserwerkruimte voor risico-inventarisatie, onderbouwde beheersmaatregelen en zichtbaar restrisico.
 
-Deze implementatiestand betreft appversie **2.2.0**. Het browserdataschema blijft additief `schemaVersion: 1`; de rekenmethode heeft haar eigen versie `ima-risk/2.0.0`.
+Deze implementatiestand betreft appversie **2.3.0**. Het browserdataschema blijft additief `schemaVersion: 1`; de rekenmethode heeft haar eigen versie `ima-risk/2.0.0`.
 
 **[Open IMA Apply](https://xenotroy.github.io/ima-apply/)** · [Handleiding](docs/rebuild/getting-started.md) · [Risicomethodiek](docs/rebuild/risk-methodology.md) · [Bronregister](docs/rebuild/source-register.md)
 
@@ -20,6 +20,10 @@ Deze implementatiestand betreft appversie **2.2.0**. Het browserdataschema blijf
 - Private vragen/content uit Markdown, legacy JSON en Moodle/LMS-CSV.
 - Organisaties, locaties, afdelingen en afzonderlijke RI&E-dossiers met bevroren vragen en gecontroleerde bronhashes. Een echte afdeling kan rechtstreeks bij een organisatie horen wanneer de locatie onbekend is.
 - Bewijsregister, waarnemingen, bevindingen, eigen onderwerpen en regelgevingssignalen.
+- Beheerde vraagdefinities met afzonderlijke criteria/bewijsvelden, status, opvolgerversies en volledige bevroren contentpakketten.
+- Respondenten en meerdere response-/waarneming-/bevindingrelaties met dossierscope en gecontroleerde inverse links.
+- Geversioneerde herbruikbare risicobibliotheek met gedeelde maatregelen, lokale reviews en kaartposities; ordinale ratings blijven oorspronkelijke screening.
+- PI-router met zelfstandige ingangen profiel, risico's, verplichtingen en signalen, onderscheiden onderzoekslagen en herleidbare bronvraagsets.
 - Project-/afdelingsmoduleplannen met volgorde, scopenotities en bevroren dossiervragen, ook als ze nog onbeantwoord zijn.
 - Bewerkbare projectcontext met dertien inhoudelijke velden, volledige rondgangverslagen met modules en expliciete waarnemingslinks; versieerbaar lokaal register voor basisrisicofactoren.
 - Opgeslagen 5×Waarom-/BowTie-onderzoeken en incidentfrequenties met passende maanduren en expliciete datadekking.
@@ -28,6 +32,7 @@ Deze implementatiestand betreft appversie **2.2.0**. Het browserdataschema blijf
 - Incidenten/signalen gekoppeld aan scenario’s en acties.
 - Rapportage als Markdown, CSV en print/PDF; volledige JSON-overdracht.
 - Lokale automatische opslag en versiegecontroleerde sync via een private GitHub-repository, tot 2.000.000 UTF-8 bytes met onveranderlijke blobversies.
+- Interviewherstel vóór de gewone opslag, eigen concepten per tabblad, expliciete versiekeuze en Markdown-export van onafgemaakte invoer. [Opnieuw openen en exporteren](docs/rebuild/interview-saving.md).
 
 De eerste werkruimte bevat fictieve demonstratiegegevens. Begin een eigen werkruimte voor projectwerk. Een Kinney-score is een relatieve index, geen ongevalskans. AHS-gewichten en haalbaarheidsfactoren wijzigen de prioriteit, niet de scorefactorreductie.
 
@@ -40,6 +45,10 @@ Open **Werkruimte & synchronisatie**. Voor de persoonlijke inrichting is de priv
 Bekijk op een nieuwe pc de cloudversie voordat je verder werkt. Uploads met een verouderde versie worden geblokkeerd; er is geen stil overschrijven. [Volledige synchronisatiewerkwijze](docs/rebuild/multi-device.md).
 
 De aparte private bronwerkruimte is beschikbaar als `workspaces/bronwerkruimte.json`: 260 oorspronkelijke themavragen en drie lesconcepten. Kies dat bestand in de synchronisatiepagina om de echte private intake te openen. De publieke app blijft 78 eigen checkvragen leveren. De afzonderlijke aanvullende bronreview staat in `workspaces/bronwerkruimte-reviewed-2026-10-11.json`: dezelfde vragen en lesconcepten, plus drie afgebakende bronextracten met geverifieerde pagina- en bronhashes.
+
+De afzonderlijke private PI-bronwerkruimte `workspaces/pi-bronwerkruimte-2026-10-11.json` bewaart 1.300 bronvraagvoorkomens en 12 eigen aanvullende vragen. Exacte kandidaatmapping, codes, bronmomentopname en hiaten blijven zichtbaar; lokale omstandigheden en risicoscores worden niet ingevuld. De [PI-bibliotheek en router](docs/rebuild/pi-risk-library-router.md) beschrijven de twee lagen en de beslisregels.
+
+Nieuwe aanvullende migraties staan create-only in `workspaces/legacy-riebuilder-parity-2.3-strict.json` en `workspaces/legacy-riebuilder-parity-2.3-utc-review.json`. Zij bewaren vijf plannen/dossiers, 110 vragen, alle 248 raw records, de getypeerde bibliotheek, twee reviews en 38 layouts. De standaard heeft nul typed antwoorden; de expliciete UTC-review dertien antwoorden met onbekende historische actor. Oudere exports blijven behouden. Zie [release 2.3](docs/rebuild/release-2.3.0.md).
 
 ## Ontwikkelen en controleren
 

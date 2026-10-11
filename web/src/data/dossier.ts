@@ -2,6 +2,7 @@ import type { Question } from '../content/catalog';
 import type { WorkspaceRecord } from './model';
 import type { BasisRiskFactorSnapshot } from './brf';
 import type { ModulePlan } from './module-plan';
+import type { QuestionPackageSnapshot } from './question-definition';
 
 export interface Organisation {
   id: string;
@@ -63,6 +64,7 @@ export interface Dossier {
   createdAt: string;
   questions: FrozenQuestion[];
   sourceSnapshots?: WorkspaceRecord[];
+  contentPackageSnapshots?: QuestionPackageSnapshot[];
   modulePlanSnapshot?: ModulePlan;
   modulePlanSnapshotSha256?: string;
   reviewedBy?: string;
@@ -93,6 +95,7 @@ export interface Observation {
   observer: string;
   facts: string;
   evidenceIds: string[];
+  responseIds?: string[];
 }
 export interface Finding {
   id: string;
@@ -106,6 +109,7 @@ export interface Finding {
   evidenceIds: string[];
   topicIds: string[];
   legalIds: string[];
+  responseIds?: string[];
   decisionBy: string;
   decisionNote: string;
 }

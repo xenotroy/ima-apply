@@ -1,41 +1,32 @@
-# Concrete resterende functiepariteit
+# Concrete functiepariteit en resterende grenzen
 
-Audit op 11 oktober 2026, na de uitbreiding voor moduleplannen en maatregeljustificatie. Dit document benoemt werkende oorspronkelijke functies die nog geen volledige browsertegenhanger hebben. Het breidt de opdracht niet uit met alleen voorbereide interfaces.
+Audit bijgewerkt op 11 oktober 2026 voor versie 2.3. De in versie 2.2 ontbrekende beheerde vraagdefinities, response-relaties en herbruikbare risicobibliotheek hebben nu browsertegenhangers. Een nieuwe browserworkflow en een reconstructie van niet aangetroffen historische gegevens zijn verschillende prestaties.
 
-## Beheerde vraagdefinities en responses
+## In versie 2.3 gerealiseerd
 
-De oorspronkelijke `RieQuestionDefinitionRecord` in `src/RieBuilder.Ima/Models/RieModels.cs` bewaart afzonderlijke vraagtekst, toelichting, acceptatiecriteria en verwacht bewijs; vraagstatus draft/active/retired; semantische vraag- en contentpakketversie; voorganger; meerdere onderwerp-/wetgevingsrelaties en tags. `AddRieQuestionDefinitionCore` in `ImaWorkspace.Rie.cs` verlangt bij een opvolger hetzelfde pakket en hogere vraag- én pakketversie. Een pakketversie waaraan een assessment refereert mag geen nieuwe definities krijgen.
+| Oorspronkelijke betekenis                                                                                                                                                    | Browsertegenhanger en behoud                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vraagdefinities met afzonderlijke tekst, toelichting, acceptatiecriteria en verwacht bewijs; status, semantische versie, contentpakket, voorganger, onderwerp/wetgeving/tags | Beheerde vraagdefinities; hogere opvolgerversies binnen hetzelfde pakket; rijke velden behouden. Nieuwe dossiers selecteren actieve definities en bevriezen alle definities van de gekozen pakketversie, inclusief niet geselecteerde concept-/retired definities. Mixed pakketversies en late toevoegingen aan een bevroren pakket worden geweigerd. |
+| Responses met respondent en meerdere waarneming-/bewijs-/bevindingrelaties; inverse relaties                                                                                 | Nieuwe invoer verlangt een bewuste actor. Dezelfde response-ID blijft bij wijzigingen behouden. Waarneming- en bevindinglinks worden atomair in beide richtingen gecontroleerd binnen dezelfde dossierscope. Bewijslinks krijgen bestaans- en scopecontrole. Historisch ontbrekende auteurs blijven onbekend.                                         |
+| Herbruikbare gevaar → risico → factor-bibliotheek, gedeelde maatregelen, factorgebonden vragen, lokale ratings en kaartposities                                              | Geversioneerde, gehashte bibliotheekgraph met gedeelde factor–maatregelkoppelingen. Afzonderlijke scopes bewaren eigen reviews en layouts. Bewuste invoer maakt een nieuw scenario met menselijke W/B/E-keuze; bibliotheekratings worden niet in Kinney-reductie omgezet.                                                                             |
+| Rijke oorspronkelijke vraag-/bibliotheekvelden in migratie                                                                                                                   | Markdown en SQLite gebruiken de echte browservalidator. Actuele exports bewaren alle 248 oorspronkelijke raw records en projecteren aantoonbare rijke velden, graph, reviews en layouts. Ambigue of ontbrekende relaties blijven raw met waarschuwing.                                                                                                |
 
-De oorspronkelijke assessmentworkflow selecteert actieve definities, gebruikt één versie per pakket en bevriest de hash van alle definities in die pakketversie, naast de gekozen vragen. De browser bevriest nu geselecteerde vragen en moduleplannen. Dat is waardevol inhoudsbehoud, maar geen volledig beheerde pakketversie. De huidige Markdown-projectie voegt toelichting en criteria samen. De rijke SQLite-vraagvelden gevaar, risico, risicofactor, technische/organisatorische maatregelen, basisoorzaken en cultuur blijven vooral raw.
+Zie [vraagdefinities](question-definitions.md), [response-relaties](response-relations.md), [risicobibliotheek](risk-library.md) en [migratie](migration.md) voor de precieze grenzen.
 
-Responses bewaren oorspronkelijk de respondent en meerdere waarneming-/bewijs-/bevindingrelaties. Waarnemingen en bevindingen kunnen terugverwijzen naar meerdere responses. De browser heeft dossier-ID, vraaghash, snapshot en bewijslinks; auteur en beide overige response-relaties ontbreken nog. Versie 2.2 controleert wel dat een ingevuld `contentVersion` overeenkomt met de bevroren vraagversie. Een ontbrekend historisch label blijft onbekend.
+De oorspronkelijke bibliotheekkopie bevat 1 gevaar, 3 risico's, 5 factoren, 6 gedeelde maatregelen, 10 koppelingen, 5 beoordelingsvragen, 2 scoped factorratings en 38 layouts. Oorspronkelijke 1–3-ratings blijven ordinale screening; `IsInPlace` bewijst geen effectiviteit, `ReductieScore` is geen percentage of PFD en `Technisch` bepaalt niet automatisch het AHS-niveau.
 
-Vervolgacceptatie:
+## Historische gegevens die niet kunnen worden ingevuld
 
-- Eén gestructureerde definitie met afzonderlijke inhoudsvelden, broncontext, versie/status en opvolger; geen los bewerkbare kopieën van dezelfde vraag.
-- Nieuwe dossiers gebruiken actieve definities. Mixed pakketversies en late wijzigingen van een bevroren pakket worden geweigerd; eerdere dossiers behouden hun inhoud.
-- Vraagversie 1 blijft volledig leesbaar en reproduceerbaar na invoering van versie 2, inclusief rijke velden en pakketfreeze.
-- Nieuwe responses leggen een auteur vast. Historisch ontbrekende auteurs blijven onbekend. Meerdere response-relaties blijven intact na reload/export; relaties naar andere dossiers worden geweigerd.
-- Migratie koppelt alleen aantoonbare bestaande doelen, in twee passen; ontbrekende of ambigue relaties blijven raw met waarschuwing.
+- Een huidige vraagdefinitie of exportfreeze bewijst niet welke vraagversie bij een ouder antwoord is gebruikt. Alleen aantoonbaar vastgelegde historische versies worden overgenomen. `legacy-import/1.0.0` bij onbekende SQL-vraagversies benoemt de migratieprojectie, niet een bewezen oorspronkelijke versie.
+- De geselecteerde SQLite-antwoorden hebben geen betrouwbare respondentkolom. De dertien UTC-reviewresponses blijven daarom expliciet zonder historische auteur, met waarschuwingen. Een beoordelaarsnaam wordt niet als respondent ingevuld.
+- Tijdzonevrije oorspronkelijke datums blijven raw in de standaardexport. De afzonderlijke UTC-review is een expliciete interpretatie; zekerheid over historische herkomst blijft matig.
+- De oorspronkelijke `AddChildNode`-functie was voorbereid zonder opslag. Volledige handmatige graph-CRUD is geen bewezen werkende oorspronkelijke workflow. Het beheer van geversioneerde imports en bestaande nodes is geïmplementeerd.
+- Een volledige oorspronkelijke transitiehistorie voor vraagstatus is niet aangetroffen. Nieuwe statuskeuzes reconstrueren die geschiedenis niet.
 
-Een volledige oorspronkelijke statusovergangs-API of desktopvraagbeheerinterface is niet aangetroffen. Een uitgebreide transitiehistorie is dus een mogelijke verbetering, geen bewezen bestaande workflow die ontbreekt.
+## Bron- en praktijkwerk dat overblijft
 
-## Herbruikbare risicobibliotheek
+De PI-bibliotheek en router ondersteunen afbakening, documentonderzoek, rondgangen en interviews. De 1.300-vragenbank is een bewaarde bronmomentopname, geen bewijs van de complete actuele Porterbank of van lokale maatregelenwerking. Bronvraagkoppelingen zijn kandidaatmapping totdat een deskundige procesblokdekking en lokale toepasselijkheid bevestigt. De browser is geen uitgevoerde wijziging in RI&E Porter.
 
-`src/RieBuilder.Data/Services/RieRepository.RiskMap.cs` implementeert bibliotheekimport/upsert, gevaar → risico → risicofactor, factorgebonden beoordelingsvragen, gedeelde maatregelen via many-to-many koppelingen, lokale scopebeoordelingen en kaartposities. Reductie- en kostenratings behoren bij de factor–maatregelkoppeling. `RiskMapViewModel.AddChildNode` is expliciet voorbereid zonder opslag; volledige handmatige node-CRUD was geen werkende oorspronkelijke functie.
+De nog ongelezen oorspronkelijke HVK/MVK-materialen, inhoudelijke AI-45/AI-61-bronnen en werkelijke actuele Moodle/LMS-data blijven brontaken. Geselecteerde extracten en drie lesconcepten bewijzen geen volledige bronintegratie. API- en Chrome-overdracht bewijzen geen inrichting van ieder persoonlijk apparaat of inhoudelijk bekrachtigde klantoverdracht.
 
-De gecontroleerde private kopie bevat 1 gevaar, 3 risico’s, 5 factoren, 6 maatregelen, 10 koppelingen, 5 beoordelingsvragen, 2 scoped factorratings, 0 scoped maatregelratings en 38 layouts. De migratie bewaart deze rijen raw en projecteert factorratings naar open bevindingen. Concrete Kinney-scenario’s vervangen de herbruikbare graph niet.
-
-Vervolgacceptatie:
-
-- Eén geversioneerde bibliotheekgraph met bronhash, codes, beschrijvingen, volgorde, moduleherkomst, beoordelingsvragen/toelichting en expliciete gedeelde maatregelkoppelingen.
-- Afzonderlijke dossiergebonden screenings/reviews met exacte bibliotheek-/nodeverwijzing en oorspronkelijke methodebetekenis.
-- Twee factoren kunnen dezelfde maatregel gebruiken; twee afdelingen kunnen verschillende lokale beoordelingen bewaren. Wijzigen van één scope verandert de andere niet.
-- Graph-/boomweergave, module-/scopefilter, vraagtoelichting en bewuste doorgang naar een nieuw Kinney-/LOPA-scenario. Behouden layouts verwijzen naar getypeerde nodes.
-- Latere bibliotheekversies herschrijven eerdere lokale beoordelingen niet; volledige JSON-overdracht behoudt graph en relaties.
-
-Oude 1–3-ratings blijven lokale ordinale ratings. `Technisch` wordt niet automatisch AHS-bronaanpak; `IsInPlace` wordt niet bewijs van effectiviteit; `ReductieScore` wordt geen percentage of PFD. Oude type-, kosten- en afnemende-opbrengstgewichten waren lokale rangschikking, geen fysische effectmodellering.
-
-## Externe bron- en praktijkgrenzen
-
-De nog ongelezen oorspronkelijke HVK/MVK-materialen, AI-45/AI-61 en werkelijke Moodle/LMS-data blijven afzonderlijke brontaken. Geselecteerde bronextracten en drie lesconcepten zijn geen volledige bronintegratie. API- en browseroverdracht bewijzen geen inrichting van ieder persoonlijk apparaat of inhoudelijk bekrachtigde klantoverdracht. Zie [bronregister](source-register.md), [toegangsvervolg](source-access-followup.md) en [goal](goal.md).
+De [volledige herbouwgoal](goal.md) blijft actief. Zie het [bronregister](source-register.md), [brondekking](source-coverage.md) en [toegangsvervolg](source-access-followup.md).
