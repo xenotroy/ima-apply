@@ -16,6 +16,13 @@ import {
 } from './module-plan';
 import type { Scenario } from '../domain/types';
 import { evaluateRisk } from '../domain/risk';
+import {
+  assertRiskEvidenceReview,
+  assertRiskTargetReference,
+  assertFrozenRiskEvidenceBasis,
+} from './risk-evidence';
+import { assertEvidenceFileFields } from './evidence-files';
+import { assertActionContext, assertActionContextRelations } from '../domain/action-context';
 import type { Question } from '../content/catalog';
 import { questionHash, evidenceHash } from './frozen';
 import { departmentOrganisationId, type Evidence } from './dossier';
@@ -196,6 +203,48 @@ function statusAndEvidence(item: Record<string, unknown>, path: string): void {
     text(item.dependencyGroup, `${path}.dependencyGroup`, false, 160);
 }
 
+function riskReview(value: unknown, path: string): void {
+  const item = object(value, path, [
+    'schema',
+    'reviewedBy',
+    'reviewedAt',
+    'rationale',
+    'subjectBasisSha256',
+    'bindings',
+  ]);
+  list(
+    item.bindings,
+    `${path}.bindings`,
+    (value, bindingPath) => {
+      const binding = object(value, bindingPath, [
+        'evidenceId',
+        'metadataSha256',
+        'versionSha256',
+        'snapshot',
+      ]);
+      evidence(binding.snapshot, `${bindingPath}.snapshot`);
+    },
+    false,
+  );
+  try {
+    assertRiskEvidenceReview(item);
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'ongeldige werkingbevestiging.');
+  }
+}
+function riskTarget(value: unknown, path: string): void {
+  const item = object(value, path, ['scenarioId', 'kind', 'targetId', 'targetSha256', 'snapshot']);
+  const snapshot = object(item.snapshot, `${path}.snapshot`, ['context', 'target']);
+  if (item.kind === 'control') control(snapshot.target, `${path}.snapshot.target`);
+  else if (item.kind === 'lopa-layer') lopaLayer(snapshot.target, `${path}.snapshot.target`);
+  else if (item.kind === 'lopa-modifier') lopaModifier(snapshot.target, `${path}.snapshot.target`);
+  try {
+    assertRiskTargetReference(item);
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'ongeldige actiemaatregelverwijzing.');
+  }
+}
+
 function control(value: unknown, path: string): void {
   const item = object(value, path, [
     'id',
@@ -204,6 +253,7 @@ function control(value: unknown, path: string): void {
     'status',
     'evidence',
     'evidenceNote',
+    'evidenceReview',
     'rationale',
     'probabilityReduction',
     'exposureReduction',
@@ -226,6 +276,7 @@ function control(value: unknown, path: string): void {
   choice(item.feasibility, ['easy', 'moderate', 'hard'], `${path}.feasibility`);
   number(item.effort, `${path}.effort`, 0, Number.MAX_VALUE, true);
   bool(item.legalRequired, `${path}.legalRequired`);
+  if (item.evidenceReview !== undefined) riskReview(item.evidenceReview, `${path}.evidenceReview`);
 }
 
 function lopaLayer(value: unknown, path: string): void {
@@ -235,6 +286,7 @@ function lopaLayer(value: unknown, path: string): void {
     'status',
     'evidence',
     'evidenceNote',
+    'evidenceReview',
     'pfd',
     'specific',
     'independent',
@@ -257,6 +309,7 @@ function lopaLayer(value: unknown, path: string): void {
   ])
     bool(item[field], `${path}.${field}`);
   text(item.independenceNote, `${path}.independenceNote`);
+  if (item.evidenceReview !== undefined) riskReview(item.evidenceReview, `${path}.evidenceReview`);
 }
 
 function lopaModifier(value: unknown, path: string): void {
@@ -267,6 +320,7 @@ function lopaModifier(value: unknown, path: string): void {
     'probability',
     'evidence',
     'evidenceNote',
+    'evidenceReview',
     'independent',
     'rationale',
     'dependencyGroup',
@@ -281,6 +335,7 @@ function lopaModifier(value: unknown, path: string): void {
   text(item.rationale, `${path}.rationale`);
   if (item.dependencyGroup !== undefined)
     text(item.dependencyGroup, `${path}.dependencyGroup`, false, 160);
+  if (item.evidenceReview !== undefined) riskReview(item.evidenceReview, `${path}.evidenceReview`);
 }
 
 function lopa(value: unknown, path: string): void {
@@ -470,7 +525,24 @@ function action(value: unknown, path: string, snapshot = false): void {
     'findingId',
     'evidenceIds',
     'lifecycle',
+    'ahsLevel',
+    'higherLevelsConsidered',
+    'deviationRationale',
+    'priority',
+    'sourceRefs',
+    'topicIds',
+    'intendedResult',
+    'implementation',
+    'verificationMethod',
+    'riskTargets',
   ]);
+  try {
+    assertActionContext(item);
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'ongeldige actiecontext.');
+  }
+  if (item.riskTargets !== undefined)
+    list(item.riskTargets, `${path}.riskTargets`, riskTarget, false);
   id(item.id, `${path}.id`);
   text(item.title, `${path}.title`, true, 1_000);
   if (item.scenarioId !== undefined) text(item.scenarioId, `${path}.scenarioId`, false, 160);
@@ -721,7 +793,16 @@ function evidence(value: unknown, path: string): void {
     'verifiedAt',
     'verificationNote',
     'verifiedContentSha256',
+    'capturedBy',
+    'file',
+    'fileCheck',
+    'verifiedFileBindingSha256',
   ]);
+  try {
+    assertEvidenceFileFields(item as unknown as Evidence);
+  } catch (error) {
+    fail(path, error instanceof Error ? error.message : 'ongeldige bestandsregistratie.');
+  }
   text(item.title, `${path}.title`, true);
   optionalId(item, 'dossierId', path);
   choice(
@@ -1149,13 +1230,18 @@ function relations(workspace: WorkspaceState): void {
       fail('Bevinding', 'oplossen/afsluiten vraagt geverifieerd bewijs.');
   });
   workspace.actions.forEach((a) => {
+    try {
+      assertActionContextRelations(a, workspace);
+    } catch (error) {
+      fail('Actie', error instanceof Error ? error.message : 'ongeldige actiecontextrelaties.');
+    }
     ref(a.dossierId, dossierIds, 'Actie.dossier');
     scenarioInDossier(a.scenarioId, a.dossierId, 'Actie.scenario');
     ref(a.findingId, findings, 'Actie.bevinding');
     evidenceInDossier(a.evidenceIds, a.dossierId, 'Actie.bewijs');
     if (a.lifecycle) {
       try {
-        assertActionHistory(a, workspace.evidence ?? []);
+        assertActionHistory(a);
       } catch (error) {
         fail('Actie', error instanceof Error ? error.message : 'ongeldige actiehistorie.');
       }
@@ -1284,6 +1370,7 @@ function riskAssessment(value: unknown, path: string): void {
     'input',
     'result',
     'sha256',
+    'evidenceBasis',
   ]);
   id(item.scenarioId, `${path}.scenarioId`);
   timestamp(item.recordedAt, `${path}.recordedAt`);
@@ -1299,6 +1386,8 @@ function riskAssessment(value: unknown, path: string): void {
     'targetCredited',
     'lopaFrequency',
     'lopaComparison',
+    'lopaCreditedLayers',
+    'lopaCreditedModifiers',
   ]);
   estimate(result.current, `${path}.result.current`, Number.MAX_VALUE);
   estimate(result.target, `${path}.result.target`, Number.MAX_VALUE);
@@ -1312,6 +1401,22 @@ function riskAssessment(value: unknown, path: string): void {
       ['below', 'above', 'uncertain', 'unconfirmed'],
       `${path}.result.lopaComparison`,
     );
+  for (const key of ['lopaCreditedLayers', 'lopaCreditedModifiers'])
+    if (result[key] !== undefined) strings(result[key], `${path}.result.${key}`);
+  if (item.evidenceBasis !== undefined) {
+    const basis = object(item.evidenceBasis, `${path}.evidenceBasis`, [
+      'schema',
+      'currentRecords',
+      'missingIds',
+      'fileChecks',
+    ]);
+    list(basis.currentRecords, `${path}.evidenceBasis.currentRecords`, evidence);
+    try {
+      assertFrozenRiskEvidenceBasis(basis, item.input as Scenario);
+    } catch (error) {
+      fail(path, error instanceof Error ? error.message : 'ongeldige historische bewijsbasis.');
+    }
+  }
   try {
     assertRiskAssessment(item as unknown as RiskAssessment);
   } catch (error) {

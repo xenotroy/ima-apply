@@ -2,7 +2,7 @@
 
 Status: **actief**. Vastgelegd op 7 oktober 2026 op verzoek van de gebruiker: “maak hier een goal van dus”. Dit document concretiseert de oorspronkelijke herbouwopdracht; het verkleint die opdracht niet tot de reeds gepubliceerde browserapp.
 
-Voortgang bijgewerkt op 11 oktober 2026 voor appversie `2.3.1`. De tabel hieronder blijft de oorspronkelijke nulmeting; de actuele gerealiseerde functies en voorlopige overdrachtsgrenzen staan onder **Concrete voortgang na vastlegging**. Appversie, browserdataschema (`schemaVersion: 1`) en rekenmethode (`ima-risk/2.0.0`) zijn afzonderlijke versies.
+Voortgang bijgewerkt op 11 oktober 2026 voor appversie `2.4.0`. De tabel hieronder blijft de oorspronkelijke nulmeting; de actuele gerealiseerde functies en voorlopige overdrachtsgrenzen staan onder **Concrete voortgang na vastlegging**. Appversie, browserdataschema (`schemaVersion: 1`) en nieuwe bewijsbewuste rekenmethode (`ima-risk/2.1.0`, naast behouden oude beoordelingen) zijn afzonderlijke versies.
 
 ## Doel
 
@@ -115,3 +115,13 @@ Vóór afronding controleert de eindcontrole afzonderlijk: inhoudelijk gelezen o
 - Huidige bron- en implementatiegrenzen: `source-register.md`, `architecture.md`, `risk-methodology.md` en `web/src/data/model.ts`.
 
 Deze inspectie bevestigt voortgang en een publicatiebasis. Zij bewijst niet dat alle eindcriteria zijn behaald. Zekerheid over deze statusvaststelling: **hoog**.
+
+### Bewijsroute en actiecontext — versie 2.4
+
+Nieuwe actuele berekeningen gebruiken `ima-risk/2.1.0`: expliciete bewijs-ID’s en versies, menselijke werkingsreview, scenario-/factorbasis en actuele bestandscontrole bepalen de toegekende werking. Oude `2.0.0`-beoordelingen blijven met hun eigen hashes en formule behouden. Nieuwe beoordelingen bevriezen uitsluitend de werkelijk gebruikte bewijsbasis; actuele intrekking verandert de historische uitkomst niet.
+
+Bewijsbestanden hebben een afzonderlijke bytehash, MIME-herkomst, bekende oorspronkelijke vastlegger en private overdrachtsroute. Een herstelde positieve controle maakt een nieuwe browsersessie niet automatisch zeker van de bytes. Operationele hercontrole vernieuwt de menselijke beoordeling niet; een negatieve controle is opslaanbaar als actuele waarneming. Tussentijds getypte interview-/verificatietekst blijft bewaard tijdens een lopende bijlageoverdracht.
+
+Acties gebruiken dezelfde expliciete invoer vanaf een incident, bevinding of zelfstandig voorstel. Doel, eigenaar, AHS/hoger overwogen niveaus/motivering, prioriteit, werkelijke bron-/onderwerpverwijzingen, uitvoering en verificatie blijven in de revisie en het herstelconcept. Bewust geselecteerde risicodoelen dragen hun echte ID en versie. De aanvullende migrator behoudt aantoonbare velden en raw onbekende betekenis zonder oorspronkelijke beoordelingen te verzinnen.
+
+Dit sluit de nieuwe technische ketengaten E01/E02/E04 voor hun beproefde browsergevallen. E05/E06/E07, werkelijke geselecteerde bestand-/archiefmigratie en een inhoudelijk beoordeelde productieoverdracht blijven open. De [release 2.4](release-2.4.0.md) en [audit](completion-audit-2026-10-11.md) houden de bewijsgrens expliciet. De volledige goal blijft **actief**.

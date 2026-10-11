@@ -10,6 +10,14 @@ import type {
   ActionStage,
 } from '../data/action';
 import { evidenceHash } from '../data/frozen';
+import type { Scenario } from './types';
+import { assertActionContext, type EditableActionContext } from './action-context';
+import {
+  assertRiskEvidenceSnapshot,
+  evidenceCurrentStatus,
+  riskTargetCurrentStatus,
+} from '../data/risk-evidence';
+import type { EvidenceFileIntegrityContext } from '../data/evidence-file-types';
 
 export const MAX_ACTION_REVISIONS = 250;
 export const actionStageLabels: Record<ActionDisplayStage, string> = {
@@ -142,7 +150,78 @@ function instant(value: string, label: string): number {
 function same(a: unknown, b: unknown): boolean {
   return canonical(a) === canonical(b);
 }
+const assessedContentKeys = [
+  'title',
+  'notes',
+  'evidenceIds',
+  'intendedResult',
+  'implementation',
+  'verificationMethod',
+  'ahsLevel',
+  'higherLevelsConsidered',
+  'deviationRationale',
+  'sourceRefs',
+  'riskTargets',
+] as const;
+function assessedContentChanged(before: ActionSnapshot, after: ActionSnapshot): boolean {
+  return assessedContentKeys.some((key) => !same(before[key], after[key]));
+}
+export function actionVerificationMethod(
+  action: Pick<WorkspaceAction, 'notes' | 'verificationMethod'>,
+): string {
+  return action.verificationMethod !== undefined ? action.verificationMethod : action.notes;
+}
+export interface ActionCurrentValidity {
+  status: 'not-assessed' | 'current' | 'stale';
+  issues: string[];
+}
+/** Current readiness is deliberately not a historical-chain acceptance condition. */
+export function actionCurrentValidity(
+  action: WorkspaceAction,
+  evidence: readonly Evidence[],
+  scenarios: readonly Scenario[] = [],
+  fileContext?: EvidenceFileIntegrityContext,
+): ActionCurrentValidity {
+  if (!action.lifecycle || !['effective', 'ineffective', 'closed'].includes(action.lifecycle.stage))
+    return { status: 'not-assessed', issues: [] };
+  const issues: string[] = [];
+  for (const snapshot of action.lifecycle.evidenceSnapshots) {
+    const validity = evidenceCurrentStatus(
+      snapshot,
+      evidence,
+      fileContext ? { ...fileContext, dossierId: action.dossierId } : undefined,
+    );
+    if (validity.status !== 'current') issues.push(`${snapshot.title}: ${validity.reason}`);
+  }
+  for (const target of action.riskTargets ?? []) {
+    const validity = riskTargetCurrentStatus(target, scenarios);
+    if (validity !== 'current')
+      issues.push(
+        `Risicodoel ${target.targetId}: ${validity === 'missing' ? 'ontbreekt' : 'versie of context gewijzigd'}.`,
+      );
+    for (const binding of target.snapshot.target.evidenceReview?.bindings ?? []) {
+      const validity = evidenceCurrentStatus(
+        binding.snapshot,
+        evidence,
+        fileContext ? { ...fileContext, dossierId: action.dossierId } : undefined,
+      );
+      if (validity.status !== 'current')
+        issues.push(`Risicodoel ${target.targetId}, ${binding.snapshot.title}: ${validity.reason}`);
+    }
+  }
+  return { status: issues.length ? 'stale' : 'current', issues };
+}
 function assertCycle(snapshot: ActionSnapshot): void {
+  assertActionContext(snapshot);
+  for (const target of snapshot.riskTargets ?? []) {
+    if (
+      target.snapshot.context.dossierId !== snapshot.dossierId ||
+      (snapshot.scenarioId !== undefined && target.scenarioId !== snapshot.scenarioId)
+    )
+      throw new Error(
+        'Actie en vastgelegd risicodoel hebben een andere scenario- of dossierscope.',
+      );
+  }
   const state = snapshot.lifecycle;
   if (!state) return;
   if (compatibilityStatus(state.stage) !== snapshot.status)
@@ -158,7 +237,7 @@ function assertCycle(snapshot: ActionSnapshot): void {
   if (implementation && !state.implementedAt)
     throw new Error('Uitvoering vereist een implementatietijdstip.');
   if (['verification_due', 'effective', 'ineffective', 'closed'].includes(state.stage)) {
-    required(snapshot.notes, 'Controleplan');
+    required(actionVerificationMethod(snapshot), 'Controleplan');
     if (!state.verificationDueAt) throw new Error('Controle vereist een geplande controledatum.');
   }
   if (!['proposed', 'reopened', 'cancelled'].includes(state.stage))
@@ -196,8 +275,9 @@ function assertCycle(snapshot: ActionSnapshot): void {
     )
       throw new Error('Bewijssnapshot past niet bij de bewijskoppelingen.');
     for (const evidence of state.evidenceSnapshots) {
+      assertRiskEvidenceSnapshot(evidence);
       if (
-        evidence.dossierId !== snapshot.dossierId ||
+        (evidence.dossierId !== undefined && evidence.dossierId !== snapshot.dossierId) ||
         evidence.status !== 'verified' ||
         evidence.verifiedContentSha256 !== evidenceHash(evidence)
       )
@@ -226,7 +306,10 @@ export interface ActionChange {
   actor: string;
   reason: string;
   targetStage?: ActionStage;
-  patch?: Partial<Pick<WorkspaceAction, 'title' | 'owner' | 'dueDate' | 'notes' | 'evidenceIds'>>;
+  patch?: Partial<
+    Pick<WorkspaceAction, 'title' | 'owner' | 'dueDate' | 'notes' | 'evidenceIds'> &
+      EditableActionContext
+  >;
   verificationDueAt?: string;
   verifier?: string;
   evaluation?: string;
@@ -237,6 +320,8 @@ export function reviseAction(
   change: ActionChange,
   evidence: Evidence[] = [],
   at = new Date().toISOString(),
+  scenarios: readonly Scenario[] = [],
+  fileContext?: EvidenceFileIntegrityContext,
 ): WorkspaceAction {
   assertActionHistory(current);
   if (actionRevision(current) !== change.expectedRevision)
@@ -265,9 +350,7 @@ export function reviseAction(
   if (
     ['effective', 'ineffective', 'closed'].includes(from) &&
     target !== 'reopened' &&
-    (next.title !== current.title ||
-      next.notes !== current.notes ||
-      !same(next.evidenceIds, current.evidenceIds))
+    assessedContentChanged(actionSnapshot(current), next)
   )
     throw new Error(
       'Heropen de actie voordat je de beoordeelde inhoud, het controleplan of de bewijskoppelingen wijzigt.',
@@ -319,6 +402,18 @@ export function reviseAction(
   }
   next.lifecycle = state;
   assertCycle(next);
+  if (target === 'effective' || target === 'ineffective' || target === 'closed') {
+    const validity = actionCurrentValidity(
+      next as WorkspaceAction,
+      evidence,
+      scenarios,
+      fileContext,
+    );
+    if (validity.status !== 'current')
+      throw new Error(
+        `Actuele bewijs- of risicodoelbasis is gewijzigd of ingetrokken. Heropen en beoordeel opnieuw. ${validity.issues.join(' ')}`,
+      );
+  }
   const before = actionSnapshot(current);
   const event: ActionHistoryEntry = {
     revision: actionRevision(current) + 1,
@@ -336,12 +431,12 @@ export function reviseAction(
     ...next,
     lifecycle: { ...state, revision: event.revision, history: [...history, event] },
   };
-  assertActionHistory(result, evidence);
+  assertActionHistory(result);
   return result;
 }
 
 /** Consistency/integrity of the contained export. This is not an externally signed audit trail. */
-export function assertActionHistory(action: WorkspaceAction, currentEvidence?: Evidence[]): void {
+export function assertActionHistory(action: WorkspaceAction, _currentEvidence?: Evidence[]): void {
   if (!action.lifecycle) return;
   const state = action.lifecycle;
   if (
@@ -396,9 +491,7 @@ export function assertActionHistory(action: WorkspaceAction, currentEvidence?: E
     if (
       ['effective', 'ineffective', 'closed'].includes(from) &&
       to !== 'reopened' &&
-      (event.before.title !== event.after.title ||
-        event.before.notes !== event.after.notes ||
-        !same(event.before.evidenceIds, event.after.evidenceIds))
+      assessedContentChanged(event.before, event.after)
     )
       throw new Error('Beoordeelde actie-inhoud is zonder heropening gewijzigd.');
     if (event.kind === 'transition') {
@@ -453,19 +546,4 @@ export function assertActionHistory(action: WorkspaceAction, currentEvidence?: E
   if (!previous || !same(actionSnapshot(action), previous.after))
     throw new Error('De huidige actie wijkt af van de laatste bewaarde revisie.');
   assertCycle(actionSnapshot(action));
-  if (currentEvidence && ['effective', 'ineffective', 'closed'].includes(state.stage)) {
-    for (const snapshot of state.evidenceSnapshots) {
-      const found = currentEvidence.find((item) => item.id === snapshot.id);
-      if (
-        !found ||
-        found.status !== 'verified' ||
-        found.dossierId !== action.dossierId ||
-        found.verifiedContentSha256 !== evidenceHash(found) ||
-        evidenceHash(found) !== evidenceHash(snapshot)
-      )
-        throw new Error(
-          'Effectbewijs is gewijzigd of ingetrokken. Heropen de actie vóór wijzigen van het actuele bewijs.',
-        );
-    }
-  }
 }

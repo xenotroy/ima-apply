@@ -1,3 +1,4 @@
+import { seedFictiveRiskEvidence, confirmFictiveRiskEvidence } from './helpers/risk-evidence';
 import { expect, test, type Page } from '@playwright/test';
 
 const storageKey = 'ima-apply.workspace.v1';
@@ -39,6 +40,7 @@ async function plan(page: Page, title: string, reduction: number) {
       .getByLabel(`Waarschijnlijkheid W ${bound}`, { exact: true })
       .fill(String(reduction));
   await dialog.getByLabel('Onafhankelijkheid beoordeeld en onderbouwd', { exact: true }).check();
+  await confirmFictiveRiskEvidence(dialog);
   await dialog.getByRole('button', { name: 'Maatregel opslaan', exact: true }).click();
   await saved(page);
 }
@@ -66,6 +68,7 @@ async function downloadedText(page: Page, button: string) {
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await saved(page);
+  await seedFictiveRiskEvidence(page);
 });
 
 test('a workspace without an assessment explains the frozen source instead of inventing a decision', async ({

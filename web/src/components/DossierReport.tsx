@@ -1,4 +1,7 @@
 import type { WorkspaceState } from '../data';
+import { useRiskEvidence } from './RiskEvidenceContext';
+import { actionContextMarkdown } from '../domain/action-context';
+import type { EvidenceFileIntegrityContext } from '../data/evidence-file-types';
 import { actionStage, actionStageLabels } from '../domain/action-lifecycle';
 import { projectContextMarkdown } from '../data/project-context';
 import { basisRiskFactorMarkdown } from '../data/brf';
@@ -11,7 +14,10 @@ import { responseRelationsMarkdown } from '../data/response-relations';
 import { readMigrationReviews } from '../data/migration-review';
 
 /** Readable projection; the JSON export remains the complete portable record. */
-export function dossierMarkdown(workspace: WorkspaceState): string[] {
+export function dossierMarkdown(
+  workspace: WorkspaceState,
+  fileContext?: EvidenceFileIntegrityContext,
+): string[] {
   const lines: string[] = [];
   for (const review of readMigrationReviews(workspace.sources)) {
     lines.push('', '## Migratieconcept: menselijke controle vereist', '');
@@ -120,7 +126,19 @@ export function dossierMarkdown(workspace: WorkspaceState): string[] {
     lines.push(
       `### ${e.title} [${e.id}]`,
       `Soort: ${e.kind} | dossier ${e.dossierId ?? 'Werkruimtebreed'} | ${e.status}`,
-      `Vastgelegd: ${e.recordedAt} | Verwijzing: ${e.reference}`,
+      `Vastgelegd: ${e.recordedAt} | Vastlegger: ${e.capturedBy ?? 'Niet vastgelegd'} | Verwijzing: ${e.reference}`,
+      ...(e.file
+        ? [
+            `Bestand: ${e.file.originalFileName ?? 'Naam onbekend'} | verwachte SHA256 ${e.file.expectedSha256} | lengte ${e.file.expectedByteLength ?? 'onbekend'} | MIME ${e.file.declaredMimeType ?? 'onbekend'} (${e.file.mimeTypeOrigin})`,
+            `Originele verwijzing: ${e.file.originalReference ?? 'Niet vastgelegd'} | bron-ID ${e.file.sourceId ?? 'Niet gekoppeld'} | menselijke bestandsbinding ${e.verifiedFileBindingSha256 ?? 'Niet bevestigd'}`,
+            `Laatste bestandscontrole (historische waarneming, opnieuw controleren per sessie): ${e.fileCheck?.state ?? 'Nog niet gecontroleerd'} | ${e.fileCheck?.checkedAt ?? ''} | ${e.fileCheck?.checkedBy ?? ''} | ${e.fileCheck?.method ?? ''} | bronstatus ${e.fileCheck?.sourceState ?? 'onbekend'}`,
+            ...(e.file.storage
+              ? [
+                  `Private bestandsopslag: ${e.file.storage.owner}/${e.file.storage.repo} | ${e.file.storage.branch} | ${e.file.storage.path} | blob ${e.file.storage.blobSha} | commit ${e.file.storage.commitSha}`,
+                ]
+              : []),
+          ]
+        : []),
       e.description,
       `Verificatie: ${e.verificationNote ?? 'Niet vastgelegd'} | ${e.verifiedBy ?? ''} | ${e.verifiedAt ?? ''}`,
       '',
@@ -150,6 +168,7 @@ export function dossierMarkdown(workspace: WorkspaceState): string[] {
       `Uitvoering: ${a.lifecycle!.implementedAt ?? 'Nog niet vastgelegd'} | geplande controle ${a.lifecycle!.verificationDueAt ?? 'Nog niet vastgelegd'}`,
       `Effectbeoordeling: ${a.lifecycle!.effectiveness} | ${a.lifecycle!.verifier ?? ''} | ${a.lifecycle!.evaluatedAt ?? ''}`,
       `Resultaat: ${a.effectCheck ?? 'Niet actief beoordeeld'}`,
+      ...actionContextMarkdown(a, workspace, fileContext),
     );
     for (const proof of a.lifecycle!.evidenceSnapshots)
       lines.push(
@@ -161,6 +180,10 @@ export function dossierMarkdown(workspace: WorkspaceState): string[] {
         `Redenering: ${event.reason}`,
         `Vóór: ${event.before.title} | eigenaar ${event.before.owner} | termijn ${event.before.dueDate} | plan ${event.before.notes} | resultaat ${event.before.effectCheck ?? 'Niet actief beoordeeld'}`,
         `Na: ${event.after.title} | eigenaar ${event.after.owner} | termijn ${event.after.dueDate} | plan ${event.after.notes} | resultaat ${event.after.effectCheck ?? 'Niet actief beoordeeld'}`,
+        'Historische actiecontext vóór:',
+        ...actionContextMarkdown(event.before),
+        'Historische actiecontext na:',
+        ...actionContextMarkdown(event.after),
         `Revisie-SHA256: ${event.sha256}`,
       );
     }
@@ -209,8 +232,9 @@ export function dossierMarkdown(workspace: WorkspaceState): string[] {
 }
 
 export default function DossierReport({ workspace }: { workspace: WorkspaceState }) {
+  const { context } = useRiskEvidence();
   const lines = [
-    ...dossierMarkdown(workspace),
+    ...dossierMarkdown(workspace, context),
     ...riskAssessmentMarkdown(workspace.riskAssessments ?? []),
     ...justificationMarkdown(workspace.justifications ?? []),
   ];

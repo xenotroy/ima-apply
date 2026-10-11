@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { calculateKinney } from '../domain/risk';
+import { useRiskEvaluator } from './RiskEvidenceContext';
 import type { Estimate, FactorEstimates, Scenario } from '../domain/types';
 import './Hologram.css';
 
@@ -16,8 +16,8 @@ const axes = [
 
 /** Every plotted state comes from the engine, never an extra reduction rule. */
 export default function Hologram({ scenario }: { scenario: Scenario }) {
-  const current = calculateKinney(scenario, 'current');
-  const target = calculateKinney(scenario, 'planned');
+  const evaluate = useRiskEvaluator();
+  const { current, target } = evaluate(scenario);
   const [rotation, setRotation] = useState(0);
   const [mode, setMode] = useState<'current' | 'planned'>('planned');
   const [selectedId, setSelectedId] = useState('');

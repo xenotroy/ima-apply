@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowDownToLine,
@@ -27,14 +27,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import {
-  calculateKinney,
-  evaluateRisk,
-  calculateLopa,
-  efficacyEstimate,
-  AHS_LABELS,
-  KINNEY_SCALES,
-} from './domain/risk';
+import { calculateLopa, efficacyEstimate, AHS_LABELS, KINNEY_SCALES } from './domain/risk';
 import type { Control, Estimate, Scenario, LopaLayer } from './domain/types';
 import { estimateDraft, parseEstimateDraft, type EstimateDraft } from './data/estimate-draft';
 import {
@@ -68,6 +61,19 @@ import type {
 } from './data';
 import { demoWorkspace, newControl, newScenario } from './demo';
 import Hologram from './components/Hologram';
+import {
+  RiskEvidenceProvider,
+  useRiskEvaluator,
+  useRiskEvidence,
+} from './components/RiskEvidenceContext';
+import { evaluateWorkspaceRisk, riskEvidenceMarkdown } from './data/risk-evidence';
+import { EvidenceFileSession } from './data/evidence-files';
+import { GitHubEvidenceClient } from './data/github-evidence';
+import { ActionCreateForm } from './components/ActionCreateForm';
+import { actionContextMarkdown, type ActionCreateSeed } from './domain/action-context';
+import RiskEvidenceReviewFields, {
+  type RiskReviewDraft,
+} from './components/RiskEvidenceReviewFields';
 import MigrationReviewPanel from './components/MigrationReviewPanel';
 import { Badge, Field, Modal } from './components/Primitives';
 import DossierWorkspace, { MultiSelect } from './components/DossierWorkspace';
@@ -76,6 +82,7 @@ import DossierReport, { dossierMarkdown } from './components/DossierReport';
 import LearningWorkspace from './components/LearningWorkspace';
 import { ActionLifecyclePanel } from './components/ActionLifecyclePanel';
 import RiskAssessmentPanel, { riskAssessmentMarkdown } from './components/RiskAssessmentPanel';
+import { assertRiskAssessmentUpdate } from './data/risk-history';
 import JustificationWorkspace from './components/JustificationWorkspace';
 import { justificationMarkdown } from './data/justification';
 import {
@@ -200,6 +207,13 @@ export default function App() {
   const [editingControl, setEditingControl] = useState<Control | null>(null);
   const [editingIncident, setEditingIncident] = useState<WorkspaceIncident | undefined>();
   const [editingScenario, setEditingScenario] = useState<Scenario | null>(null);
+  const [actionSeed, setActionSeed] = useState<ActionCreateSeed | undefined>();
+  const [fileSession] = useState(() => new EvidenceFileSession());
+  const [, setFileChecksRevision] = useState(0);
+  const onFileSessionChange = () => setFileChecksRevision((value) => value + 1);
+  const riskContext = { workspaceId: workspace.id, proofs: fileSession.proofs };
+  const evaluate = (scenario: Scenario) =>
+    evaluateWorkspaceRisk(scenario, workspace.evidence ?? [], riskContext);
   const [globalSearch, setGlobalSearch] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const [token, setToken] = useState('');
@@ -315,6 +329,10 @@ export default function App() {
     const next = reviseWorkspace(workspaceRef.current, patch);
     try {
       assertRiskLibraryUpdate(workspaceRef.current, next);
+      assertRiskAssessmentUpdate(
+        workspaceRef.current.riskAssessments ?? [],
+        next.riskAssessments ?? [],
+      );
     } catch (error) {
       setNotice(String(error));
       return false;
@@ -336,7 +354,9 @@ export default function App() {
         controls: selected.controls.map((c) => (c.id === control.id ? control : c)),
       });
   };
-  const activeRisks = workspace.scenarios.filter((s) => calculateKinney(s).score.max >= 200).length;
+  const activeRisks = workspace.scenarios.filter(
+    (s) => evaluate(s).current.score.max >= 200,
+  ).length;
   const allQuestions = [
     ...builtinQuestions,
     ...(workspace.questions.filter(
@@ -507,847 +527,883 @@ export default function App() {
     }
   };
   const [importPreview, setImportPreview] = useState<WorkspaceState | null>(null);
+  const evidenceCloud = useMemo(() => {
+    if (!token.trim()) return undefined;
+    const [owner, name] = repo.trim().split('/');
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo.trim())) return undefined;
+    try {
+      return new GitHubEvidenceClient({ owner, repo: name, token: token.trim() });
+    } catch {
+      return undefined;
+    }
+  }, [repo, token]);
+  useEffect(() => () => evidenceCloud?.disconnect(), [evidenceCloud]);
+  const startAction = (seed?: ActionCreateSeed) => {
+    setActionSeed(seed);
+    setModal('action');
+  };
   const isDemo = workspace.name === 'Demonstratiewerkruimte';
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            navigate('overview');
-          }}
-        >
-          <div className="brand-mark">
-            <Shield size={22} />
-          </div>
-          <span>
-            IMA<span className="brand-apply">apply</span>
-            <small>INTEGRAAL VEILIGHEIDSMANAGEMENT</small>
-          </span>
-        </a>
-        <button className="workspace-switch" onClick={() => setModal('rename')}>
-          <div className="workspace-icon">{workspace.name.slice(0, 2).toUpperCase()}</div>
-          <div>
-            <strong>{workspace.name}</strong>
-            <small>{isDemo ? 'Fictieve voorbeeldgegevens' : 'Eigen werkruimte'}</small>
-          </div>
-          <ChevronDown size={15} />
-        </button>
-        <div className="nav-label">WERKRUIMTE</div>
-        <nav>
-          {pages.map((p) => (
-            <button
-              key={p.id}
-              aria-label={p.label}
-              title={p.label}
-              className={page === p.id ? 'active' : ''}
-              onClick={() => navigate(p.id)}
-            >
-              <p.icon size={18} />
-              <span>{p.label}</span>
-              {p.id === 'actions' && (
-                <small>{workspace.actions.filter(actionNeedsFollowup).length}</small>
-              )}
-              {p.id === 'risk' && activeRisks > 0 && <span className="nav-dot" />}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="workspace-health">
-            <span className={`live-dot ${saveFailed ? 'danger' : ''}`} />
-            <span>
-              {saveFailed
-                ? 'Lokale opslag vraagt aandacht'
-                : saving
-                  ? 'Wijzigingen opslaan…'
-                  : 'Werkruimte lokaal bewaard'}
-            </span>
-            <small>Revisie {workspace.revision}</small>
-          </div>
-          <button
-            className={`settings-nav ${page === 'settings' ? 'active' : ''}`}
-            onClick={() => navigate('settings')}
-          >
-            <Settings2 size={18} /> Werkruimte & synchronisatie
-          </button>
+    <RiskEvidenceProvider
+      workspaceId={workspace.id}
+      evidence={workspace.evidence ?? []}
+      context={riskContext}
+      fileSession={fileSession}
+      cloud={evidenceCloud}
+      onSessionChange={onFileSessionChange}
+    >
+      <div className="app-shell">
+        <aside className="sidebar">
           <a
-            className="version-link"
-            href="https://github.com/xenotroy/ima-apply"
-            target="_blank"
-            rel="noreferrer"
+            className="brand"
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              navigate('overview');
+            }}
           >
-            <GitBranch size={14} /> IMA Apply 2.3.1 <ArrowUpRight size={13} />
-          </a>
-        </div>
-      </aside>
-      <div className="main-shell">
-        <header className="topbar">
-          <div className="breadcrumb">
-            Werkruimte <ChevronRight size={13} />
-            <span>{pages.find((p) => p.id === page)?.label ?? 'Instellingen'}</span>
-          </div>
-          <div className="topbar-actions">
-            <div className="search-wrap">
-              <Search size={16} />
-              <input
-                aria-label="Zoek risicoscenario's"
-                placeholder="Zoek een risicoscenario…"
-                value={globalSearch}
-                onChange={(e) => setGlobalSearch(e.target.value)}
-              />
-              {globalSearch && (
-                <div className="search-results">
-                  {findResults.length ? (
-                    findResults.map((s) => (
-                      <button
-                        key={s.id}
-                        onClick={() => {
-                          setSelectedId(s.id);
-                          navigate('risk');
-                        }}
-                      >
-                        {s.title}
-                        <small>{s.department}</small>
-                      </button>
-                    ))
-                  ) : (
-                    <p>Geen scenario gevonden.</p>
-                  )}
-                </div>
-              )}
+            <div className="brand-mark">
+              <Shield size={22} />
             </div>
-            <button className="cloud-status" onClick={() => navigate('settings')}>
-              <Cloud size={16} />
-              {sync &&
-              sync.sha !== null &&
-              sync.revision === workspace.revision &&
-              sync.workspaceId === workspace.id
-                ? 'Gesynchroniseerd'
-                : 'Lokaal'}
-              <span className="avatar">KT</span>
+            <span>
+              IMA<span className="brand-apply">apply</span>
+              <small>INTEGRAAL VEILIGHEIDSMANAGEMENT</small>
+            </span>
+          </a>
+          <button className="workspace-switch" onClick={() => setModal('rename')}>
+            <div className="workspace-icon">{workspace.name.slice(0, 2).toUpperCase()}</div>
+            <div>
+              <strong>{workspace.name}</strong>
+              <small>{isDemo ? 'Fictieve voorbeeldgegevens' : 'Eigen werkruimte'}</small>
+            </div>
+            <ChevronDown size={15} />
+          </button>
+          <div className="nav-label">WERKRUIMTE</div>
+          <nav>
+            {pages.map((p) => (
+              <button
+                key={p.id}
+                aria-label={p.label}
+                title={p.label}
+                className={page === p.id ? 'active' : ''}
+                onClick={() => navigate(p.id)}
+              >
+                <p.icon size={18} />
+                <span>{p.label}</span>
+                {p.id === 'actions' && (
+                  <small>{workspace.actions.filter(actionNeedsFollowup).length}</small>
+                )}
+                {p.id === 'risk' && activeRisks > 0 && <span className="nav-dot" />}
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-bottom">
+            <div className="workspace-health">
+              <span className={`live-dot ${saveFailed ? 'danger' : ''}`} />
+              <span>
+                {saveFailed
+                  ? 'Lokale opslag vraagt aandacht'
+                  : saving
+                    ? 'Wijzigingen opslaan…'
+                    : 'Werkruimte lokaal bewaard'}
+              </span>
+              <small>Revisie {workspace.revision}</small>
+            </div>
+            <button
+              className={`settings-nav ${page === 'settings' ? 'active' : ''}`}
+              onClick={() => navigate('settings')}
+            >
+              <Settings2 size={18} /> Werkruimte & synchronisatie
             </button>
+            <a
+              className="version-link"
+              href="https://github.com/xenotroy/ima-apply"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <GitBranch size={14} /> IMA Apply 2.3.1 <ArrowUpRight size={13} />
+            </a>
           </div>
-        </header>
-        <main>
-          {notice && (
-            <div className="notice" role="status">
-              <TriangleAlert size={18} />
-              <span>{notice}</span>
-              <button onClick={() => setNotice('')} aria-label="Melding sluiten">
-                <X size={16} />
+        </aside>
+        <div className="main-shell">
+          <header className="topbar">
+            <div className="breadcrumb">
+              Werkruimte <ChevronRight size={13} />
+              <span>{pages.find((p) => p.id === page)?.label ?? 'Instellingen'}</span>
+            </div>
+            <div className="topbar-actions">
+              <div className="search-wrap">
+                <Search size={16} />
+                <input
+                  aria-label="Zoek risicoscenario's"
+                  placeholder="Zoek een risicoscenario…"
+                  value={globalSearch}
+                  onChange={(e) => setGlobalSearch(e.target.value)}
+                />
+                {globalSearch && (
+                  <div className="search-results">
+                    {findResults.length ? (
+                      findResults.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => {
+                            setSelectedId(s.id);
+                            navigate('risk');
+                          }}
+                        >
+                          {s.title}
+                          <small>{s.department}</small>
+                        </button>
+                      ))
+                    ) : (
+                      <p>Geen scenario gevonden.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <button className="cloud-status" onClick={() => navigate('settings')}>
+                <Cloud size={16} />
+                {sync &&
+                sync.sha !== null &&
+                sync.revision === workspace.revision &&
+                sync.workspaceId === workspace.id
+                  ? 'Gesynchroniseerd'
+                  : 'Lokaal'}
+                <span className="avatar">KT</span>
               </button>
             </div>
-          )}
-          {page === 'overview' && (
-            <>
-              <div className="page-heading">
-                <div>
-                  <div className="eyebrow">VAN INZICHT NAAR BEHEERSING</div>
-                  <h1>
-                    Grip op wat ertoe doet<span>.</span>
-                  </h1>
-                  <p>Risico’s begrijpen. Maatregelen onderbouwen. Effect zichtbaar maken.</p>
-                </div>
-                <button className="primary" onClick={startScenario}>
-                  <Plus size={17} /> Nieuw risicoscenario
+          </header>
+          <main>
+            {notice && (
+              <div className="notice" role="status">
+                <TriangleAlert size={18} />
+                <span>{notice}</span>
+                <button onClick={() => setNotice('')} aria-label="Melding sluiten">
+                  <X size={16} />
                 </button>
               </div>
-              {isDemo && (
-                <div className="demo-note">
-                  <Sparkles size={15} />
-                  <span>Je bekijkt een demonstratie met fictieve gegevens.</span>
-                  <button onClick={() => setModal('new')}>
-                    Begin een eigen werkruimte <ArrowRight size={14} />
+            )}
+            {page === 'overview' && (
+              <>
+                <div className="page-heading">
+                  <div>
+                    <div className="eyebrow">VAN INZICHT NAAR BEHEERSING</div>
+                    <h1>
+                      Grip op wat ertoe doet<span>.</span>
+                    </h1>
+                    <p>Risico’s begrijpen. Maatregelen onderbouwen. Effect zichtbaar maken.</p>
+                  </div>
+                  <button className="primary" onClick={startScenario}>
+                    <Plus size={17} /> Nieuw risicoscenario
                   </button>
                 </div>
-              )}
-              <MigrationReviewPanel sources={workspace.sources} />
-              <div className="stats-grid">
-                <Stat
-                  title="Risicoscenario’s"
-                  value={String(workspace.scenarios.length)}
-                  icon={Activity}
-                  description={`${activeRisks} met conservatieve score ≥ 200`}
-                  tone="rose"
-                />
-                <Stat
-                  title="Beheersmaatregelen"
-                  value={String(workspace.scenarios.reduce((n, s) => n + s.controls.length, 0))}
-                  icon={Shield}
-                  description={`${workspace.scenarios.flatMap((s) => s.controls).filter((c) => c.status === 'existing' && c.evidence === 'verified').length} aanwezig en onderbouwd`}
-                  tone="green"
-                />
-                <Stat
-                  title="Inventarisatie"
-                  value={`${completion}%`}
-                  icon={ClipboardCheck}
-                  description={`${answered} van ${allQuestions.length} vragen beantwoord`}
-                  tone="blue"
-                />
-                <Stat
-                  title="Verbeteracties"
-                  value={String(workspace.actions.filter(actionNeedsFollowup).length)}
-                  icon={Target}
-                  description={`${workspace.actions.filter((a) => a.status === 'in_progress').length} in uitvoering`}
-                  tone="amber"
-                />
-              </div>
-              {selected ? (
-                <div className="overview-grid">
-                  <section className="panel risk-hero">
-                    <div className="panel-heading">
-                      <div>
-                        <div className="eyebrow">RISICO IN BEWEGING</div>
-                        <h2>Wat verandert een maatregel?</h2>
-                      </div>
-                      <Badge>FINE–KINNEY</Badge>
-                    </div>
-                    <div className="scenario-select">
-                      <div>
-                        <span className="muted">Geselecteerd scenario</span>
-                        <select
-                          aria-label="Scenario overzicht"
-                          value={selected.id}
-                          onChange={(e) => setSelectedId(e.target.value)}
-                        >
-                          {workspace.scenarios.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.title}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <button
-                        className="icon-button"
-                        onClick={() => navigate('risk')}
-                        aria-label="Open risicowerkbank"
-                      >
-                        <ArrowUpRight size={20} />
-                      </button>
-                    </div>
-                    <Hologram scenario={selected} />
-                    <ScoreSummary scenario={selected} />
-                    <button className="text-link" onClick={() => navigate('risk')}>
-                      Verken dit scenario in de risicowerkbank <ArrowRight size={15} />
+                {isDemo && (
+                  <div className="demo-note">
+                    <Sparkles size={15} />
+                    <span>Je bekijkt een demonstratie met fictieve gegevens.</span>
+                    <button onClick={() => setModal('new')}>
+                      Begin een eigen werkruimte <ArrowRight size={14} />
                     </button>
-                  </section>
-                  <div className="overview-side">
-                    <Priorities
+                  </div>
+                )}
+                <MigrationReviewPanel sources={workspace.sources} />
+                <div className="stats-grid">
+                  <Stat
+                    title="Risicoscenario’s"
+                    value={String(workspace.scenarios.length)}
+                    icon={Activity}
+                    description={`${activeRisks} met conservatieve score ≥ 200`}
+                    tone="rose"
+                  />
+                  <Stat
+                    title="Beheersmaatregelen"
+                    value={String(workspace.scenarios.reduce((n, s) => n + s.controls.length, 0))}
+                    icon={Shield}
+                    description={`${workspace.scenarios.flatMap((s) => s.controls).filter((c) => c.status === 'existing' && c.evidence === 'verified').length} aanwezig en onderbouwd`}
+                    tone="green"
+                  />
+                  <Stat
+                    title="Inventarisatie"
+                    value={`${completion}%`}
+                    icon={ClipboardCheck}
+                    description={`${answered} van ${allQuestions.length} vragen beantwoord`}
+                    tone="blue"
+                  />
+                  <Stat
+                    title="Verbeteracties"
+                    value={String(workspace.actions.filter(actionNeedsFollowup).length)}
+                    icon={Target}
+                    description={`${workspace.actions.filter((a) => a.status === 'in_progress').length} in uitvoering`}
+                    tone="amber"
+                  />
+                </div>
+                {selected ? (
+                  <div className="overview-grid">
+                    <section className="panel risk-hero">
+                      <div className="panel-heading">
+                        <div>
+                          <div className="eyebrow">RISICO IN BEWEGING</div>
+                          <h2>Wat verandert een maatregel?</h2>
+                        </div>
+                        <Badge>FINE–KINNEY</Badge>
+                      </div>
+                      <div className="scenario-select">
+                        <div>
+                          <span className="muted">Geselecteerd scenario</span>
+                          <select
+                            aria-label="Scenario overzicht"
+                            value={selected.id}
+                            onChange={(e) => setSelectedId(e.target.value)}
+                          >
+                            {workspace.scenarios.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <button
+                          className="icon-button"
+                          onClick={() => navigate('risk')}
+                          aria-label="Open risicowerkbank"
+                        >
+                          <ArrowUpRight size={20} />
+                        </button>
+                      </div>
+                      <Hologram scenario={selected} />
+                      <ScoreSummary scenario={selected} />
+                      <button className="text-link" onClick={() => navigate('risk')}>
+                        Verken dit scenario in de risicowerkbank <ArrowRight size={15} />
+                      </button>
+                    </section>
+                    <div className="overview-side">
+                      <Priorities
+                        scenario={selected}
+                        compact
+                        onEdit={(c) => {
+                          setEditingControl(c);
+                          setPage('risk');
+                          setModal('control');
+                        }}
+                      />
+                      <section className="panel method-note">
+                        <div className="method-icon">
+                          <Shield size={22} />
+                        </div>
+                        <h3>De beste maatregel begint bij de bron.</h3>
+                        <p>
+                          AHS-voorkeur en uitvoerbaarheid versterken de prioriteit. Het berekende
+                          risico volgt uitsluitend de onderbouwde werking.
+                        </p>
+                        <button className="text-link" onClick={() => navigate('sources')}>
+                          Bekijk de methodiek <ArrowRight size={15} />
+                        </button>
+                      </section>
+                    </div>
+                  </div>
+                ) : (
+                  <Empty
+                    onAdd={startScenario}
+                    title="Maak je eerste risicoscenario"
+                    text="Leg gevaar, blootstelling, gevolg en beheersing vast om de risicoruimte te verkennen."
+                  />
+                )}
+                <section className="panel risk-table">
+                  <div className="panel-heading">
+                    <div>
+                      <h2>Risico’s in je werkruimte</h2>
+                      <p>Van initieel risico naar aantoonbare beheersing.</p>
+                    </div>
+                    <button className="secondary" onClick={() => navigate('risk')}>
+                      Alle scenario’s <ArrowRight size={15} />
+                    </button>
+                  </div>
+                  <ScenarioTable
+                    scenarios={workspace.scenarios}
+                    onSelect={(s) => {
+                      setSelectedId(s.id);
+                      navigate('risk');
+                    }}
+                  />
+                </section>
+              </>
+            )}
+            {page === 'risk' && (
+              <>
+                <div className="page-heading">
+                  <div>
+                    <div className="eyebrow">BEREKENEN · ONDERBOUWEN · VERGELIJKEN</div>
+                    <h1>
+                      Risicowerkbank<span>.</span>
+                    </h1>
+                    <p>
+                      Verken het scenario, de werking van barrières en de ruimte voor verbetering.
+                    </p>
+                  </div>
+                  <button className="primary" onClick={startScenario}>
+                    <Plus size={17} /> Scenario toevoegen
+                  </button>
+                </div>
+                <div className="scenario-tabs">
+                  {workspace.scenarios.map((s) => (
+                    <button
+                      key={s.id}
+                      className={s.id === selected?.id ? 'selected' : ''}
+                      onClick={() => setSelectedId(s.id)}
+                    >
+                      <span className="live-dot" />
+                      {s.title}
+                    </button>
+                  ))}
+                </div>
+                {selected ? (
+                  <>
+                    <RiskWorkbench
+                      workspaceId={workspace.id}
                       scenario={selected}
-                      compact
-                      onEdit={(c) => {
+                      changeScenario={changeScenario}
+                      editScenario={editScenario}
+                      addControl={startControl}
+                      editControl={(c) => {
                         setEditingControl(c);
-                        setPage('risk');
                         setModal('control');
                       }}
                     />
-                    <section className="panel method-note">
-                      <div className="method-icon">
-                        <Shield size={22} />
-                      </div>
-                      <h3>De beste maatregel begint bij de bron.</h3>
-                      <p>
-                        AHS-voorkeur en uitvoerbaarheid versterken de prioriteit. Het berekende
-                        risico volgt uitsluitend de onderbouwde werking.
-                      </p>
-                      <button className="text-link" onClick={() => navigate('sources')}>
-                        Bekijk de methodiek <ArrowRight size={15} />
+                    <RiskAssessmentPanel
+                      key={`assessment/${workspace.id}/${selected.id}`}
+                      workspaceId={workspace.id}
+                      scenario={selected}
+                      records={(workspace.riskAssessments ?? []).filter(
+                        (r) => r.scenarioId === selected.id,
+                      )}
+                      onSave={(record) =>
+                        update({
+                          riskAssessments: [
+                            ...(workspaceRef.current.riskAssessments ?? []),
+                            record,
+                          ],
+                        })
+                      }
+                    />
+                    <JustificationWorkspace
+                      key={`justification/${workspace.id}/${selected.id}`}
+                      workspaceId={workspace.id}
+                      scenarioId={selected.id}
+                      assessments={workspace.riskAssessments ?? []}
+                      records={workspace.justifications ?? []}
+                      onSave={(record) =>
+                        update({
+                          justifications: [...(workspaceRef.current.justifications ?? []), record],
+                        })
+                      }
+                    />
+                  </>
+                ) : (
+                  <Empty
+                    onAdd={startScenario}
+                    title="Nog geen scenario’s"
+                    text="Begin met één concreet gevaar en één gevolg."
+                  />
+                )}
+              </>
+            )}
+            {page === 'dossiers' && (
+              <DossierWorkspace
+                workspace={workspace}
+                questions={allQuestions}
+                onUpdate={update}
+                onCreateAction={startAction}
+                openInventory={(dossierId) => {
+                  setInventoryDossierId(dossierId);
+                  navigate('questions');
+                }}
+                openScenario={(scenarioId) => {
+                  setSelectedId(scenarioId);
+                  navigate('risk');
+                }}
+              />
+            )}
+            {page === 'questions' && (
+              <Questionnaire
+                workspace={workspace}
+                onUpdate={update}
+                questions={
+                  workspace.dossiers?.find((d) => d.id === inventoryDossierId)?.questions ??
+                  allQuestions
+                }
+                dossierId={inventoryDossierId || undefined}
+                dossiers={workspace.dossiers ?? []}
+                onDossierChange={setInventoryDossierId}
+                evidence={workspace.evidence ?? []}
+                answers={workspace.answers.filter(
+                  (a) => a.dossierId === (inventoryDossierId || undefined),
+                )}
+                updateAnswer={(answer) => {
+                  try {
+                    return update(
+                      upsertResponse(workspaceRef.current, {
+                        answer,
+                        respondedBy: answer.respondedBy ?? '',
+                        ...(answer.evidenceIds !== undefined &&
+                        JSON.stringify(answer.evidenceIds) !==
+                          JSON.stringify(
+                            workspaceRef.current.answers.find(
+                              (existing) => existing.id === answer.id,
+                            )?.evidenceIds,
+                          )
+                          ? { evidenceIds: answer.evidenceIds }
+                          : {}),
+                      }),
+                    );
+                  } catch (error) {
+                    setNotice(String(error));
+                    return false;
+                  }
+                }}
+                addScenario={(q) => {
+                  setEditingScenario({
+                    ...newScenario(),
+                    title: q.prompt,
+                    dossierId: inventoryDossierId || undefined,
+                    description: `Aanleiding: inventarisatievraag ${q.id}`,
+                    sourceIds: q.sourceIds,
+                  });
+                  setModal('scenario');
+                }}
+              />
+            )}
+            {page === 'actions' && (
+              <Actions
+                workspace={workspace}
+                workspaceId={workspace.id}
+                actions={workspace.actions}
+                scenarios={workspace.scenarios}
+                evidence={workspace.evidence ?? []}
+                updateAction={(a, expectedRevision) => {
+                  const current = workspaceRef.current.actions.find((x) => x.id === a.id);
+                  const expectedPrevious =
+                    current?.lifecycle?.history.at(-1)?.sha256 ??
+                    (current ? actionSnapshotHash(actionSnapshot(current)) : '');
+                  if (
+                    !current ||
+                    actionRevision(current) !== expectedRevision ||
+                    a.lifecycle?.history.at(-1)?.previousSha256 !== expectedPrevious
+                  ) {
+                    setNotice(
+                      'Deze actie heeft een nieuwere revisie. Je wijziging is niet overschreven; open de actuele revisie.',
+                    );
+                    return false;
+                  }
+                  return update({
+                    actions: workspaceRef.current.actions.map((x) => (x.id === a.id ? a : x)),
+                  });
+                }}
+                onAdd={() => startAction()}
+              />
+            )}
+            {page === 'incidents' && (
+              <Incidents
+                incidents={workspace.incidents}
+                actions={workspace.actions}
+                scenarios={workspace.scenarios}
+                add={() => {
+                  setEditingIncident(undefined);
+                  setModal('incident');
+                }}
+                onEdit={(i) => {
+                  setEditingIncident(i);
+                  setModal('incident');
+                }}
+                createAction={(i) => {
+                  startAction({
+                    title: `Onderzoek en verbeter: ${i.title}`,
+                    scenarioId: i.scenarioId,
+                    dossierId: workspace.scenarios.find((s) => s.id === i.scenarioId)?.dossierId,
+                    notes: `Naar aanleiding van incident ${i.id}. ${i.description}`,
+                    sourceRefs: [{ kind: 'workspace', collection: 'incidents', id: i.id }],
+                  });
+                }}
+              />
+            )}
+            {page === 'learning' && <LearningWorkspace workspace={workspace} onUpdate={update} />}
+            {page === 'sources' && (
+              <Sources
+                workspace={workspace}
+                onImport={() => {
+                  fileRef.current!.accept = '.json';
+                  fileRef.current!.click();
+                }}
+              />
+            )}
+            {page === 'report' && <Report workspace={workspace} questions={allQuestions} />}
+            {page === 'settings' && (
+              <>
+                <div className="page-heading">
+                  <div>
+                    <div className="eyebrow">ÉÉN ACCOUNT · MEERDERE APPARATEN</div>
+                    <h1>
+                      Je werkruimte, overal<span>.</span>
+                    </h1>
+                    <p>
+                      Bewaar lokaal en synchroniseer je dossier via een private GitHub-repository.
+                    </p>
+                  </div>
+                </div>
+                <div className="settings-grid">
+                  <section className="panel">
+                    <div className="panel-heading">
+                      <h2>GitHub-synchronisatie</h2>
+                      <GitBranch size={20} />
+                    </div>
+                    <p className="muted">
+                      Op iedere pc dezelfde app en hetzelfde GitHub-account. Haal de nieuwste
+                      werkruimte op voordat je verder werkt.
+                    </p>
+                    <Field label="Private repository">
+                      <input
+                        value={repo}
+                        onChange={(e) => setRepo(e.target.value)}
+                        placeholder="eigenaar/repository"
+                      />
+                    </Field>
+                    <Field
+                      label="Werkruimtebestand in de repository"
+                      hint="Gebruik op iedere pc hetzelfde bestand. Bewaar afzonderlijke projecten bijvoorbeeld als workspaces/projectnaam.json."
+                    >
+                      <input
+                        value={cloudPath}
+                        onChange={(e) => setCloudPath(e.target.value)}
+                        placeholder="workspaces/default.json"
+                      />
+                    </Field>
+                    <Field
+                      label="Fine-grained GitHub-token"
+                      hint="Alleen deze private repository · Contents: read and write. Het token blijft uitsluitend in het geheugen tot je dit tabblad sluit."
+                    >
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        value={token}
+                        onChange={(e) => setToken(e.target.value)}
+                        placeholder="github_pat_…"
+                      />
+                    </Field>
+                    <div className="button-row">
+                      <button className="secondary" onClick={pull} disabled={cloudBusy}>
+                        {cloudBusy ? (
+                          <LoaderCircle className="spin" size={16} />
+                        ) : (
+                          <ArrowDownToLine size={16} />
+                        )}{' '}
+                        Cloudversie bekijken
                       </button>
+                      <button className="primary" onClick={push} disabled={cloudBusy}>
+                        <Upload size={16} /> Opslaan in GitHub
+                      </button>
+                      <button
+                        className="icon-button"
+                        onClick={() => setToken('')}
+                        aria-label="Token uit geheugen wissen"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                    <div className="info-box">
+                      Conflicten worden geblokkeerd. Een nieuwere cloudversie wordt nooit stil
+                      overschreven. De app verifieert dat de repository private is voordat gegevens
+                      worden verstuurd.
+                    </div>
+                    <a
+                      className="text-link"
+                      href="https://github.com/settings/personal-access-tokens/new"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Maak een beperkt token aan <ArrowUpRight size={14} />
+                    </a>
+                    {sync && (
+                      <p className="caption">
+                        Laatste synchronisatie: revisie {sync.revision} · {sync.repo}
+                      </p>
+                    )}
+                  </section>
+                  <div>
+                    <section className="panel">
+                      <h2>Overdragen & herstellen</h2>
+                      <p className="muted">
+                        Een volledige JSON-export bevat je scenario’s, vragen, antwoorden, acties en
+                        bronverwijzingen.
+                      </p>
+                      <div className="stack-buttons">
+                        <button
+                          className="secondary"
+                          onClick={() =>
+                            download('ima-werkruimte.json', exportWorkspace(workspace))
+                          }
+                        >
+                          <ArrowDownToLine size={16} /> Werkruimte exporteren
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={() => {
+                            fileRef.current!.accept = '.json';
+                            fileRef.current!.click();
+                          }}
+                        >
+                          <Upload size={16} /> Werkruimte of content importeren
+                        </button>
+                        <button className="secondary" onClick={() => setModal('new')}>
+                          <Plus size={16} /> Lege werkruimte beginnen
+                        </button>
+                      </div>
+                    </section>
+                    <section className="panel settings-meta">
+                      <h3>Opslagstatus</h3>
+                      <p>
+                        Werkruimte-ID <code>{workspace.id}</code>
+                      </p>
+                      <p>
+                        Revisie <strong>{workspace.revision}</strong>
+                      </p>
+                      <p>
+                        Bijgewerkt{' '}
+                        <strong>{new Date(workspace.updatedAt).toLocaleString('nl-NL')}</strong>
+                      </p>
+                      <p>
+                        {saveFailed
+                          ? 'Wijzigingen nog niet lokaal opgeslagen. Exporteer eerst.'
+                          : 'Automatische lokale opslag actief.'}
+                      </p>
                     </section>
                   </div>
                 </div>
-              ) : (
-                <Empty
-                  onAdd={startScenario}
-                  title="Maak je eerste risicoscenario"
-                  text="Leg gevaar, blootstelling, gevolg en beheersing vast om de risicoruimte te verkennen."
-                />
-              )}
-              <section className="panel risk-table">
-                <div className="panel-heading">
-                  <div>
-                    <h2>Risico’s in je werkruimte</h2>
-                    <p>Van initieel risico naar aantoonbare beheersing.</p>
-                  </div>
-                  <button className="secondary" onClick={() => navigate('risk')}>
-                    Alle scenario’s <ArrowRight size={15} />
-                  </button>
-                </div>
-                <ScenarioTable
-                  scenarios={workspace.scenarios}
-                  onSelect={(s) => {
-                    setSelectedId(s.id);
-                    navigate('risk');
-                  }}
-                />
-              </section>
-            </>
-          )}
-          {page === 'risk' && (
-            <>
-              <div className="page-heading">
-                <div>
-                  <div className="eyebrow">BEREKENEN · ONDERBOUWEN · VERGELIJKEN</div>
-                  <h1>
-                    Risicowerkbank<span>.</span>
-                  </h1>
-                  <p>
-                    Verken het scenario, de werking van barrières en de ruimte voor verbetering.
-                  </p>
-                </div>
-                <button className="primary" onClick={startScenario}>
-                  <Plus size={17} /> Scenario toevoegen
-                </button>
-              </div>
-              <div className="scenario-tabs">
-                {workspace.scenarios.map((s) => (
-                  <button
-                    key={s.id}
-                    className={s.id === selected?.id ? 'selected' : ''}
-                    onClick={() => setSelectedId(s.id)}
-                  >
-                    <span className="live-dot" />
-                    {s.title}
-                  </button>
-                ))}
-              </div>
-              {selected ? (
-                <>
-                  <RiskWorkbench
-                    workspaceId={workspace.id}
-                    scenario={selected}
-                    changeScenario={changeScenario}
-                    editScenario={editScenario}
-                    addControl={startControl}
-                    editControl={(c) => {
-                      setEditingControl(c);
-                      setModal('control');
-                    }}
-                  />
-                  <RiskAssessmentPanel
-                    key={`assessment/${workspace.id}/${selected.id}`}
-                    workspaceId={workspace.id}
-                    scenario={selected}
-                    records={(workspace.riskAssessments ?? []).filter(
-                      (r) => r.scenarioId === selected.id,
-                    )}
-                    onSave={(record) =>
-                      update({
-                        riskAssessments: [...(workspaceRef.current.riskAssessments ?? []), record],
-                      })
-                    }
-                  />
-                  <JustificationWorkspace
-                    key={`justification/${workspace.id}/${selected.id}`}
-                    workspaceId={workspace.id}
-                    scenarioId={selected.id}
-                    assessments={workspace.riskAssessments ?? []}
-                    records={workspace.justifications ?? []}
-                    onSave={(record) =>
-                      update({
-                        justifications: [...(workspaceRef.current.justifications ?? []), record],
-                      })
-                    }
-                  />
-                </>
-              ) : (
-                <Empty
-                  onAdd={startScenario}
-                  title="Nog geen scenario’s"
-                  text="Begin met één concreet gevaar en één gevolg."
-                />
-              )}
-            </>
-          )}
-          {page === 'dossiers' && (
-            <DossierWorkspace
+              </>
+            )}
+            <footer className="main-footer">
+              <span>
+                IMA Apply <span className="footer-dot">·</span> Van inzicht naar aantoonbare
+                beheersing
+              </span>
+              <span>
+                Methodiek v2.1 <span className="footer-dot">·</span>{' '}
+                {isDemo ? 'Demonstratie' : 'Eigen dossier'}
+              </span>
+            </footer>
+          </main>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void importFile(f);
+            e.target.value = '';
+          }}
+        />
+        {modal === 'scenario' && editingScenario && (
+          <ScenarioEditor
+            scenario={editingScenario}
+            canRestore={(candidate) =>
+              workspace.scenarios.some((s) => s.id === editingScenario.id) ||
+              !workspace.scenarios.some((s) => s.id === candidate.id)
+            }
+            draftKey={`${workspace.id}/scenario/${workspace.scenarios.some((s) => s.id === editingScenario.id) ? editingScenario.id : 'new'}`}
+            draftSource={
+              workspace.scenarios.some((s) => s.id === editingScenario.id)
+                ? draftBase(editingScenario)
+                : 'new/v1'
+            }
+            dossiers={workspace.dossiers ?? []}
+            departments={workspace.departments ?? []}
+            sites={workspace.sites ?? []}
+            onClose={() => setModal(null)}
+            onSave={saveScenario}
+          />
+        )}
+        {modal === 'control' && editingControl && (
+          <ControlEditor
+            control={editingControl}
+            scenario={selected!}
+            canRestore={(candidate) =>
+              Boolean(selected?.controls.some((c) => c.id === editingControl.id)) ||
+              !workspace.scenarios.some((s) => s.controls.some((c) => c.id === candidate.id))
+            }
+            draftKey={`${workspace.id}/control/${selected?.id ?? 'none'}/${selected?.controls.some((c) => c.id === editingControl.id) ? editingControl.id : 'new'}`}
+            draftSource={
+              selected?.controls.some((c) => c.id === editingControl.id)
+                ? draftBase(editingControl)
+                : 'new/v1'
+            }
+            onClose={() => setModal(null)}
+            onSave={saveControl}
+          />
+        )}
+        {modal === 'action' && (
+          <Modal title="Nieuwe verbeteractie" onClose={() => setModal(null)} wide>
+            <ActionCreateForm
               workspace={workspace}
-              questions={allQuestions}
-              onUpdate={update}
-              openInventory={(dossierId) => {
-                setInventoryDossierId(dossierId);
-                navigate('questions');
-              }}
-              openScenario={(scenarioId) => {
-                setSelectedId(scenarioId);
-                navigate('risk');
-              }}
-            />
-          )}
-          {page === 'questions' && (
-            <Questionnaire
-              workspace={workspace}
-              onUpdate={update}
-              questions={
-                workspace.dossiers?.find((d) => d.id === inventoryDossierId)?.questions ??
-                allQuestions
-              }
-              dossierId={inventoryDossierId || undefined}
-              dossiers={workspace.dossiers ?? []}
-              onDossierChange={setInventoryDossierId}
-              evidence={workspace.evidence ?? []}
-              answers={workspace.answers.filter(
-                (a) => a.dossierId === (inventoryDossierId || undefined),
-              )}
-              updateAnswer={(answer) => {
-                try {
-                  return update(
-                    upsertResponse(workspaceRef.current, {
-                      answer,
-                      respondedBy: answer.respondedBy ?? '',
-                      ...(answer.evidenceIds !== undefined &&
-                      JSON.stringify(answer.evidenceIds) !==
-                        JSON.stringify(
-                          workspaceRef.current.answers.find((existing) => existing.id === answer.id)
-                            ?.evidenceIds,
-                        )
-                        ? { evidenceIds: answer.evidenceIds }
-                        : {}),
-                    }),
-                  );
-                } catch (error) {
-                  setNotice(String(error));
-                  return false;
-                }
-              }}
-              addScenario={(q) => {
-                setEditingScenario({
-                  ...newScenario(),
-                  title: q.prompt,
-                  dossierId: inventoryDossierId || undefined,
-                  description: `Aanleiding: inventarisatievraag ${q.id}`,
-                  sourceIds: q.sourceIds,
-                });
-                setModal('scenario');
-              }}
-            />
-          )}
-          {page === 'actions' && (
-            <Actions
-              workspaceId={workspace.id}
-              actions={workspace.actions}
-              scenarios={workspace.scenarios}
-              evidence={workspace.evidence ?? []}
-              updateAction={(a, expectedRevision) => {
-                const current = workspaceRef.current.actions.find((x) => x.id === a.id);
-                const expectedPrevious =
-                  current?.lifecycle?.history.at(-1)?.sha256 ??
-                  (current ? actionSnapshotHash(actionSnapshot(current)) : '');
-                if (
-                  !current ||
-                  actionRevision(current) !== expectedRevision ||
-                  a.lifecycle?.history.at(-1)?.previousSha256 !== expectedPrevious
-                ) {
-                  setNotice(
-                    'Deze actie heeft een nieuwere revisie. Je wijziging is niet overschreven; open de actuele revisie.',
-                  );
-                  return false;
-                }
-                return update({
-                  actions: workspaceRef.current.actions.map((x) => (x.id === a.id ? a : x)),
-                });
-              }}
-              onAdd={() => setModal('action')}
-            />
-          )}
-          {page === 'incidents' && (
-            <Incidents
-              incidents={workspace.incidents}
-              actions={workspace.actions}
-              scenarios={workspace.scenarios}
-              add={() => {
-                setEditingIncident(undefined);
-                setModal('incident');
-              }}
-              onEdit={(i) => {
-                setEditingIncident(i);
-                setModal('incident');
-              }}
-              createAction={(i) => {
-                const actionId = id();
-                update({
-                  incidents: workspace.incidents.map((x) =>
-                    x.id === i.id ? { ...x, actionIds: [...x.actionIds, actionId] } : x,
+              initial={actionSeed}
+              draftKey={`${workspace.id}/action-create/${actionSeed?.findingId ?? actionSeed?.sourceRefs?.map((ref) => (ref.kind === 'workspace' ? `${ref.collection}/${ref.id}` : ref.originalId)).join('/') ?? 'new'}`}
+              onCancel={() => setModal(null)}
+              onCreate={(action) => {
+                const current = workspaceRef.current;
+                const incidentIds = (action.sourceRefs ?? []).flatMap((ref) =>
+                  ref.kind === 'workspace' && ref.collection === 'incidents' ? [ref.id] : [],
+                );
+                const accepted = update({
+                  actions: [...current.actions, action],
+                  incidents: current.incidents.map((incident) =>
+                    incidentIds.includes(incident.id)
+                      ? { ...incident, actionIds: [...new Set([...incident.actionIds, action.id])] }
+                      : incident,
                   ),
-                  actions: [
-                    ...workspace.actions,
-                    {
-                      id: actionId,
-                      title: `Onderzoek en verbeter: ${i.title}`,
-                      scenarioId: i.scenarioId,
-                      dossierId: workspace.scenarios.find((s) => s.id === i.scenarioId)?.dossierId,
-                      owner: '',
-                      dueDate: '',
-                      status: 'open',
-                      notes: `Naar aanleiding van incident ${i.id}. ${i.description}`,
-                    },
-                  ],
                 });
-                navigate('actions');
+                if (accepted) {
+                  setModal(null);
+                  navigate('actions');
+                }
+                return accepted;
               }}
             />
-          )}
-          {page === 'learning' && <LearningWorkspace workspace={workspace} onUpdate={update} />}
-          {page === 'sources' && (
-            <Sources
-              workspace={workspace}
-              onImport={() => {
-                fileRef.current!.accept = '.json';
-                fileRef.current!.click();
-              }}
-            />
-          )}
-          {page === 'report' && <Report workspace={workspace} questions={allQuestions} />}
-          {page === 'settings' && (
-            <>
-              <div className="page-heading">
-                <div>
-                  <div className="eyebrow">ÉÉN ACCOUNT · MEERDERE APPARATEN</div>
-                  <h1>
-                    Je werkruimte, overal<span>.</span>
-                  </h1>
-                  <p>
-                    Bewaar lokaal en synchroniseer je dossier via een private GitHub-repository.
-                  </p>
-                </div>
-              </div>
-              <div className="settings-grid">
-                <section className="panel">
-                  <div className="panel-heading">
-                    <h2>GitHub-synchronisatie</h2>
-                    <GitBranch size={20} />
-                  </div>
-                  <p className="muted">
-                    Op iedere pc dezelfde app en hetzelfde GitHub-account. Haal de nieuwste
-                    werkruimte op voordat je verder werkt.
-                  </p>
-                  <Field label="Private repository">
-                    <input
-                      value={repo}
-                      onChange={(e) => setRepo(e.target.value)}
-                      placeholder="eigenaar/repository"
-                    />
-                  </Field>
-                  <Field
-                    label="Werkruimtebestand in de repository"
-                    hint="Gebruik op iedere pc hetzelfde bestand. Bewaar afzonderlijke projecten bijvoorbeeld als workspaces/projectnaam.json."
-                  >
-                    <input
-                      value={cloudPath}
-                      onChange={(e) => setCloudPath(e.target.value)}
-                      placeholder="workspaces/default.json"
-                    />
-                  </Field>
-                  <Field
-                    label="Fine-grained GitHub-token"
-                    hint="Alleen deze private repository · Contents: read and write. Het token blijft uitsluitend in het geheugen tot je dit tabblad sluit."
-                  >
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
-                      placeholder="github_pat_…"
-                    />
-                  </Field>
-                  <div className="button-row">
-                    <button className="secondary" onClick={pull} disabled={cloudBusy}>
-                      {cloudBusy ? (
-                        <LoaderCircle className="spin" size={16} />
-                      ) : (
-                        <ArrowDownToLine size={16} />
-                      )}{' '}
-                      Cloudversie bekijken
-                    </button>
-                    <button className="primary" onClick={push} disabled={cloudBusy}>
-                      <Upload size={16} /> Opslaan in GitHub
-                    </button>
-                    <button
-                      className="icon-button"
-                      onClick={() => setToken('')}
-                      aria-label="Token uit geheugen wissen"
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                  <div className="info-box">
-                    Conflicten worden geblokkeerd. Een nieuwere cloudversie wordt nooit stil
-                    overschreven. De app verifieert dat de repository private is voordat gegevens
-                    worden verstuurd.
-                  </div>
-                  <a
-                    className="text-link"
-                    href="https://github.com/settings/personal-access-tokens/new"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Maak een beperkt token aan <ArrowUpRight size={14} />
-                  </a>
-                  {sync && (
-                    <p className="caption">
-                      Laatste synchronisatie: revisie {sync.revision} · {sync.repo}
-                    </p>
-                  )}
-                </section>
-                <div>
-                  <section className="panel">
-                    <h2>Overdragen & herstellen</h2>
-                    <p className="muted">
-                      Een volledige JSON-export bevat je scenario’s, vragen, antwoorden, acties en
-                      bronverwijzingen.
-                    </p>
-                    <div className="stack-buttons">
-                      <button
-                        className="secondary"
-                        onClick={() => download('ima-werkruimte.json', exportWorkspace(workspace))}
-                      >
-                        <ArrowDownToLine size={16} /> Werkruimte exporteren
-                      </button>
-                      <button
-                        className="secondary"
-                        onClick={() => {
-                          fileRef.current!.accept = '.json';
-                          fileRef.current!.click();
-                        }}
-                      >
-                        <Upload size={16} /> Werkruimte of content importeren
-                      </button>
-                      <button className="secondary" onClick={() => setModal('new')}>
-                        <Plus size={16} /> Lege werkruimte beginnen
-                      </button>
-                    </div>
-                  </section>
-                  <section className="panel settings-meta">
-                    <h3>Opslagstatus</h3>
-                    <p>
-                      Werkruimte-ID <code>{workspace.id}</code>
-                    </p>
-                    <p>
-                      Revisie <strong>{workspace.revision}</strong>
-                    </p>
-                    <p>
-                      Bijgewerkt{' '}
-                      <strong>{new Date(workspace.updatedAt).toLocaleString('nl-NL')}</strong>
-                    </p>
-                    <p>
-                      {saveFailed
-                        ? 'Wijzigingen nog niet lokaal opgeslagen. Exporteer eerst.'
-                        : 'Automatische lokale opslag actief.'}
-                    </p>
-                  </section>
-                </div>
-              </div>
-            </>
-          )}
-          <footer className="main-footer">
-            <span>
-              IMA Apply <span className="footer-dot">·</span> Van inzicht naar aantoonbare
-              beheersing
-            </span>
-            <span>
-              Methodiek v2.0 <span className="footer-dot">·</span>{' '}
-              {isDemo ? 'Demonstratie' : 'Eigen dossier'}
-            </span>
-          </footer>
-        </main>
-      </div>
-      <input
-        ref={fileRef}
-        type="file"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void importFile(f);
-          e.target.value = '';
-        }}
-      />
-      {modal === 'scenario' && editingScenario && (
-        <ScenarioEditor
-          scenario={editingScenario}
-          canRestore={(candidate) =>
-            workspace.scenarios.some((s) => s.id === editingScenario.id) ||
-            !workspace.scenarios.some((s) => s.id === candidate.id)
-          }
-          draftKey={`${workspace.id}/scenario/${workspace.scenarios.some((s) => s.id === editingScenario.id) ? editingScenario.id : 'new'}`}
-          draftSource={
-            workspace.scenarios.some((s) => s.id === editingScenario.id)
-              ? draftBase(editingScenario)
-              : 'new/v1'
-          }
-          dossiers={workspace.dossiers ?? []}
-          departments={workspace.departments ?? []}
-          sites={workspace.sites ?? []}
-          onClose={() => setModal(null)}
-          onSave={saveScenario}
-        />
-      )}
-      {modal === 'control' && editingControl && (
-        <ControlEditor
-          control={editingControl}
-          canRestore={(candidate) =>
-            Boolean(selected?.controls.some((c) => c.id === editingControl.id)) ||
-            !workspace.scenarios.some((s) => s.controls.some((c) => c.id === candidate.id))
-          }
-          draftKey={`${workspace.id}/control/${selected?.id ?? 'none'}/${selected?.controls.some((c) => c.id === editingControl.id) ? editingControl.id : 'new'}`}
-          draftSource={
-            selected?.controls.some((c) => c.id === editingControl.id)
-              ? draftBase(editingControl)
-              : 'new/v1'
-          }
-          onClose={() => setModal(null)}
-          onSave={saveControl}
-        />
-      )}
-      {modal === 'action' && (
-        <ActionEditor
-          draftKey={`${workspace.id}/action/new`}
-          existingIds={workspace.actions.map((record) => record.id)}
-          scenarios={workspace.scenarios}
-          onClose={() => setModal(null)}
-          onSave={(a) => {
-            const accepted = update({ actions: [...workspace.actions, a] });
-            if (accepted) setModal(null);
-            return accepted;
-          }}
-        />
-      )}
-      {modal === 'incident' && (
-        <IncidentEditor
-          draftKey={`${workspace.id}/incident/${editingIncident?.id ?? 'new'}`}
-          initial={editingIncident}
-          existingIds={workspace.incidents.map((record) => record.id)}
-          departments={workspace.departments ?? []}
-          scenarios={workspace.scenarios}
-          onClose={() => setModal(null)}
-          onSave={(i) => {
-            const accepted = update({
-              incidents: [...workspace.incidents.filter((x) => x.id !== i.id), i],
-            });
-            if (accepted) setModal(null);
-            return accepted;
-          }}
-        />
-      )}
-      {modal === 'rename' && (
-        <NameEditor
-          workspaceId={workspace.id}
-          initial={workspace.name}
-          onClose={() => setModal(null)}
-          onSave={(name) => {
-            const accepted = update({ name });
-            if (accepted) setModal(null);
-            return accepted ? { workspaceId: workspace.id } : false;
-          }}
-        />
-      )}
-      {modal === 'new' && (
-        <Modal title="Begin een eigen werkruimte" onClose={() => setModal(null)}>
-          <p>
-            Exporteer je huidige werkruimte voordat je een nieuwe opent. Elke werkruimte bevat een
-            zelfstandig dossier.
-          </p>
-          <button
-            className="secondary"
-            onClick={() => download('ima-werkruimte.json', exportWorkspace(workspace))}
-          >
-            Huidige werkruimte exporteren
-          </button>
-          <NameEditorContent
-            key={`${workspace.id}/new-workspace`}
-            workspaceId={workspace.id}
-            purpose="new"
-            initial="Mijn veiligheidswerkruimte"
-            onSave={(name) => {
-              const next = createWorkspace(name);
-              if (!persist(next)) return false;
-              setSelectedId('');
-              setSync(null);
-              localStorage.removeItem('ima-sync-metadata');
-              setModal(null);
-              navigate('overview');
-              return { workspaceId: next.id };
+          </Modal>
+        )}
+        {modal === 'incident' && (
+          <IncidentEditor
+            draftKey={`${workspace.id}/incident/${editingIncident?.id ?? 'new'}`}
+            initial={editingIncident}
+            existingIds={workspace.incidents.map((record) => record.id)}
+            departments={workspace.departments ?? []}
+            scenarios={workspace.scenarios}
+            onClose={() => setModal(null)}
+            onSave={(i) => {
+              const accepted = update({
+                incidents: [...workspace.incidents.filter((x) => x.id !== i.id), i],
+              });
+              if (accepted) setModal(null);
+              return accepted;
             }}
           />
-        </Modal>
-      )}
-      {remotePreview && (
-        <Modal title="Cloudversie beoordelen" onClose={() => setRemotePreview(null)}>
-          <p>
-            <strong>{remotePreview.workspace.name}</strong> · revisie{' '}
-            {remotePreview.workspace.revision}
-          </p>
-          <p>
-            {remotePreview.workspace.scenarios.length} scenario’s ·{' '}
-            {remotePreview.workspace.answers.length} antwoorden ·{' '}
-            {remotePreview.workspace.actions.length} acties
-          </p>
-          <p className="muted">
-            Je lokale werkruimte: {workspace.name}, revisie {workspace.revision}. Download je lokale
-            versie als je die wilt bewaren voordat je de cloudversie opent.
-          </p>
-          <div className="button-row">
+        )}
+        {modal === 'rename' && (
+          <NameEditor
+            workspaceId={workspace.id}
+            initial={workspace.name}
+            onClose={() => setModal(null)}
+            onSave={(name) => {
+              const accepted = update({ name });
+              if (accepted) setModal(null);
+              return accepted ? { workspaceId: workspace.id } : false;
+            }}
+          />
+        )}
+        {modal === 'new' && (
+          <Modal title="Begin een eigen werkruimte" onClose={() => setModal(null)}>
+            <p>
+              Exporteer je huidige werkruimte voordat je een nieuwe opent. Elke werkruimte bevat een
+              zelfstandig dossier.
+            </p>
             <button
               className="secondary"
-              onClick={() => download('ima-lokaal-backup.json', exportWorkspace(workspace))}
+              onClick={() => download('ima-werkruimte.json', exportWorkspace(workspace))}
             >
-              Lokale versie exporteren
+              Huidige werkruimte exporteren
             </button>
-            <button
-              className="primary"
-              onClick={() => {
-                persist(remotePreview.workspace);
-                syncMetadata(remotePreview.sha, remotePreview.workspace, {
-                  repo: remotePreview.repo,
-                  path: remotePreview.path,
-                });
-                setRepo(remotePreview.repo);
-                setCloudPath(remotePreview.path);
-                setSelectedId(remotePreview.workspace.scenarios[0]?.id ?? '');
-                setRemotePreview(null);
-                setNotice('Cloudversie geopend. Wijzigingen worden nu weer lokaal bewaard.');
-              }}
-            >
-              Gebruik cloudversie
-            </button>
-          </div>
-        </Modal>
-      )}
-      {importPreview && (
-        <Modal title="Werkruimte importeren" onClose={() => setImportPreview(null)}>
-          <p>
-            {importPreview.name} · {importPreview.scenarios.length} scenario’s ·{' '}
-            {importPreview.answers.length} antwoorden · {importPreview.dossiers?.length ?? 0}{' '}
-            dossiers · {importPreview.evidence?.length ?? 0} bewijsrecords ·{' '}
-            {importPreview.findings?.length ?? 0} bevindingen
-          </p>
-          <p>
-            Deze import vervangt de geopende werkruimte. Exporteer eerst als je die wilt bewaren.
-          </p>
-          <div className="button-row">
-            <button
-              className="secondary"
-              onClick={() => download('ima-backup.json', exportWorkspace(workspace))}
-            >
-              Huidige exporteren
-            </button>
-            <button
-              className="primary"
-              onClick={() => {
-                persist(importPreview);
-                setSelectedId(importPreview.scenarios[0]?.id ?? '');
+            <NameEditorContent
+              key={`${workspace.id}/new-workspace`}
+              workspaceId={workspace.id}
+              purpose="new"
+              initial="Mijn veiligheidswerkruimte"
+              onSave={(name) => {
+                const next = createWorkspace(name);
+                if (!persist(next)) return false;
+                setSelectedId('');
                 setSync(null);
                 localStorage.removeItem('ima-sync-metadata');
-                setImportPreview(null);
+                setModal(null);
+                navigate('overview');
+                return { workspaceId: next.id };
               }}
-            >
-              Import openen
-            </button>
-          </div>
-        </Modal>
-      )}
-    </div>
+            />
+          </Modal>
+        )}
+        {remotePreview && (
+          <Modal title="Cloudversie beoordelen" onClose={() => setRemotePreview(null)}>
+            <p>
+              <strong>{remotePreview.workspace.name}</strong> · revisie{' '}
+              {remotePreview.workspace.revision}
+            </p>
+            <p>
+              {remotePreview.workspace.scenarios.length} scenario’s ·{' '}
+              {remotePreview.workspace.answers.length} antwoorden ·{' '}
+              {remotePreview.workspace.actions.length} acties
+            </p>
+            <p className="muted">
+              Je lokale werkruimte: {workspace.name}, revisie {workspace.revision}. Download je
+              lokale versie als je die wilt bewaren voordat je de cloudversie opent.
+            </p>
+            <div className="button-row">
+              <button
+                className="secondary"
+                onClick={() => download('ima-lokaal-backup.json', exportWorkspace(workspace))}
+              >
+                Lokale versie exporteren
+              </button>
+              <button
+                className="primary"
+                onClick={() => {
+                  persist(remotePreview.workspace);
+                  syncMetadata(remotePreview.sha, remotePreview.workspace, {
+                    repo: remotePreview.repo,
+                    path: remotePreview.path,
+                  });
+                  setRepo(remotePreview.repo);
+                  setCloudPath(remotePreview.path);
+                  setSelectedId(remotePreview.workspace.scenarios[0]?.id ?? '');
+                  setRemotePreview(null);
+                  setNotice('Cloudversie geopend. Wijzigingen worden nu weer lokaal bewaard.');
+                }}
+              >
+                Gebruik cloudversie
+              </button>
+            </div>
+          </Modal>
+        )}
+        {importPreview && (
+          <Modal title="Werkruimte importeren" onClose={() => setImportPreview(null)}>
+            <p>
+              {importPreview.name} · {importPreview.scenarios.length} scenario’s ·{' '}
+              {importPreview.answers.length} antwoorden · {importPreview.dossiers?.length ?? 0}{' '}
+              dossiers · {importPreview.evidence?.length ?? 0} bewijsrecords ·{' '}
+              {importPreview.findings?.length ?? 0} bevindingen
+            </p>
+            <p>
+              Deze import vervangt de geopende werkruimte. Exporteer eerst als je die wilt bewaren.
+            </p>
+            <div className="button-row">
+              <button
+                className="secondary"
+                onClick={() => download('ima-backup.json', exportWorkspace(workspace))}
+              >
+                Huidige exporteren
+              </button>
+              <button
+                className="primary"
+                onClick={() => {
+                  persist(importPreview);
+                  setSelectedId(importPreview.scenarios[0]?.id ?? '');
+                  setSync(null);
+                  localStorage.removeItem('ima-sync-metadata');
+                  setImportPreview(null);
+                }}
+              >
+                Import openen
+              </button>
+            </div>
+          </Modal>
+        )}
+      </div>
+    </RiskEvidenceProvider>
   );
 }
 
@@ -1390,7 +1446,8 @@ function Empty({ title, text, onAdd }: { title: string; text: string; onAdd: () 
   );
 }
 function ScoreSummary({ scenario }: { scenario: Scenario }) {
-  const r = evaluateRisk(scenario);
+  const evaluate = useRiskEvaluator();
+  const r = evaluate(scenario);
   const delta = r.initial ? 1 - r.target.score.value / r.initial : 0;
   return (
     <div className="score-summary">
@@ -1432,6 +1489,7 @@ function ScenarioTable({
   scenarios: Scenario[];
   onSelect: (s: Scenario) => void;
 }) {
+  const evaluate = useRiskEvaluator();
   return (
     <div className="table-scroll">
       <table>
@@ -1448,7 +1506,7 @@ function ScenarioTable({
         </thead>
         <tbody>
           {scenarios.map((s) => {
-            const r = evaluateRisk(s);
+            const r = evaluate(s);
             return (
               <tr key={s.id} onClick={() => onSelect(s)}>
                 <td>
@@ -1495,7 +1553,8 @@ function Priorities({
   compact?: boolean;
   onEdit: (c: Control) => void;
 }) {
-  const r = evaluateRisk(scenario);
+  const evaluate = useRiskEvaluator();
+  const r = evaluate(scenario);
   const priorities = r.priorities.filter(
     (p) => scenario.controls.find((c) => c.id === p.controlId)?.status === 'planned',
   );
@@ -1567,8 +1626,9 @@ function RiskWorkbench({
   addControl: () => void;
   editControl: (c: Control) => void;
 }) {
+  const evaluate = useRiskEvaluator();
   const [model, setModel] = useState<'kinney' | 'lopa'>('kinney');
-  const r = evaluateRisk(scenario);
+  const r = evaluate(scenario);
   return (
     <>
       <div className="model-toolbar">
@@ -1773,10 +1833,12 @@ function LopaWorkbench({
   scenario: Scenario;
   onChange: (s: Scenario) => boolean;
 }) {
+  const evaluate = useRiskEvaluator();
   const [lopa, setDraft, draftStatus] = usePersistentDraft<
     | (NonNullable<Scenario['lopa']> & {
         rawEstimates?: Record<string, EstimateDraft>;
         rawTargetFrequency?: string;
+        reviewDrafts?: Record<string, RiskReviewDraft>;
       })
     | null
   >(
@@ -1814,10 +1876,10 @@ function LopaWorkbench({
     );
   let result;
   try {
-    result = calculateLopa(lopa);
+    result = evaluate({ ...scenario, lopa }).lopa;
   } catch (error) {
     draftError || setDraftError(error instanceof Error ? error.message : String(error));
-    result = scenario.lopa ? calculateLopa(scenario.lopa) : null;
+    result = scenario.lopa ? evaluate(scenario).lopa : null;
   }
   if (!result) return <p>Vul de LOPA-invoer volledig in.</p>;
   const set = (patch: Partial<typeof lopa>) => {
@@ -1863,6 +1925,7 @@ function LopaWorkbench({
       const {
         rawEstimates: _rawEstimates,
         rawTargetFrequency: _rawTargetFrequency,
+        reviewDrafts: _reviewDrafts,
         ...record
       } = lopa;
       if (onChange({ ...scenario, lopa: record })) {
@@ -2123,6 +2186,19 @@ function LopaWorkbench({
                 />
               </Field>
             </div>
+            <RiskEvidenceReviewFields
+              scenario={{ ...scenario, lopa }}
+              target={layer}
+              kind="lopa-layer"
+              draft={lopa.reviewDrafts?.[`layer/${layer.id}`]}
+              disabled={incompleteEstimates}
+              onDraftChange={(draft) =>
+                set({ reviewDrafts: { ...lopa.reviewDrafts, [`layer/${layer.id}`]: draft } })
+              }
+              onReview={(evidenceReview) =>
+                setLayer({ ...layer, evidence: 'verified', evidenceReview })
+              }
+            />
             {result.excluded
               .filter((x) => x.id === layer.id)
               .map((x) => (
@@ -2280,6 +2356,23 @@ function LopaWorkbench({
               />{' '}
               Geen dubbeltelling of afhankelijkheid vastgesteld
             </label>
+            <RiskEvidenceReviewFields
+              scenario={{ ...scenario, lopa }}
+              target={m}
+              kind="lopa-modifier"
+              draft={lopa.reviewDrafts?.[`modifier/${m.id}`]}
+              disabled={incompleteEstimates}
+              onDraftChange={(draft) =>
+                set({ reviewDrafts: { ...lopa.reviewDrafts, [`modifier/${m.id}`]: draft } })
+              }
+              onReview={(evidenceReview) =>
+                set({
+                  modifiers: lopa.modifiers.map((x) =>
+                    x.id === m.id ? { ...m, evidence: 'verified', evidenceReview } : x,
+                  ),
+                })
+              }
+            />
             {result.excluded
               .filter((x) => x.id === m.id)
               .map((x) => (
@@ -2490,6 +2583,7 @@ function ScenarioEditor({
 }
 function ControlEditor({
   control,
+  scenario,
   canRestore,
   onClose,
   draftKey,
@@ -2497,6 +2591,7 @@ function ControlEditor({
   onSave,
 }: {
   control: Control;
+  scenario: Scenario;
   canRestore: (candidate: Control) => boolean;
   onClose: () => void;
   draftKey: string;
@@ -2507,6 +2602,7 @@ function ControlEditor({
     draftKey,
     {
       control,
+      evidenceDraft: undefined as RiskReviewDraft | undefined,
       estimates: {} as Record<string, EstimateDraft>,
       helper: {
         conditionalBasis: '',
@@ -2796,6 +2892,19 @@ function ControlEditor({
             Verplichte maatregel / normafwijking
           </label>
         </div>
+        <RiskEvidenceReviewFields
+          scenario={scenario}
+          target={c}
+          kind="control"
+          draft={session.evidenceDraft}
+          disabled={Object.values(session.estimates ?? {}).some(
+            (raw) => !parseEstimateDraft(raw, { percent: true }),
+          )}
+          onDraftChange={(evidenceDraft) =>
+            setSession((current) => ({ ...current, evidenceDraft }))
+          }
+          onReview={(evidenceReview) => set({ ...c, evidence: 'verified', evidenceReview })}
+        />
         <div className="info-box">
           AHS-bonus en haalbaarheidsmultiplier veranderen uitsluitend de prioriteit. Geplande
           maatregelen veranderen het huidige restrisico niet. Bij onbewezen plannen neemt de
@@ -2967,6 +3076,7 @@ function Questionnaire({
   );
 }
 function Actions({
+  workspace,
   workspaceId,
   actions,
   scenarios,
@@ -2974,6 +3084,7 @@ function Actions({
   updateAction,
   onAdd,
 }: {
+  workspace: WorkspaceState;
   workspaceId: string;
   actions: WorkspaceAction[];
   scenarios: Scenario[];
@@ -2981,6 +3092,7 @@ function Actions({
   updateAction: (a: WorkspaceAction, expectedRevision: number) => boolean;
   onAdd: () => void;
 }) {
+  const { context } = useRiskEvidence();
   return (
     <>
       <div className="page-heading">
@@ -3013,6 +3125,8 @@ function Actions({
                   </small>
                   <h3>{a.title}</h3>
                   <ActionLifecyclePanel
+                    workspace={workspace}
+                    fileContext={context}
                     workspaceId={workspaceId}
                     action={a}
                     evidence={evidence}
@@ -3035,95 +3149,6 @@ function Actions({
 }
 function actionNeedsFollowup(action: WorkspaceAction): boolean {
   return !['closed', 'cancelled', 'legacy_done'].includes(actionStage(action));
-}
-function ActionEditor({
-  scenarios,
-  existingIds,
-  onSave,
-  onClose,
-  draftKey,
-}: {
-  scenarios: Scenario[];
-  existingIds: string[];
-  onSave: (a: WorkspaceAction) => boolean;
-  onClose: () => void;
-  draftKey: string;
-}) {
-  const [a, set, draftStatus] = usePersistentDraft<WorkspaceAction>(
-    draftKey,
-    {
-      id: id(),
-      title: '',
-      owner: '',
-      dueDate: '',
-      status: 'open',
-      notes: '',
-    },
-    'new/v1',
-    (candidate) => !existingIds.includes(candidate.id),
-  );
-  return (
-    <Modal title="Nieuwe verbeteractie" onClose={onClose}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (onSave(a)) draftStatus.clear();
-        }}
-      >
-        <DraftNotice status={draftStatus} />
-        <Field label="Actie">
-          <input
-            required
-            autoFocus
-            value={a.title}
-            onChange={(e) => set({ ...a, title: e.target.value })}
-          />
-        </Field>
-        <Field label="Gerelateerd scenario">
-          <select
-            value={a.scenarioId ?? ''}
-            onChange={(e) =>
-              set({
-                ...a,
-                scenarioId: e.target.value || undefined,
-                dossierId: scenarios.find((s) => s.id === e.target.value)?.dossierId,
-              })
-            }
-          >
-            <option value="">Algemene verbetering</option>
-            {scenarios.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.title}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="form-grid">
-          <Field label="Eigenaar">
-            <input value={a.owner} onChange={(e) => set({ ...a, owner: e.target.value })} />
-          </Field>
-          <Field label="Streefdatum">
-            <input
-              type="date"
-              value={a.dueDate}
-              onChange={(e) => set({ ...a, dueDate: e.target.value })}
-            />
-          </Field>
-        </div>
-        <Field label="Verificatieplan">
-          <textarea
-            required
-            value={a.notes}
-            onChange={(e) => set({ ...a, notes: e.target.value })}
-            placeholder="Hoe stel je vast dat de actie werkt?"
-          />
-        </Field>
-        <button className="primary" type="submit">
-          Actie vastleggen
-        </button>
-      </form>
-    </Modal>
-  );
 }
 function Incidents({
   incidents,
@@ -3676,6 +3701,8 @@ function Sources({ workspace, onImport }: { workspace: WorkspaceState; onImport:
   );
 }
 function Report({ workspace, questions }: { workspace: WorkspaceState; questions: Question[] }) {
+  const evaluate = useRiskEvaluator();
+  const { evidence, context } = useRiskEvidence();
   const csv = () => {
     const escape = (s: unknown) => `"${String(s ?? '').replaceAll('"', '""')}"`;
     const rows = [
@@ -3695,7 +3722,7 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
         'Onderbouwing',
       ],
       ...workspace.scenarios.map((s) => {
-        const r = evaluateRisk(s);
+        const r = evaluate(s);
         return [
           s.title,
           s.department,
@@ -3733,11 +3760,11 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
       `Werkruimte ${workspace.id} · revisie ${workspace.revision}`,
       `Bijgewerkt: ${workspace.updatedAt}`,
       '',
-      'Methodiek v2.0: Kinney-scores zijn geen ongevalskansen. Geplande maatregelen veranderen uitsluitend de prognose.',
+      'Methodiek ima-risk/2.1.0: expliciete bewijsversies bepalen actuele credit. Kinney-scores zijn geen ongevalskansen. Geplande maatregelen veranderen uitsluitend de prognose.',
       '',
     ];
     for (const s of workspace.scenarios) {
-      const r = evaluateRisk(s);
+      const r = evaluate(s);
       lines.push(
         `## ${s.title}`,
         '',
@@ -3771,7 +3798,7 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
           `Frequentiebron: ${s.lopa?.frequencyEvidence ?? ''}`,
           `Aannames en criteriumbesluit: ${s.lopa?.assumptions || 'Niet vastgelegd; criterium onbevestigd'}`,
         );
-      lines.push('');
+      lines.push(...riskEvidenceMarkdown(s, evidence, context), '');
     }
     lines.push('## Inventarisatie', '');
     for (const a of workspace.answers.filter((a) => !a.dossierId))
@@ -3785,8 +3812,9 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
     for (const a of workspace.actions)
       lines.push(
         `- ${a.title} | ${actionStageLabels[actionStage(a)]} | ${a.owner} | ${a.dueDate || 'Geen datum'} | ${a.notes} | Effectcontrole: ${a.effectCheck ?? 'Niet vastgelegd'} | ${a.verifiedAt ?? ''}`,
+        ...actionContextMarkdown(a, workspace, context),
       );
-    lines.push(...dossierMarkdown(workspace));
+    lines.push(...dossierMarkdown(workspace, context));
     lines.push(...riskAssessmentMarkdown(workspace.riskAssessments ?? []));
     lines.push(...justificationMarkdown(workspace.justifications ?? []));
     lines.push(questionDefinitionsMarkdown(workspace));
@@ -3833,7 +3861,7 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
         <h1>{workspace.name}</h1>
         <p>
           Revisie {workspace.revision} · {new Date(workspace.updatedAt).toLocaleDateString('nl-NL')}{' '}
-          · methodiek v2.0
+          · methodiek ima-risk/2.1.0
         </p>
         {workspace.name === 'Demonstratiewerkruimte' && (
           <p className="info-box">
@@ -3843,7 +3871,7 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
         <h2>Risicoregister</h2>
         <ScenarioTable scenarios={workspace.scenarios} onSelect={() => {}} />
         {workspace.scenarios.map((s) => {
-          const r = evaluateRisk(s);
+          const r = evaluate(s);
           return (
             <section className="report-scenario" key={s.id}>
               <h2>{s.title}</h2>
@@ -3863,6 +3891,14 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
                   <span className="muted">Bewijs: {c.evidenceNote || 'Niet geregistreerd'}</span>
                 </p>
               ))}
+              <details>
+                <summary>Actuele bewijsbasis van maatregelwerking</summary>
+                {riskEvidenceMarkdown(s, evidence, context).map((line, index) => (
+                  <p className="caption" key={index}>
+                    {line}
+                  </p>
+                ))}
+              </details>
               {r.current.excluded.map((x) => (
                 <p className="caption" key={x.id}>
                   Niet meegeteld in huidig risico: {x.title} — {x.reason}
@@ -3885,15 +3921,22 @@ function Report({ workspace, questions }: { workspace: WorkspaceState; questions
         })}
         <h2>Plan van aanpak</h2>
         {workspace.actions.map((a) => (
-          <p key={a.id}>
-            <strong>{a.title}</strong> · {a.owner || 'Eigenaar ontbreekt'} ·{' '}
-            {a.dueDate || 'Datum ontbreekt'} · {actionStageLabels[actionStage(a)]}
-            <br />
-            Plan/voortgang: {a.notes}
-            <br />
-            Effectcontrole: {a.effectCheck || 'Niet vastgelegd'}{' '}
-            {a.verifiedAt && `(${a.verifiedAt})`}
-          </p>
+          <section className="report-action" key={a.id}>
+            <p>
+              <strong>{a.title}</strong> · {a.owner || 'Eigenaar ontbreekt'} ·{' '}
+              {a.dueDate || 'Datum ontbreekt'} · {actionStageLabels[actionStage(a)]}
+              <br />
+              Plan/voortgang: {a.notes}
+              <br />
+              Effectcontrole: {a.effectCheck || 'Niet vastgelegd'}{' '}
+              {a.verifiedAt && `(${a.verifiedAt})`}
+            </p>
+            {actionContextMarkdown(a, workspace, context).map((line, index) => (
+              <p className="caption" key={index}>
+                {line}
+              </p>
+            ))}
+          </section>
         ))}
         <h2>Inventarisatie</h2>
         {workspace.answers

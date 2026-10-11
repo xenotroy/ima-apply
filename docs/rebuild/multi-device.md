@@ -90,3 +90,7 @@ Kies op iedere pc hetzelfde bestand in **Werkruimte & synchronisatie**:
 - `workspaces/legacy-riebuilder-utc-review.json`: afzonderlijke controleversie met dertien getypeerde antwoorden en zichtbare UTC-/vraagversiewaarschuwingen.
 
 Beide zijn op 9 oktober 2026 volledig teruggelezen via onafhankelijke API-clients en echte browsercontexten; vernieuwen behield exact dezelfde inhoud. Het oorspronkelijke lokale databestand bleef ongewijzigd. Beoordeel eerst de migratiewaarschuwingen op **Overzicht**. De interpretatieversie is een concept voor controle.
+
+## Bijlagebestanden vanaf versie 2.4
+
+Bijlagebytes worden afzonderlijk opgeslagen onder hun SHA256, lokaal in IndexedDB en desgewenst in dezelfde private datarepository. De JSON bewaart de bestandsidentiteit, bronversie en menselijke beoordeling. Bestandupload en werkruimteupload zijn afzonderlijke handelingen: bewaar de gewijzigde werkruimte nadat de bijlage is overgedragen. Op de andere pc controleert **Private bron opnieuw controleren** zowel de gebonden blobbytes als de actuele bronverwijzing. Een eerder in JSON opgeslagen match is geen actuele sessiecontrole. [Uitvoerige bewijsroute](evidence-integrity.md).

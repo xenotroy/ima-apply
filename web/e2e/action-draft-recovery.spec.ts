@@ -58,7 +58,7 @@ async function editor(page: Page) {
   const card = page.locator('.action-card').first();
   const details = card.locator('.action-revision-editor');
   if (!(await details.evaluate((node) => (node as HTMLDetailsElement).open)))
-    await details.locator('summary').click();
+    await details.locator(':scope > summary').click();
   return card;
 }
 async function boot(page: Page, stage: 'implemented' | 'verification_due' = 'implemented') {
@@ -271,7 +271,7 @@ test('changed selected proof blocks the recovered assessment until explicit reco
   await page.reload();
   card = await editor(page);
   await check(card, textFields);
-  await expect(card.getByRole('alert')).toContainText('bewijs is gewijzigd');
+  await expect(card.getByRole('alert')).toContainText('bewijs, de bron of het risicodoel is gewijzigd');
   await expect(
     card.getByRole('button', { name: 'Revisie vastleggen', exact: true }),
   ).toBeDisabled();

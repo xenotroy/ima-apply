@@ -1,6 +1,6 @@
 # IMA Apply 2 — risicobeoordeling en justificatie
 
-Versie: `ima-risk/2.0.0`; bronnen gecontroleerd op 7 oktober 2026. Implementatie: `web/src/domain/risk.ts`, datamodel: `web/src/domain/types.ts`, verificatie: `web/src/domain/risk.test.ts`.
+Nieuwe actuele beoordelingen: `ima-risk/2.1.0`. De fysieke schalen en formules blijven `ima-risk/2.0.0`; de nieuwe versie voegt expliciete bewijsselectie en historische bewijsfreezes toe. Oude beoordelingen behouden hun oorspronkelijke methode en hashes. Bronnen voor de formules gecontroleerd op 7 oktober 2026. Implementatie: `web/src/domain/risk.ts` en `web/src/data/risk-evidence.ts`. Zie [bewijsintegriteit](evidence-integrity.md) voor actuele versus historische werking.
 
 **Een hoge AHS-positie, een eenvoudig uitvoerbare ingreep of een hoge justificatiescore bewijst geen fysieke risicoreductie.** IMA berekent daarom drie verschillende uitkomsten: een relatieve Kinney-score, een jaarlijkse LOPA-scenariofrequentie en een afzonderlijke uitvoeringsprioriteit. Geen van deze uitkomsten is automatisch een oordeel over wettelijke toelaatbaarheid.
 

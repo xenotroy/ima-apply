@@ -20,6 +20,12 @@ E01, E02, E04, E05, E06 en E07 blijven open. De onderstaande matrix en E03-besch
 
 De links naar oorspronkelijke `.NET`-code en `CONTEXT.md` verwijzen naar de behouden lokale legacycheckout. De publieke browserrepository bevat de nieuwe browsercode, migrator en herbouwdocumentatie; de lokale legacycontext is daarmee niet als publieke bron gepubliceerd.
 
+## Vervolgcontrole voor versie 2.4
+
+De nieuwe browserketen voor E01/E02/E04 is geïmplementeerd: expliciete bewijsversies bij maatregelen, IPL’s en modifiers; eigen bevroren bewijsbasis bij nieuwe beoordelingsmomenten; echte doel-ID’s en versies bij acties; afzonderlijke registratie-/bestandshash en private byteoverdracht met hercontrole; en rijke actiecontext in invoer, herstel, revisies en rapportage. Oude methodebeoordelingen en hashes blijven intact. De [bewijsroute](evidence-integrity.md) en [release 2.4](release-2.4.0.md) beschrijven de concrete acceptatiegevallen en grenzen.
+
+De hieronder bewaarde matrix is de oorspronkelijke nulmeting. De genoemde losse vlag-/veldtekorten van E01/E02/E04 beschrijven niet langer de nieuwe browserwerkflow. Werkelijke klantbestandsmigratie, inhoudelijke lokale maatregelenwerking en definitief beoordeelde productieoverdracht blijven afzonderlijke bewijstaken. E05, E06 en E07 blijven inhoudelijk open; E03 behoudt zijn oorspronkelijke productiearchiefgrens. De volledige herbouwgoal blijft actief.
+
 ## Matrix van essentiële eisen bij de audit
 
 **P1**: nodig vóór een claim van volledige herbouw of volledige overdracht. **P2**: concrete oorspronkelijke gebruikersbetekenis die na de eerste P1-bouw moet worden hersteld. Een externe brontaak heeft dezelfde opleverbetekenis, maar is geen bewezen fout in de browsercode.

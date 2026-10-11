@@ -34,3 +34,11 @@ De [volledige herbouwgoal](goal.md) blijft actief. Zie het [bronregister](source
 ## Volledigheidscontrole na versie 2.3
 
 De [audit van 11 oktober](completion-audit-2026-10-11.md) benoemt concrete resterende betekenispariteit en acceptatiegevallen voor bewijsversies bij risicomaatregelen, binaire bewijsintegriteit, afzonderlijke actiecontext, bijzondere incidentvelden en directe wettelijke impactrelaties. Het selectiegat voor oude actiearchieven is in [2.3.1](legacy-action-history.md) hersteld en met fictieve brongevallen gecontroleerd; een werkelijk productiearchief is nog niet geselecteerd en overgedragen. De oorspronkelijke tabellen zijn geen bewijs dat de overige ketenvereisten al zijn afgerond. De extra bronlezing en herstelconcepten van [2.3.1](release-2.3.1.md) sluiten hun eigen controlepunten; de volledige goal blijft actief.
+
+## Aanvulling voor versie 2.4
+
+E01/E02/E04 hebben nu getypeerde browsertegenhangers en gerichte betekenisproeven. [Bewijsintegriteit](evidence-integrity.md) beschrijft de keten registratie → bestandsversie → menselijke maatregelreview → actuele werking, plus afzonderlijke historische uitkomsten en uitvoeringsdoelen. AHS/prioriteit/bron-/onderwerprelaties en resultaat-/uitvoerings-/verificatievelden blijven expliciet in acties, snapshots, herstel en exports.
+
+De migrator projecteert uitsluitend aantoonbare oorspronkelijke bestandshash/MIME/vastlegger en afzonderlijke actievelden. Echte geselecteerde bronrelaties krijgen hun werkelijke collectie/ID. Ontbrekende of ambigue actiebronnen blijven expliciet onopgelost; een ontbrekende onderwerprelatie wordt niet tot actiebron veranderd. Raw gegevens blijven behouden. Er is in deze stap geen nieuwe productiedatabase of oorspronkelijk klantbestand geopend of overgedragen.
+
+De oorspronkelijke bijzondere incidentbetekenis (E05), wettelijke impact-/onderwerp-/waarnemingsrelaties (E06) en resterende primaire onderwijs-/AI-/LMS-inhoud (E07) zijn nog geen afgeronde acceptatiepunten. De volledige goal blijft actief.

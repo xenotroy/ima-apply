@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
-import type { WorkspaceAction } from '../data/model';
+import type { WorkspaceAction, WorkspaceState } from '../data/model';
 import type { Evidence } from '../data/dossier';
 import type { ActionStage } from '../data/action';
 import {
   actionRevision,
+  actionCurrentValidity,
   actionSnapshot,
   actionSnapshotHash,
   actionStage,
@@ -15,6 +16,21 @@ import { evidenceHash } from '../data/frozen';
 import { MAX_WORKSPACE_BYTES } from '../data/validation';
 import { draftBase } from '../data/local-drafts';
 import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import { DEFAULT_EVIDENCE_FILE_SESSION } from '../data/evidence-files';
+import type { EvidenceFileIntegrityContext } from '../data/evidence-file-types';
+import {
+  actionContextBasis,
+  assertActionContext,
+  editableActionContextKeys,
+  type EditableActionContext,
+} from '../domain/action-context';
+import {
+  ActionContextFields,
+  assertSourcePickerCommitted,
+  initialActionSourcePicker,
+  validActionSourcePicker,
+  type ActionSourcePickerDraft,
+} from './ActionCreateForm';
 import DraftNotice from './DraftNotice';
 import './action-lifecycle.css';
 
@@ -29,13 +45,16 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 type EditableAction = Pick<
   WorkspaceAction,
   'title' | 'owner' | 'dueDate' | 'notes' | 'evidenceIds'
->;
+> &
+  EditableActionContext;
 interface RevisionDraft {
   actionId: string;
   sourceBasis: string;
   sourceRevision: number;
   fields: EditableAction;
   evidenceBasis: string;
+  contextBasis?: string;
+  sourcePicker?: ActionSourcePickerDraft;
   actor: string;
   reason: string;
   target: ActionStage | '';
@@ -71,7 +90,12 @@ function selectedEvidenceBasis(ids: string[] | undefined, evidence: Evidence[]):
       }),
   );
 }
-function initialDraft(action: WorkspaceAction, evidence: Evidence[], basis: string): RevisionDraft {
+function initialDraft(
+  action: WorkspaceAction,
+  evidence: Evidence[],
+  basis: string,
+  workspace?: WorkspaceState,
+): RevisionDraft {
   const { title, owner, dueDate, notes, evidenceIds } = action;
   return {
     actionId: action.id,
@@ -83,8 +107,15 @@ function initialDraft(action: WorkspaceAction, evidence: Evidence[], basis: stri
       dueDate,
       notes,
       ...(evidenceIds !== undefined ? { evidenceIds: [...evidenceIds] } : {}),
+      ...Object.fromEntries(
+        editableActionContextKeys
+          .filter((key) => action[key] !== undefined)
+          .map((key) => [key, structuredClone(action[key])]),
+      ),
     },
     evidenceBasis: selectedEvidenceBasis(evidenceIds, evidence),
+    ...(workspace ? { contextBasis: actionContextBasis(action, workspace) } : {}),
+    sourcePicker: initialActionSourcePicker(),
     actor: '',
     reason: '',
     target: '',
@@ -94,6 +125,11 @@ function initialDraft(action: WorkspaceAction, evidence: Evidence[], basis: stri
   };
 }
 function validDraft(value: RevisionDraft, action: WorkspaceAction, basis: string): boolean {
+  try {
+    assertActionContext(value?.fields ?? {});
+  } catch {
+    return false;
+  }
   return (
     !!value &&
     typeof value === 'object' &&
@@ -111,13 +147,18 @@ function validDraft(value: RevisionDraft, action: WorkspaceAction, basis: string
     ['evidenceBasis', 'actor', 'reason', 'verificationDue', 'verifier', 'evaluation'].every(
       (key) => typeof value[key as keyof RevisionDraft] === 'string',
     ) &&
-    (value.target === '' || nextActionStages(action).includes(value.target))
+    (value.target === '' || nextActionStages(action).includes(value.target)) &&
+    (value.contextBasis === undefined || typeof value.contextBasis === 'string') &&
+    validActionSourcePicker(value.sourcePicker)
   );
 }
 export interface ActionLifecyclePanelProps {
   workspaceId: string;
   action: WorkspaceAction;
   evidence: Evidence[];
+  /** Full current workspace permits explicit sources/targets and current validity checks. */
+  workspace?: WorkspaceState;
+  fileContext?: EvidenceFileIntegrityContext;
   /** Parent compares expectedRevision with its latest state before applying this revision. */
   onSave: (next: WorkspaceAction, expectedRevision: number) => boolean;
 }
@@ -136,12 +177,14 @@ function ActionRevisionEditor({
   workspaceId,
   action,
   evidence,
+  workspace,
+  fileContext: suppliedFileContext,
   onSave,
   basis,
 }: ActionLifecyclePanelProps & { basis: string }) {
   const [session, setSession, draftStatus] = usePersistentDraft<RevisionDraft>(
     `${workspaceId}/action-lifecycle/${action.id}/${basis}`,
-    () => initialDraft(action, evidence, basis),
+    () => initialDraft(action, evidence, basis, workspace),
     basis,
     (value) => validDraft(value, action, basis),
   );
@@ -151,7 +194,13 @@ function ActionRevisionEditor({
   const draftRevision = session.sourceRevision;
   const stale =
     session.sourceBasis !== actionBasis(action) ||
-    session.evidenceBasis !== selectedEvidenceBasis(draft.evidenceIds, evidence);
+    session.evidenceBasis !== selectedEvidenceBasis(draft.evidenceIds, evidence) ||
+    (!!workspace &&
+      session.contextBasis !== actionContextBasis(draft, workspace) &&
+      !(
+        session.contextBasis === undefined &&
+        editableActionContextKeys.every((key) => draft[key] === undefined)
+      ));
   function input<
     K extends 'actor' | 'reason' | 'target' | 'verificationDue' | 'verifier' | 'evaluation',
   >(key: K, value: RevisionDraft[K]) {
@@ -167,23 +216,45 @@ function ActionRevisionEditor({
     setSession((previous) => ({
       ...previous,
       evidenceBasis: selectedEvidenceBasis(previous.fields.evidenceIds, evidence),
+      ...(workspace ? { contextBasis: actionContextBasis(previous.fields, workspace) } : {}),
     }));
     setError('');
   }
-  function field<K extends keyof EditableAction>(key: K, value: EditableAction[K]) {
-    setSession((previous) => ({
-      ...previous,
-      fields: { ...previous.fields, [key]: value },
-      ...(key === 'evidenceIds'
-        ? { evidenceBasis: selectedEvidenceBasis(value as string[] | undefined, evidence) }
-        : {}),
-    }));
+  function fields(patch: Partial<EditableAction>) {
+    setSession((previous) => {
+      const next = { ...previous.fields, ...patch };
+      const evidenceFresh =
+        previous.evidenceBasis === selectedEvidenceBasis(previous.fields.evidenceIds, evidence);
+      const contextFresh =
+        !workspace ||
+        previous.contextBasis === actionContextBasis(previous.fields, workspace) ||
+        (previous.contextBasis === undefined &&
+          editableActionContextKeys.every((key) => previous.fields[key] === undefined));
+      return {
+        ...previous,
+        fields: next,
+        ...(Object.hasOwn(patch, 'evidenceIds') && evidenceFresh
+          ? { evidenceBasis: selectedEvidenceBasis(next.evidenceIds, evidence) }
+          : {}),
+        ...(workspace && contextFresh ? { contextBasis: actionContextBasis(next, workspace) } : {}),
+      };
+    });
   }
-  const scopedEvidence = evidence.filter((item) => item.dossierId === action.dossierId);
+  function field<K extends keyof EditableAction>(key: K, value: EditableAction[K]) {
+    fields({ [key]: value });
+  }
+  const scopedEvidence = evidence.filter(
+    (item) => item.dossierId === undefined || item.dossierId === action.dossierId,
+  );
   const assessed = target === 'effective' || target === 'ineffective';
   const stages = nextActionStages(action);
   const history = action.lifecycle?.history ?? [];
   const bytes = new TextEncoder().encode(JSON.stringify(action)).byteLength;
+  const fileContext = suppliedFileContext ?? {
+    workspaceId,
+    proofs: DEFAULT_EVIDENCE_FILE_SESSION.proofs,
+  };
+  const validity = actionCurrentValidity(action, evidence, workspace?.scenarios ?? [], fileContext);
   return (
     <div className="action-lifecycle">
       <p className="action-stage" data-stage={actionStage(action)}>
@@ -217,6 +288,21 @@ function ActionRevisionEditor({
           </small>
         </div>
       )}
+      {validity.status === 'current' && (
+        <p className="caption">
+          De gebruikte bewijs- en doelversies zijn actueel passend. Dit verleent geen automatische
+          risicocredit.
+        </p>
+      )}
+      {validity.status === 'stale' && (
+        <div className="warning-line" role="status">
+          <strong>Historische beoordeling bewaard; actuele basis niet meer bevestigd.</strong>
+          {validity.issues.map((issue) => (
+            <p key={issue}>{issue}</p>
+          ))}
+          <p>Heropen en beoordeel de actuele basis vóór een nieuwe effect- of afsluitstap.</p>
+        </div>
+      )}
       <DraftNotice status={draftStatus} />
       <p className="caption">
         Een revisieconcept hoort bij deze actieversie. Concepten van eerdere versies blijven via
@@ -229,6 +315,7 @@ function ActionRevisionEditor({
             event.preventDefault();
             setError('');
             try {
+              assertSourcePickerCommitted(session.sourcePicker);
               if (stale || revision !== draftRevision)
                 throw new Error(
                   'Deze actie of het geselecteerde bewijs is gewijzigd. Je invoer blijft staan; beoordeel de actuele bronbasis voordat je bewaart.',
@@ -240,13 +327,7 @@ function ActionRevisionEditor({
                   actor,
                   reason,
                   targetStage: target || undefined,
-                  patch: {
-                    title: draft.title,
-                    owner: draft.owner,
-                    dueDate: draft.dueDate,
-                    notes: draft.notes,
-                    evidenceIds: draft.evidenceIds,
-                  },
+                  patch: draft,
                   verificationDueAt: verificationDue
                     ? new Date(verificationDue).toISOString()
                     : undefined,
@@ -254,6 +335,9 @@ function ActionRevisionEditor({
                   evaluation,
                 },
                 evidence,
+                new Date().toISOString(),
+                workspace?.scenarios ?? [],
+                fileContext,
               );
               if (onSave(next, draftRevision) === false)
                 throw new Error(
@@ -280,9 +364,33 @@ function ActionRevisionEditor({
               onChange={(e) => field('dueDate', e.target.value)}
             />
           </Field>
-          <Field label="Verificatieplan / voortgang">
+          <Field
+            label={
+              draft.verificationMethod === undefined
+                ? 'Verificatieplan / voortgang'
+                : 'Aanvullende notities / voortgang'
+            }
+          >
             <textarea value={draft.notes} onChange={(e) => field('notes', e.target.value)} />
           </Field>
+          {workspace && (
+            <ActionContextFields
+              workspace={workspace}
+              value={{ ...draft, scenarioId: action.scenarioId, dossierId: action.dossierId }}
+              onChange={fields}
+              picker={session.sourcePicker ?? initialActionSourcePicker()}
+              onPickerChange={(patch) =>
+                setSession((previous) => ({
+                  ...previous,
+                  sourcePicker: {
+                    ...initialActionSourcePicker(),
+                    ...previous.sourcePicker,
+                    ...patch,
+                  },
+                }))
+              }
+            />
+          )}
           <fieldset className="action-evidence">
             <legend>Bewijs bij deze actie</legend>
             {scopedEvidence.map((item) => (
@@ -385,7 +493,7 @@ function ActionRevisionEditor({
           {(error || stale) && (
             <p className="warning-line" role="alert">
               {error ||
-                'Het geselecteerde bewijs is gewijzigd. Je invoer is behouden; beoordeel de nieuwe broninhoud voordat je verdergaat.'}
+                'Het geselecteerde bewijs, de bron of het risicodoel is gewijzigd. Je invoer is behouden; beoordeel de nieuwe broninhoud voordat je verdergaat.'}
             </p>
           )}
           <div className="action-buttons">

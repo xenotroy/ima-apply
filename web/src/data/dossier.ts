@@ -84,6 +84,10 @@ export interface Evidence {
   verifiedAt?: string;
   verificationNote?: string;
   verifiedContentSha256?: string;
+  capturedBy?: string;
+  file?: import('./evidence-file-types').EvidenceFile;
+  fileCheck?: import('./evidence-file-types').EvidenceFileCheck;
+  verifiedFileBindingSha256?: string;
 }
 export interface Observation {
   id: string;

@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import { EvidenceAttachmentPanel } from './EvidenceAttachmentPanel';
+import { useRiskEvidence } from './RiskEvidenceContext';
+import { evidenceFileBindingHash, evidenceFileIntegrityReady } from '../data/evidence-files';
+import type { ActionCreateSeed } from '../domain/action-context';
 import QuestionDefinitionWorkspace from './QuestionDefinitionWorkspace';
 import RiskLibraryWorkspace from './RiskLibraryWorkspace';
 import PiRouterWorkspace from './PiRouterWorkspace';
@@ -77,15 +81,18 @@ export default function DossierWorkspace({
   workspace,
   questions,
   onUpdate,
+  onCreateAction,
   openInventory,
   openScenario,
 }: {
   workspace: WorkspaceState;
   questions: Question[];
   onUpdate: (patch: WorkspacePatch) => boolean;
+  onCreateAction: (seed: ActionCreateSeed) => void;
   openInventory: (dossierId: string) => void;
   openScenario: (scenarioId: string) => void;
 }) {
+  const { context } = useRiskEvidence();
   const [tab, setTab] = useState<
     'dossiers' | 'organisation' | 'knowledge' | 'context' | 'modules' | 'managed' | 'library' | 'pi'
   >('dossiers');
@@ -379,6 +386,17 @@ export default function DossierWorkspace({
                           {e.status === 'verified' ? 'Geverifieerd' : 'Nog te verifiëren'}
                         </Badge>
                         <h3>{e.title}</h3>
+                        {e.file && (
+                          <p
+                            className={
+                              evidenceFileIntegrityReady(e, context) ? 'caption' : 'warning-line'
+                            }
+                          >
+                            {evidenceFileIntegrityReady(e, context)
+                              ? 'Bestandsbytes gecontroleerd in deze sessie.'
+                              : 'Bestandsbytes opnieuw controleren in deze sessie.'}
+                          </p>
+                        )}
                         <p>{e.description}</p>
                         <p className="caption">
                           {e.kind} · {e.reference || 'Geen bestandsverwijzing'}
@@ -472,22 +490,14 @@ export default function DossierWorkspace({
                         <button
                           className="secondary"
                           onClick={() =>
-                            onUpdate({
-                              actions: [
-                                ...workspace.actions,
-                                {
-                                  id: id(),
-                                  title: `Verbeter: ${f.title}`,
-                                  dossierId: f.dossierId,
-                                  findingId: f.id,
-                                  scenarioId: f.scenarioId,
-                                  evidenceIds: f.evidenceIds,
-                                  owner: '',
-                                  dueDate: '',
-                                  status: 'open',
-                                  notes: `Aanleiding: ${f.description}. Leg uitvoering en effectcontrole apart vast.`,
-                                },
-                              ],
+                            onCreateAction({
+                              title: `Verbeter: ${f.title}`,
+                              dossierId: f.dossierId,
+                              findingId: f.id,
+                              scenarioId: f.scenarioId,
+                              evidenceIds: f.evidenceIds,
+                              sourceRefs: [{ kind: 'workspace', collection: 'findings', id: f.id }],
+                              notes: `Aanleiding: ${f.description}. Leg uitvoering en effectcontrole apart vast.`,
                             })
                           }
                         >
@@ -1045,6 +1055,9 @@ function EvidenceForm({
   dossierId: string;
   onSave: (e: Evidence) => boolean;
 }) {
+  const { context, fileSession, cloud, onSessionChange } = useRiskEvidence();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const [record, set, draftStatus] = usePersistentDraft<Evidence>(
     `${workspaceId}/evidence/${dossierId}/${initial?.id ?? 'new'}`,
     initial ?? {
@@ -1063,26 +1076,58 @@ function EvidenceForm({
     (candidate) => Boolean(initial) || !existingIds.includes(candidate.id),
   );
   const changeContent = (patch: Partial<Evidence>) =>
-    set({
-      ...record,
+    set((previous) => ({
+      ...previous,
       ...patch,
       status: 'unverified',
-      verifiedBy: '',
-      verificationNote: '',
       verifiedAt: undefined,
       verifiedContentSha256: undefined,
-    });
+      verifiedFileBindingSha256: undefined,
+    }));
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        const accepted = onSave({
-          ...record,
-          ...(record.status === 'verified'
-            ? { verifiedAt: new Date().toISOString(), verifiedContentSha256: evidenceHash(record) }
-            : { verifiedAt: undefined, verifiedContentSha256: undefined }),
-        });
-        if (accepted) draftStatus.clear();
+        try {
+          if (busy) throw new Error('Wacht totdat de lopende bestandcontrole is afgerond.');
+          const filePin = record.file ? evidenceFileBindingHash(record) : undefined;
+          const sameHumanReview =
+            record.status === 'verified' &&
+            initial?.status === 'verified' &&
+            initial.verifiedContentSha256 === evidenceHash(record) &&
+            initial.verifiedBy === record.verifiedBy &&
+            initial.verificationNote === record.verificationNote &&
+            initial.verifiedFileBindingSha256 === filePin;
+          if (
+            record.status === 'verified' &&
+            !sameHumanReview &&
+            record.file &&
+            !evidenceFileIntegrityReady(record, context)
+          )
+            throw new Error(
+              'Controleer het bewijsbestand in deze sessie voordat je het inhoudelijk bevestigt.',
+            );
+          const accepted = onSave({
+            ...record,
+            ...(record.status === 'verified'
+              ? {
+                  verifiedAt: sameHumanReview ? initial!.verifiedAt : new Date().toISOString(),
+                  verifiedContentSha256: evidenceHash(record),
+                  verifiedFileBindingSha256: filePin,
+                }
+              : {
+                  verifiedAt: undefined,
+                  verifiedContentSha256: undefined,
+                  verifiedFileBindingSha256: undefined,
+                }),
+          });
+          if (accepted) {
+            draftStatus.clear();
+            setError('');
+          } else setError('Bewijs niet opgeslagen. Het concept blijft beschikbaar.');
+        } catch (caught) {
+          setError(caught instanceof Error ? caught.message : String(caught));
+        }
       }}
     >
       <DraftNotice status={draftStatus} />
@@ -1095,6 +1140,15 @@ function EvidenceForm({
         />
       </Field>
       <div className="form-grid">
+        <Field label="Toepassingsbereik van bewijs">
+          <select
+            value={record.dossierId ?? ''}
+            onChange={(event) => changeContent({ dossierId: event.target.value || undefined })}
+          >
+            <option value={dossierId}>Dit dossier</option>
+            <option value="">Werkruimtebreed; toepasselijkheid per maatregel beoordelen</option>
+          </select>
+        </Field>
         <Field label="Bewijssoort">
           <select
             value={record.kind}
@@ -1121,7 +1175,7 @@ function EvidenceForm({
       </div>
       <Field
         label="Verwijzing naar bestand of bron"
-        hint="Bewaar bestanden in een geschikte private opslag. Deze werkruimte bewaart de verwijzing en bevindingen."
+        hint="Leg de originele verwijzing vast. Een gekoppeld bestand krijgt een afzonderlijke hash en controle."
       >
         <input
           value={record.reference}
@@ -1135,6 +1189,19 @@ function EvidenceForm({
           onChange={(e) => changeContent({ description: e.target.value })}
         />
       </Field>
+      <EvidenceAttachmentPanel
+        workspaceId={workspaceId}
+        evidence={record}
+        session={fileSession}
+        cloud={cloud}
+        onSessionChange={onSessionChange}
+        onBusyChange={setBusy}
+        onChange={(patch, options) =>
+          options?.contentChanged
+            ? changeContent(patch)
+            : set((previous) => ({ ...previous, ...patch }))
+        }
+      />
       <Field label="Verificateur">
         <input
           required={record.status === 'verified'}
@@ -1149,7 +1216,14 @@ function EvidenceForm({
           onChange={(e) => set({ ...record, verificationNote: e.target.value })}
         />
       </Field>
-      <button className="primary">Bewijs opslaan</button>
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      <button className="primary" disabled={busy}>
+        Bewijs opslaan
+      </button>
     </form>
   );
 }

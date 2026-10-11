@@ -9,3 +9,9 @@ Import controleert scenario-identiteit, veldgrenzen, scopeverwijzingen en canoni
 De hash is een consistentiecontrole binnen de export, geen externe handtekening. De opgegeven beoordelaar is een vastgelegde naam, niet automatisch geauthenticeerd. GitHub-versies en afzonderlijke exports bieden aanvullend herstelbewijs. Een opgeslagen moment bewijst evenmin dat de maatregelen fysiek zijn geïnspecteerd.
 
 Bewijsroutes: `web/src/data/risk-history.test.ts` en de browserflow in `web/e2e/risk-workflows.spec.ts`. Deze controleren scheiding tussen historisch en actueel, ontbrekende beoordelaar/motivatie, gewijzigd bronrecord, onjuist gereconstrueerde uitkomst, referenties, reload en leesbare rapportage.
+
+## Bewijsbewuste vastlegging, 2.4
+
+Nieuwe vastleggingen gebruiken `ima-risk/2.1.0` en bevriezen precies de gebruikte bewijs-ID’s, de toen actuele inhoudelijke bewijsversies, ontbrekende gekozen ID’s en de gebruikte bestandcontroles. Een latere intrekking of wijziging verandert hun historische uitkomst niet. De actuele beoordeling verliest wel niet bevestigde werking. De normale wijzigroute weigert herschrijven of verwijderen van een reeds vastgelegd moment; een nieuw oordeel krijgt een nieuw record.
+
+Oude `ima-risk/2.0.0`-vastleggingen blijven met hun eigen invoer en formule gecontroleerd. Het systeem voegt er geen nieuwe bewijsversies of menselijke beoordelingen aan toe. Markdown toont zowel de historische maatregelreview als de destijds aanwezige bronbasis. [Volledige bewijsroute](evidence-integrity.md).

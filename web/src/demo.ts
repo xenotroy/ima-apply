@@ -1,5 +1,8 @@
 import type { Control, Scenario } from './domain/types';
 import { createWorkspace } from './data/model';
+import type { Evidence } from './data/dossier';
+import { evidenceHash } from './data/frozen';
+import { captureRiskEvidenceReview } from './data/risk-evidence';
 const estimate = (value: number, min = value, max = value) => ({ min, value, max });
 export function newControl(overrides: Partial<Control> = {}): Control {
   return {
@@ -215,8 +218,65 @@ export function demoWorkspace() {
       },
     },
   ];
+  const evidence: Evidence[] = [];
+  for (const scenario of scenarios) {
+    for (const target of scenario.controls.filter((control) => control.evidence === 'verified')) {
+      const record: Evidence = {
+        id: `demo-evidence-${target.id}`,
+        title: `Fictief demonstratiebewijs: ${target.title}`,
+        kind: 'record',
+        reference: `demo:${target.id}`,
+        description: `Fictieve illustratie van het bewijsverband. ${target.rationale} ${target.evidenceNote}`,
+        recordedAt: '2026-10-01T12:00:00Z',
+        capturedBy: 'Demonstratie — fictief',
+        status: 'verified',
+        verifiedBy: 'Demonstratie — fictief',
+        verifiedAt: '2026-10-01T12:00:00Z',
+        verificationNote: 'Uitsluitend fictieve invoer voor de demonstratie van maatregelwerking.',
+      };
+      record.verifiedContentSha256 = evidenceHash(record);
+      evidence.push(record);
+      target.evidenceReview = captureRiskEvidenceReview(
+        scenario,
+        'control',
+        target,
+        [record],
+        'Demonstratie — fictief',
+        'Deze fictieve bewijsversie ondersteunt de fictieve factorinschatting.',
+        '2026-10-01T12:01:00Z',
+      );
+    }
+    for (const target of scenario.lopa?.layers.filter((layer) => layer.evidence === 'verified') ??
+      []) {
+      const record: Evidence = {
+        id: `demo-evidence-${target.id}`,
+        title: `Fictief demonstratiebewijs: ${target.title}`,
+        kind: 'record',
+        reference: `demo:${target.id}`,
+        description: `Fictieve PFD- en onafhankelijkheidsbasis. ${target.evidenceNote} ${target.independenceNote}`,
+        recordedAt: '2026-10-01T12:00:00Z',
+        capturedBy: 'Demonstratie — fictief',
+        status: 'verified',
+        verifiedBy: 'Demonstratie — fictief',
+        verifiedAt: '2026-10-01T12:00:00Z',
+        verificationNote: 'Uitsluitend fictieve invoer voor de demonstratie van LOPA.',
+      };
+      record.verifiedContentSha256 = evidenceHash(record);
+      evidence.push(record);
+      target.evidenceReview = captureRiskEvidenceReview(
+        scenario,
+        'lopa-layer',
+        target,
+        [record],
+        'Demonstratie — fictief',
+        'Deze fictieve bewijsversie ondersteunt de fictieve PFD en onafhankelijkheid.',
+        '2026-10-01T12:01:00Z',
+      );
+    }
+  }
   return createWorkspace('Demonstratiewerkruimte', {
     scenarios,
+    evidence,
     actions: [
       {
         id: 'demo-action-1',

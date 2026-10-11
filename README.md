@@ -2,9 +2,9 @@
 
 Een browserwerkruimte voor risico-inventarisatie, onderbouwde beheersmaatregelen en zichtbaar restrisico.
 
-Deze implementatiestand betreft appversie **2.3.1**. Het browserdataschema blijft additief `schemaVersion: 1`; de rekenmethode heeft haar eigen versie `ima-risk/2.0.0`.
+Deze implementatiestand betreft appversie **2.4.0**. Het browserdataschema blijft additief `schemaVersion: 1`; nieuwe beoordelingen gebruiken `ima-risk/2.1.0` met een expliciete bewijsbasis; oude `ima-risk/2.0.0`-beoordelingen bewaren hun eigen invoer, berekening en hashes.
 
-**[Open IMA Apply](https://xenotroy.github.io/ima-apply/)** · [Handleiding](docs/rebuild/getting-started.md) · [Risicomethodiek](docs/rebuild/risk-methodology.md) · [Bronregister](docs/rebuild/source-register.md)
+[Release 2.4: bewijsversies en bestanden](docs/rebuild/release-2.4.0.md) · **[Open IMA Apply](https://xenotroy.github.io/ima-apply/)** · [Handleiding](docs/rebuild/getting-started.md) · [Risicomethodiek](docs/rebuild/risk-methodology.md) · [Bronregister](docs/rebuild/source-register.md)
 
 ## Wat de app doet
 
@@ -19,7 +19,9 @@ Deze implementatiestand betreft appversie **2.3.1**. Het browserdataschema blijf
 - 16 thema’s, 78 eigen checkvragen, 8 contentpakketten en expliciete bronstatus.
 - Private vragen/content uit Markdown, legacy JSON en Moodle/LMS-CSV.
 - Organisaties, locaties, afdelingen en afzonderlijke RI&E-dossiers met bevroren vragen en gecontroleerde bronhashes. Een echte afdeling kan rechtstreeks bij een organisatie horen wanneer de locatie onbekend is.
-- Bewijsregister, waarnemingen, bevindingen, eigen onderwerpen en regelgevingssignalen.
+- Bewijsregister met afzonderlijke registratie- en bestandshashes, oorspronkelijke vastlegger, MIME-herkomst en menselijke beoordeling; bijlagebytes kunnen apart naar private GitHub-opslag.
+- Expliciete bewijsversies bij maatregelen, IPL’s en modifiers; een gewijzigde of ingetrokken bewijsbasis verleent geen actuele werking. Een tweede sessie hercontroleert de bytes.
+- Waarnemingen, bevindingen, eigen onderwerpen en regelgevingssignalen.
 - Beheerde vraagdefinities met afzonderlijke criteria/bewijsvelden, status, opvolgerversies en volledige bevroren contentpakketten.
 - Respondenten en meerdere response-/waarneming-/bevindingrelaties met dossierscope en gecontroleerde inverse links.
 - Geversioneerde herbruikbare risicobibliotheek met gedeelde maatregelen, lokale reviews en kaartposities; ordinale ratings blijven oorspronkelijke screening.
@@ -28,7 +30,8 @@ Deze implementatiestand betreft appversie **2.3.1**. Het browserdataschema blijf
 - Bewerkbare projectcontext met dertien inhoudelijke velden, volledige rondgangverslagen met modules en expliciete waarnemingslinks; versieerbaar lokaal register voor basisrisicofactoren.
 - Opgeslagen 5×Waarom-/BowTie-onderzoeken en incidentfrequenties met passende maanduren en expliciete datadekking.
 - Gecontroleerde legacy dossierexport uit Markdown en SQLite met bronbehoud en reviewwaarschuwingen.
-- Tienfasige actiecyclus met uitvoering, positieve/negatieve effectcontrole, heropening en voor-/na-historie van nieuwe browserwijzigingen.
+- Tienfasige actiecyclus met uitvoering, positieve/negatieve effectcontrole, heropening en voor-/na-historie. Afzonderlijke AHS-keuze, overwogen hogere niveaus, prioriteit, echte bron-/onderwerprelaties, doel, uitvoering en verificatie blijven deel van iedere revisie.
+- Bewust gekozen exacte maatregel-/IPL-doelversies bij acties; effectbeoordeling en actueel geldig bewijs blijven onderscheiden.
 - Incidenten/signalen gekoppeld aan scenario’s en acties.
 - Rapportage als Markdown, CSV en print/PDF; volledige JSON-overdracht.
 - Lokale automatische opslag en versiegecontroleerde sync via een private GitHub-repository, tot 2.000.000 UTF-8 bytes met onveranderlijke blobversies.

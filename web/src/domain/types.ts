@@ -1,3 +1,5 @@
+import type { RiskEvidenceReview } from './risk-evidence-types';
+
 /** Interval assumptions. These are bounds, not confidence intervals. */
 export interface Estimate {
   min: number;
@@ -40,6 +42,7 @@ export interface Control {
   /** Relative effort on an explicit local scale; strictly positive. */
   effort: number;
   legalRequired: boolean;
+  evidenceReview?: RiskEvidenceReview;
 }
 
 export interface Scenario {
@@ -75,6 +78,7 @@ export interface LopaLayer {
   effective: boolean;
   independenceNote: string;
   dependencyGroup?: string;
+  evidenceReview?: RiskEvidenceReview;
 }
 
 export interface LopaModifier {
@@ -88,6 +92,7 @@ export interface LopaModifier {
   independent: boolean;
   rationale: string;
   dependencyGroup?: string;
+  evidenceReview?: RiskEvidenceReview;
 }
 
 /** Exactly one initiating event and one specified consequence endpoint. */

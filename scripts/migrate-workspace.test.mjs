@@ -159,6 +159,109 @@ test('migrates Markdown dossier, frozen answer and evidence without inventing ef
   assert.deepEqual(await fs.readFile(path.join(root, 'rie/questions/q.md')), before);
 });
 
+test('projects exact original action context and each source edge into its actual named collection after all projectors', async t => {
+  const { root } = await markdownFixture(t);
+  const sourceIds = ['finding:1', 'incident:1', 'analysis:1', 'q:1', 'law:1', 'evidence:1', 'assessment:1', 'observation:1', 'response:1', 'exposure:1', 'topic:machine', 'action:later', 'fixture:brf:01', 'risk:1', 'custom:1', 'missing:original'];
+  const metadata = { title: 'Actie met exacte oorspronkelijke context', status: 'planned', owner: 'Oorspronkelijke uitvoerder', target_date: '2026-10-20',
+    ahs_level: 'organisational', higher_levels_considered: ['elimination_or_source', 'substitution', 'technical_collective'],
+    deviation_rationale: 'Exacte bronreden; uitvoerbaarheid moet nog worden beoordeeld.', priority: 'high', source_ids: sourceIds, topic_ids: ['TOPIC:MACHINE'],
+    verifier: 'Historische verifier is geen nieuwe goedkeuring', implemented_at: NOW, effectiveness_result: 'effective' };
+  const body = '# Actie\n\n## Beoogd resultaat\n\nGeen toegang tot de knelzone.\nEen tweede exacte bronregel.\n\n## Uitvoering\n\nWerkvolgorde uit de oorspronkelijke bron.\n\n## Verificatiemethode\n\nObserveer de toegang na oplevering.\n\n## Evaluatie\n\nOud oordeel blijft een bronclaim.';
+  const original = md('ima.action/v2', 'action:1', metadata, body);
+  const filename = await put(root, 'actions/a.md', original);
+  await put(root, 'actions/later.md', md('ima.action/v1', 'action:later', { title: 'Later geprojecteerde actie', status: 'planned', source_ids: ['action:1'] }, '# Latere bronactie'));
+  await put(root, 'taxonomies/brf/selected.md', md('ima.taxonomy-term/v1', 'fixture:brf:01', { title: 'Fictieve bron-BRF', taxonomy: 'ima-core:taxonomy:brf', version: '1.0.0', status: 'draft' }, '# BRF\n\nExacte bronbetekenis.'));
+  const result = await migrateMarkdown(root, { now: NOW });
+  const api = await loadWorkspaceApi();
+  const restored = api.importWorkspace(result.serialized);
+  const action = restored.actions.find(item => item.title === metadata.title);
+  assert.equal(action.ahsLevel, metadata.ahs_level); assert.deepEqual(action.higherLevelsConsidered, metadata.higher_levels_considered);
+  assert.equal(action.deviationRationale, metadata.deviation_rationale); assert.equal(action.priority, metadata.priority);
+  assert.equal(action.intendedResult, 'Geen toegang tot de knelzone.\nEen tweede exacte bronregel.');
+  assert.equal(action.implementation, 'Werkvolgorde uit de oorspronkelijke bron.');
+  assert.equal(action.verificationMethod, 'Observeer de toegang na oplevering.');
+  assert.equal(action.notes, '\n' + body + '\n');
+  const collections = ['findings', 'incidents', 'investigations', 'questions', 'legalRecords', 'evidence', 'dossiers', 'observations', 'answers', 'exposure', 'topics', 'actions', 'basisRiskFactorRecords'];
+  assert.deepEqual(action.sourceRefs.slice(0, collections.length).map(ref => ref.collection), collections);
+  for (const ref of action.sourceRefs.filter(ref => ref.kind === 'workspace')) assert.equal(restored[ref.collection].filter(item => item.id === ref.id).length, 1);
+  for (const originalId of ['risk:1', 'custom:1', 'missing:original']) {
+    const ref = action.sourceRefs.find(item => item.kind === 'unresolved' && item.originalId === originalId);
+    assert(ref); assert.equal(restored.sources.filter(source => source.id === ref.rawSourceId).length, 1);
+    assert.equal(restored.sources.find(source => source.id === ref.rawSourceId).originalId, originalId === 'missing:original' ? 'action:1' : originalId);
+  }
+  assert.deepEqual(action.topicIds, [restored.topics.find(topic => topic.title === 'Machineveiligheid').id]);
+  assert.equal(action.findingId, restored.findings[0].id);
+  assert.equal(restored.actions.find(item => item.title === 'Later geprojecteerde actie').sourceRefs[0].id, action.id);
+  for (const key of ['riskTargets', 'lifecycle', 'history', 'verification', 'verifiedAt']) assert.equal(Object.hasOwn(action, key), false);
+  const raw = restored.sources.find(source => source.originalId === 'action:1' && source.format === 'legacy-markdown');
+  assert.equal(raw.raw.text, original); assert.deepEqual(raw.raw.metadata.source_ids, sourceIds); assert.equal(raw.contentSha256, hash(original));
+  assert.deepEqual(await fs.readFile(filename), Buffer.from(original));
+});
+
+test('does not choose an action source across duplicate schemas, duplicate topics or unconfirmed Unicode casing', async t => {
+  const { root } = await markdownFixture(t);
+  await put(root, 'topics/duplicate-source-id.md', md('ima.topic/v1', 'FINDING:1', { title: 'Bron-ID botsing over schema’s' }, '# Dubbele bron-ID'));
+  await put(root, 'topics/duplicate-topic-a.md', md('ima.topic/v1', 'topic:duplicate', { title: 'Eerste onderwerpbron' }, '# Eerste'));
+  await put(root, 'topics/duplicate-topic-b.md', md('ima.topic/v1', 'TOPIC:DUPLICATE', { title: 'Tweede onderwerpbron' }, '# Tweede'));
+  await put(root, 'topics/unicode.md', md('ima.topic/v1', 'topic:Ä', { title: 'Unicode bron-ID' }, '# Unicode'));
+  const originals = ['finding:1', 'missing:source', 'topic:ä'];
+  const topicIds = ['topic:machine', 'topic:duplicate', 'topic:missing', 'topic:ä'];
+  const original = md('ima.action/v2', 'action:1', { title: 'Ambigue bronactie', status: 'planned', source_ids: originals, topic_ids: topicIds }, '# Actie');
+  await put(root, 'actions/a.md', original);
+  const result = await migrateMarkdown(root, { now: NOW });
+  const action = result.workspace.actions.find(item => item.title === 'Ambigue bronactie');
+  assert.equal(action.findingId, undefined); assert.equal(action.dossierId, undefined);
+  assert.deepEqual(action.sourceRefs.map(ref => [ref.kind, ref.originalId]), originals.map(id => ['unresolved', id]));
+  assert.equal(action.sourceRefs.every(ref => result.workspace.sources.find(source => source.id === ref.rawSourceId)?.originalId === 'action:1'), true);
+  assert.deepEqual(action.topicIds, [result.workspace.topics.find(item => item.title === 'Machineveiligheid').id]);
+  assert.equal(action.sourceRefs.some(ref => ref.originalId === 'topic:missing' || ref.originalId === 'topic:duplicate'), false);
+  const raw = result.workspace.sources.find(source => source.originalId === 'action:1');
+  assert.equal(raw.raw.text, original); assert.deepEqual(raw.raw.metadata.topic_ids, topicIds);
+  assert.equal(result.report.warnings.filter(warning => warning.code === 'action_source_unresolved' && warning.sourceId === raw.id).length, 3);
+  assert.equal(result.report.warnings.filter(warning => warning.code === 'action_topic_unresolved' && warning.sourceId === raw.id).length, 3);
+  (await loadWorkspaceApi()).importWorkspace(result.serialized);
+});
+
+test('keeps unsupported action values raw without fabricated defaults, partial AHS choices or guessed section aliases', async t => {
+  const root = await temporary(t);
+  const metadata = { title: 'Onbevestigde actiewaarden', status: 'planned', ahs_level: 'TECHNICAL_COLLECTIVE', priority: 3,
+    higher_levels_considered: ['elimination_or_source', 'invented_level'], deviation_rationale: null, source_ids: 'finding:missing', topic_ids: [99, 'topic:missing'] };
+  const body = '# Actie\n\n## Beoogd resultaat\n\n\n## Uitvoering\n\nOorspronkelijke uitvoering.\n\n## Verificatie\n\nNiet de oorspronkelijke Verificatiemethode-sectie.';
+  const original = md('ima.action/v1', 'action:invalid-context', metadata, body);
+  await put(root, 'actions/a.md', original);
+  const result = await migrateMarkdown(root, { now: NOW });
+  const action = result.workspace.actions[0];
+  for (const key of ['ahsLevel', 'priority', 'higherLevelsConsidered', 'deviationRationale', 'sourceRefs', 'verificationMethod', 'riskTargets', 'lifecycle']) assert.equal(Object.hasOwn(action, key), false);
+  assert.equal(action.intendedResult, ''); assert.equal(action.implementation, 'Oorspronkelijke uitvoering.');
+  assert.deepEqual(action.topicIds, []);
+  const raw = result.workspace.sources.find(source => source.originalId === 'action:invalid-context');
+  assert.equal(raw.raw.text, original); assert.deepEqual(raw.raw.metadata, { schema: 'ima.action/v1', id: 'action:invalid-context', ...metadata });
+  assert.equal(result.report.warnings.filter(warning => warning.code === 'action_context_value_unresolved').length, 4);
+  assert.equal(result.report.warnings.filter(warning => warning.code === 'action_context_relation_unresolved').length, 2);
+  assert(result.report.warnings.some(warning => warning.code === 'action_topic_unresolved'));
+  (await loadWorkspaceApi()).importWorkspace(result.serialized);
+});
+
+test('preserves every original action enum, explicit empty lists and deduplicated original relationships without introducing native history', async t => {
+  const root = await temporary(t);
+  const api = await loadWorkspaceApi();
+  for (const [index, ahsLevel] of api.actionAhsLevels.entries()) {
+    const metadata = { title: 'Enum-bron ' + index, status: 'planned', ahs_level: ahsLevel, priority: api.actionPriorities[index % api.actionPriorities.length],
+      higher_levels_considered: index ? [] : ['elimination_or_source', 'elimination_or_source'], deviation_rationale: '', source_ids: index ? [] : ['missing:1', 'missing:1'], topic_ids: [] };
+    await put(root, `actions/${index}.md`, md('ima.action/v2', 'action:enum:' + index, metadata, '# Actie'));
+  }
+  const result = await migrateMarkdown(root, { now: NOW });
+  assert.deepEqual(result.workspace.actions.map(action => action.ahsLevel), [...api.actionAhsLevels]);
+  assert.deepEqual(result.workspace.actions.map(action => action.priority), api.actionAhsLevels.map((_, index) => api.actionPriorities[index % api.actionPriorities.length]));
+  assert.deepEqual(result.workspace.actions[0].higherLevelsConsidered, ['elimination_or_source']);
+  assert.equal(result.workspace.actions[0].sourceRefs.length, 1);
+  for (const action of result.workspace.actions.slice(1)) { assert.deepEqual(action.higherLevelsConsidered, []); assert.deepEqual(action.sourceRefs, []); }
+  for (const action of result.workspace.actions) { assert.equal(action.deviationRationale, ''); assert.deepEqual(action.topicIds, []); assert.equal(Object.hasOwn(action, 'lifecycle'), false); }
+  assert(result.report.warnings.some(warning => warning.code === 'action_context_duplicate_values'));
+  assert(result.report.warnings.some(warning => warning.code === 'action_context_duplicate_relations'));
+  assert.deepEqual(api.importWorkspace(result.serialized).actions, result.workspace.actions);
+});
+
 test('projects only selected exact draft BRF definitions without inventing owners, historical dates or converting free research codes', async t => {
   const { root } = await markdownFixture(t);
   const metadata = { title: 'Fictieve systeemconditie', taxonomy: 'ima-core:taxonomy:brf', version: '1.0.0', status: 'draft', parent_id: 'source:unversioned-parent' };
@@ -642,6 +745,75 @@ test('unsafe and unsupported evidence references stay raw without opening an out
   const nonHttp = await migrateMarkdown(root, { now: NOW });
   assert.equal(nonHttp.workspace.evidence.length, 0);
   assert(nonHttp.report.warnings.some(warning => warning.code === 'evidence_reference_unsupported'));
+});
+
+test('does not read or embed an oversized original attachment and retains its original bytes identity without fabricating length or readiness', async t => {
+  const { root } = await markdownFixture(t);
+  const filename = path.join(root, 'attachments/inspection.txt');
+  const handle = await fs.open(filename, 'w');
+  try { await handle.truncate(10_000_001); } finally { await handle.close(); }
+  const before = await fs.stat(filename);
+  const result = await migrateMarkdown(root, { now: NOW });
+  const evidence = result.workspace.evidence[0];
+  assert.equal(evidence.file.expectedSha256, hash('Fictief inspectierapport, geen praktijkbewijs.'));
+  assert.equal(evidence.file.expectedByteLength, undefined); assert.equal(evidence.fileCheck, undefined); assert.equal(evidence.status, 'unverified');
+  assert(result.report.warnings.some(warning => warning.code === 'attachment_size_unavailable'));
+  assert(result.report.warnings.some(warning => warning.code === 'attachment_unavailable'));
+  assert.equal(result.report.warnings.some(warning => warning.code === 'attachment_hash_mismatch'), false);
+  assert(Buffer.byteLength(result.serialized) < 2_000_000);
+  assert.equal((await fs.stat(filename)).size, before.size);
+  (await loadWorkspaceApi()).importWorkspace(result.serialized);
+});
+
+test('projects original binary hash, MIME origin and capturer without copying bytes or claiming verification', async t => {
+  const { root } = await markdownFixture(t);
+  const filename = path.join(root, 'rie/evidence/e.md');
+  const before = await fs.readFile(filename, 'utf8');
+  const source = before.replace('captured_at:', 'mime_type: "application/pdf"\ncaptured_by: "Oorspronkelijke inspecteur"\ncaptured_at:');
+  await fs.writeFile(filename, source);
+  const result = await migrateMarkdown(root, {now:NOW});
+  const evidence = result.workspace.evidence[0];
+  const bytes = await fs.readFile(path.join(root,'attachments/inspection.txt'));
+  assert.equal(evidence.file.expectedSha256, hash(bytes));
+  assert.equal(evidence.file.expectedByteLength, bytes.length);
+  assert.equal(evidence.file.declaredMimeType,'application/pdf');
+  assert.equal(evidence.file.mimeTypeOrigin,'legacy');
+  assert.equal(evidence.capturedBy,'Oorspronkelijke inspecteur');
+  assert.equal(evidence.file.originalReference,'attachments/inspection.txt');
+  assert.equal(evidence.status,'unverified');
+  assert.equal(evidence.fileCheck,undefined);
+  assert.equal(evidence.verifiedFileBindingSha256,undefined);
+  assert.equal(evidence.file.storage,undefined);
+  assert(result.workspace.sources.some(item => item.raw?.text === source));
+  assert.equal(await fs.readFile(filename,'utf8'),source);
+  const api = await loadWorkspaceApi();
+  assert.doesNotThrow(() => api.importWorkspace(result.serialized));
+  const altered = structuredClone(result.workspace);
+  Object.assign(altered.evidence[0], {status:'verified', verifiedBy:'Reviewer', verifiedAt:NOW, verificationNote:'Fictieve onvolledige review', verifiedContentSha256:'0'.repeat(64)});
+  assert.throws(() => api.importWorkspace(JSON.stringify(altered)));
+});
+
+test('mismatching, absent and remote evidence preserve original expectation without fabricated byte readiness', async t => {
+  const { root } = await markdownFixture(t);
+  const filename = path.join(root,'rie/evidence/e.md');
+  const source = await fs.readFile(filename,'utf8');
+  const originalBytes = await fs.readFile(path.join(root,'attachments/inspection.txt'));
+  await fs.writeFile(path.join(root,'attachments/inspection.txt'),'A different later attachment');
+  const changed = await migrateMarkdown(root,{now:NOW});
+  assert.equal(changed.workspace.evidence[0].file.expectedSha256,hash(originalBytes));
+  assert.equal(changed.workspace.evidence[0].file.expectedByteLength,undefined);
+  assert(changed.report.warnings.some(item => item.code === 'attachment_hash_mismatch'));
+  await fs.unlink(path.join(root,'attachments/inspection.txt'));
+  const missing = await migrateMarkdown(root,{now:NOW});
+  assert.equal(missing.workspace.evidence[0].file.expectedSha256,hash(originalBytes));
+  assert(missing.report.warnings.some(item => item.code === 'attachment_unavailable'));
+  await fs.writeFile(filename,source.replace('relative_path: "attachments/inspection.txt"','source_uri: "https://example.org/private/document.pdf"'));
+  const remote = await migrateMarkdown(root,{now:NOW});
+  assert.equal(remote.workspace.evidence[0].file.expectedByteLength,undefined);
+  assert.equal(remote.workspace.evidence[0].fileCheck,undefined);
+  assert.equal(remote.workspace.evidence[0].capturedBy,undefined);
+  assert.equal(remote.workspace.evidence[0].file.mimeTypeOrigin,'unknown');
+  assert.equal(remote.workspace.evidence[0].status,'unverified');
 });
 
 test('contradictory responses for one frozen question remain raw rather than choosing one', async t => {

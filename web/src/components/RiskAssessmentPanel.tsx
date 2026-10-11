@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import type { Scenario } from '../domain/types';
-import { captureRiskAssessment, type RiskAssessment } from '../data/risk-history';
-import { RISK_METHOD_VERSION } from '../domain/risk';
+import {
+  captureEvidenceRiskAssessment,
+  isSupportedRiskMethod,
+  type RiskAssessment,
+} from '../data/risk-history';
+import { freezeRiskEvidenceBasis, frozenRiskEvidenceMarkdown } from '../data/risk-evidence';
+import { useRiskEvidence } from './RiskEvidenceContext';
 import { Field } from './Primitives';
 import { usePersistentDraft } from '../hooks/usePersistentDraft';
 import { draftBase } from '../data/local-drafts';
@@ -30,6 +35,14 @@ export function riskAssessmentMarkdown(records: RiskAssessment[]): string[] {
             `LOPA: ${r.result.lopaFrequency.value}/jaar [${r.result.lopaFrequency.min}, ${r.result.lopaFrequency.max}] | criterium ${r.input.lopa?.targetFrequency}/jaar | ${r.result.lopaComparison} | basis ${r.input.lopa?.assumptions}`,
           ]
         : []),
+      ...(r.evidenceBasis
+        ? [
+            `Vastgelegde bewijsversies: ${r.evidenceBasis.currentRecords.map((e) => `${e.id} (${e.status})`).join(', ') || 'geen'} | ontbrekende ID’s: ${r.evidenceBasis.missingIds.join(', ') || 'geen'}`,
+            `Vastgelegde bestandscontroles: ${r.evidenceBasis.fileChecks.map((f) => `${f.evidenceId}: ${f.check.state}, ${f.check.checkedAt}, ${f.check.checkedBy}, binding ${f.fileBindingSha256}`).join('; ') || 'geen'}`,
+            `Toegekende werking: huidig ${r.result.currentCredited.join(', ') || 'geen'} | prognose ${r.result.targetCredited.join(', ') || 'geen'} | IPL ${r.result.lopaCreditedLayers?.join(', ') || 'geen'} | modifiers ${r.result.lopaCreditedModifiers?.join(', ') || 'geen'}`,
+          ]
+        : []),
+      ...(r.evidenceBasis ? frozenRiskEvidenceMarkdown(r.input, r.evidenceBasis) : []),
       `SHA256: ${r.sha256}`,
       '',
     ]),
@@ -46,7 +59,11 @@ export default function RiskAssessmentPanel({
   records: RiskAssessment[];
   onSave: (record: RiskAssessment) => boolean;
 }) {
-  const currentSource = draftBase(scenario);
+  const { evidence, context } = useRiskEvidence();
+  const currentSource = draftBase({
+    scenario,
+    evidenceBasis: freezeRiskEvidenceBasis(scenario, evidence, context),
+  });
   const [draft, setDraft, draftStatus] = usePersistentDraft(
     `${workspaceId}/risk-assessment/${scenario.id}`,
     () => ({
@@ -82,9 +99,15 @@ export default function RiskAssessmentPanel({
           try {
             if (draft.source !== currentSource)
               throw new Error(
-                'Het scenario is gewijzigd sinds deze onderbouwing. Controleer en bevestig de huidige invoer.',
+                'Het scenario of de actuele bewijsbasis is gewijzigd sinds deze onderbouwing. Controleer en bevestig de huidige invoer.',
               );
-            const record = captureRiskAssessment(scenario, assessor, rationale);
+            const record = captureEvidenceRiskAssessment(
+              scenario,
+              assessor,
+              rationale,
+              evidence,
+              context,
+            );
             if (!onSave(record))
               throw new Error('De beoordeling is niet opgeslagen. Je invoer blijft beschikbaar.');
             draftStatus.clear();
@@ -97,7 +120,7 @@ export default function RiskAssessmentPanel({
         <DraftNotice status={draftStatus} />
         {draft.source !== currentSource && (
           <p className="warning-line">
-            Het scenario is gewijzigd sinds deze onderbouwing.
+            Het scenario of de actuele bewijsbasis is gewijzigd sinds deze onderbouwing.
             <button
               className="secondary"
               type="button"
@@ -137,7 +160,7 @@ export default function RiskAssessmentPanel({
             <p>
               Methode {record.methodVersion} · SHA256 {record.sha256}
             </p>
-            {record.methodVersion !== RISK_METHOD_VERSION && (
+            {!isSupportedRiskMethod(record.methodVersion) && (
               <p className="warning-line">
                 Deze methodeversie wordt hier niet opnieuw berekend. De oorspronkelijke invoer en
                 uitkomst blijven bewaard voor beoordeling.

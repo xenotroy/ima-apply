@@ -5,11 +5,15 @@ import {
   calculateKinneyJustification,
   PRIORITY_POLICY,
   prioritizeControl,
-  RISK_METHOD_VERSION,
   validateEstimate,
 } from '../domain/risk';
 import type { ControlPriority, Estimate, Exclusion } from '../domain/types';
-import { assertRiskAssessment, type RiskAssessment } from './risk-history';
+import { assertRiskAssessment, isSupportedRiskMethod, type RiskAssessment } from './risk-history';
+import {
+  EVIDENCE_RISK_METHOD_VERSION,
+  applyRiskEvidenceIssues,
+  resolveFrozenRiskEvidence,
+} from './risk-evidence';
 
 export const JUSTIFICATION_METHOD_VERSION = 'ima-justification/1.0.0';
 export const JUSTIFICATION_DECISIONS = {
@@ -122,13 +126,17 @@ export function justificationResult(
   draft: JustificationDraft,
 ): JustificationResult {
   assertRiskAssessment(assessment);
-  if (assessment.methodVersion !== RISK_METHOD_VERSION)
+  if (!isSupportedRiskMethod(assessment.methodVersion))
     throw new Error(
       'Onbekende risicomethode: deze beoordeling kan geen bevestigde justificatie leveren.',
     );
   assertDraft(draft);
   const selected = new Set(draft.controlIds);
-  const scenario = assessment.input;
+  const frozen =
+    assessment.methodVersion === EVIDENCE_RISK_METHOD_VERSION
+      ? resolveFrozenRiskEvidence(assessment.input, assessment.evidenceBasis!)
+      : { scenario: assessment.input, issues: [] };
+  const scenario = frozen.scenario;
   for (const id of selected) {
     const control = scenario.controls.find((item) => item.id === id);
     if (!control || control.status !== 'planned')
@@ -146,6 +154,22 @@ export function justificationResult(
     },
     'planned',
   );
+  if (frozen.issues.length) {
+    applyRiskEvidenceIssues(
+      current,
+      frozen.issues.filter((issue) => issue.kind === 'control'),
+    );
+    applyRiskEvidenceIssues(
+      target,
+      frozen.issues.filter(
+        (issue) =>
+          issue.kind === 'control' &&
+          (selected.has(issue.targetId) ||
+            scenario.controls.find((control) => control.id === issue.targetId)?.status !==
+              'planned'),
+      ),
+    );
+  }
   const improvement = {
     min: current.score.min - target.score.max,
     value: current.score.value - target.score.value,
@@ -272,7 +296,7 @@ export function assertJustification(record: JustificationRecord, assessment: Ris
   if (
     record.justificationMethodVersion !== JUSTIFICATION_METHOD_VERSION ||
     record.priorityPolicyVersion !== PRIORITY_POLICY.version ||
-    record.methodVersion !== RISK_METHOD_VERSION
+    !isSupportedRiskMethod(record.methodVersion)
   )
     throw new Error(
       'Onbekende justificatie-, beleids- of risicomethode: geen bevestigde herberekening mogelijk.',

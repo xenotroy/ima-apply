@@ -90,7 +90,11 @@ test('finding closure needs verified evidence and reporting preserves traceabili
   );
   expect((await state(page)).findings).toEqual([]);
   await dialog.getByRole('button', { name: 'Sluiten', exact: true }).click();
-  await page.getByRole('button', { name: 'Bewijs beoordelen / wijzigen', exact: true }).click();
+  await page
+    .locator('.registry-item')
+    .filter({ has: page.getByRole('heading', { name: 'E2E functietest', exact: true }) })
+    .getByRole('button', { name: 'Bewijs beoordelen / wijzigen', exact: true })
+    .click();
   dialog = page.getByRole('dialog', { name: 'Bewijs vastleggen en beoordelen' });
   await dialog
     .getByRole('combobox', { name: 'Verificatiestatus', exact: true })

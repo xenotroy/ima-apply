@@ -12,6 +12,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const maxRows = 5_000;
 const maxFiles = 1_000;
 const maxSourceBytes = 64 * 1024 * 1024;
+const maxEvidenceFileBytes = 10_000_000;
 const hash = value => createHash('sha256').update(value).digest('hex');
 const string = value => typeof value === 'string' ? value : '';
 const strings = value => Array.isArray(value) ? value.filter(item => typeof item === 'string' && item.trim()) : [];
@@ -47,7 +48,8 @@ export async function loadWorkspaceApi() {
   const require = createRequire(path.join(repositoryRoot, 'web/package.json'));
   async function moduleUrl(filename) {
     if (modules.has(filename)) return modules.get(filename);
-    const code = stripTypeScriptTypes(await fs.readFile(filename, 'utf8'));
+    // Authored browser modules include parameter properties; these require transform mode.
+    const code = stripTypeScriptTypes(await fs.readFile(filename, 'utf8'), {mode:'transform'});
     let rewritten = code;
     const imports = [...code.matchAll(/(?:from\s+|import\s*)(['"])([^'"\n]+)\1/g)];
     for (const match of imports) {
@@ -66,7 +68,8 @@ export async function loadWorkspaceApi() {
   const questionDefinitions = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/data/question-definition.ts')));
   const riskLibrary = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/data/risk-library.ts')));
   const frozen = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/data/frozen.ts')));
-  return { ...model, ...validation, ...questionDefinitions, ...riskLibrary, ...frozen };
+  const actionContext = await import(await moduleUrl(path.join(repositoryRoot, 'web/src/domain/action-context.ts')));
+  return { ...model, ...validation, ...questionDefinitions, ...riskLibrary, ...frozen, ...actionContext };
 }
 
 function scalar(input) {
@@ -500,6 +503,18 @@ export async function migrateMarkdown(root, options = {}) {
   const { workspace } = context;
   const bySchema = schema => records.filter(record => record.metadata.schema === schema);
   const unique = (schema, id) => { const candidates = bySchema(schema).filter(record => string(record.metadata.id).toLowerCase() === string(id).toLowerCase()); return id && candidates.length === 1 ? candidates[0] : null; };
+  // Original source_ids have no schema discriminator. Resolve across all selected
+  // active records, not the first matching collection. Different Unicode case
+  // spellings require original-runtime review; JS case-folding is not .NET's
+  // OrdinalIgnoreCase. Its possible matches are retained as ambiguity, not credit.
+  const actionRelationCandidates = (id, schema) => (schema ? bySchema(schema) : records).filter(record => {
+    const actual = string(record.metadata.id);
+    return actual === id || actual && (actual.toLowerCase() === id.toLowerCase() || actual.toUpperCase() === id.toUpperCase());
+  });
+  const actionRelationUnique = (id, schema) => {
+    const candidates = actionRelationCandidates(id, schema);
+    return candidates.length === 1 && sourceActionIdentityEqual(string(candidates[0].metadata.id), id) === true ? candidates[0] : null;
+  };
   const originalQuestion = (id, version, sha256) => {
     const matches = bySchema('ima.rie-question-definition/v1').filter(record => string(record.metadata.id).toLowerCase() === string(id).toLowerCase() && record.metadata.version === version && record.legacySha256 === string(sha256).toLowerCase());
     return matches.length === 1 ? matches[0] : null;
@@ -655,6 +670,13 @@ export async function migrateMarkdown(root, options = {}) {
     const time = timestamp(m.captured_at, context, record.sourceId);
     const local = string(m.relative_path); const remote = string(m.source_uri);
     const reference = local || remote;
+    const expectedSha256 = string(m.sha256).toLowerCase();
+    const hasExpectedHash = /^[a-f0-9]{64}$/.test(expectedSha256);
+    const mime = string(m.mime_type);
+    const hasMime = /^[a-z\d!#$&^_.+-]+\/[a-z\d!#$&^_.+-]+$/i.test(mime);
+    const capturedBy = string(m.captured_by);
+    const hasCapturer = Boolean(capturedBy.trim()) && capturedBy.length <= 2_000 && !/[\x00-\x1f]/.test(capturedBy);
+    let verifiedByteLength;
     if (!dossier || !time || !reference || !string(m.title) || !record.sections.beschrijving || !['document', 'photograph', 'interview', 'measurement', 'record', 'other'].includes(m.kind)) {
       warning(context, 'evidence_not_projected', record.sourceId, 'Bewijs mist vereiste bekende velden; raw behouden.'); continue;
     }
@@ -673,12 +695,41 @@ export async function migrateMarkdown(root, options = {}) {
         const real = await fs.realpath(filename);
         const realRoot = await fs.realpath(root);
         if (!real.startsWith(`${realRoot}${path.sep}`) || (await fs.lstat(filename)).isSymbolicLink()) throw new Error('Unsafe reference');
-        const bytes = await fs.readFile(filename);
-        if (hash(bytes) !== string(m.sha256).toLowerCase()) warning(context, 'attachment_hash_mismatch', record.sourceId, 'Werkelijke bijlagehash wijkt af van de legacy bewijshash; projectie blijft unverified.');
+        const stat = await fs.stat(filename);
+        if (!stat.isFile() || stat.size > maxEvidenceFileBytes) {
+          warning(context, 'attachment_size_unavailable', record.sourceId, 'Bijlage is geen regulier bestand of overschrijdt 10.000.000 bytes; bronmetadata blijft behouden zonder byteoverdracht.');
+          throw new Error('Attachment size unavailable');
+        }
+        // Read at most the cap plus one byte even if the file grows after stat.
+        // This pass establishes provenance, never transfers or embeds the bytes.
+        const handle = await fs.open(filename, 'r');
+        const digest = createHash('sha256');
+        let byteLength = 0;
+        try {
+          const buffer = Buffer.alloc(64 * 1024);
+          for (;;) {
+            const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, maxEvidenceFileBytes + 1 - byteLength));
+            if (!bytesRead) break;
+            byteLength += bytesRead;
+            if (byteLength > maxEvidenceFileBytes) throw new Error('Attachment grew beyond size limit');
+            digest.update(buffer.subarray(0, bytesRead));
+          }
+        } finally { await handle.close(); }
+        if (digest.digest('hex') !== expectedSha256) warning(context, 'attachment_hash_mismatch', record.sourceId, 'Werkelijke bijlagehash wijkt af van de legacy bewijshash; projectie blijft unverified.');
+        else verifiedByteLength = byteLength;
       } catch { warning(context, 'attachment_unavailable', record.sourceId, 'Bijlage niet veilig beschikbaar; alleen verwijzing en originele metadata zijn behouden.'); }
     }
+    if (!hasExpectedHash) warning(context, 'attachment_hash_unresolved', record.sourceId, 'Oorspronkelijke bijlage-SHA256 ontbreekt of is ongeldig; geen bytesidentiteit verzonnen.');
+    if (mime && !hasMime) warning(context, 'attachment_mime_unresolved', record.sourceId, 'Oorspronkelijk MIME-type is ongeldig; bronwaarde blijft exact raw, type blijft onbekend.');
+    if (capturedBy && !hasCapturer) warning(context, 'attachment_capturer_unresolved', record.sourceId, 'Oorspronkelijke vastlegger is geen bruikbare enkelregelige waarde; exacte bronwaarde blijft raw.');
+    const file = hasExpectedHash ? { schema: 'ima.evidence-file/v1', expectedSha256,
+      ...(verifiedByteLength !== undefined ? {expectedByteLength:verifiedByteLength} : {}),
+      ...(local && path.basename(local).trim() && !/[\x00-\x1f]/.test(path.basename(local)) ? {originalFileName:path.basename(local)} : {}),
+      ...(hasMime ? {declaredMimeType:mime, mimeTypeOrigin:'legacy'} : {mimeTypeOrigin:'unknown'}),
+      originalReference:reference, sourceId:record.sourceId } : undefined;
     workspace.evidence.push({ id: record.targetId, title: string(m.title), dossierId: dossier.id, kind: m.kind,
-      reference, description: record.sections.beschrijving || '', recordedAt: time, status: 'unverified' });
+      reference, description: record.sections.beschrijving || '', recordedAt: time, status: 'unverified',
+      ...(hasCapturer ? {capturedBy} : {}), ...(file ? {file} : {}) });
     evidenceProjected.add(record.targetId);
   }
   const evidenceRefs = (ids, record) => mappedRefs(ids, 'ima.rie-evidence/v1', record.sourceId).filter(id => {
@@ -767,11 +818,32 @@ export async function migrateMarkdown(root, options = {}) {
     if (!known.includes(m.status)) { warning(context, 'action_raw_only', record.sourceId, 'Onbekende actiestatus: geen lifecycle gegokt.'); continue; }
     const status = ['proposed', 'planned', 'open'].includes(m.status) ? 'open' : 'in_progress';
     if (['closed', 'effective', 'implemented'].includes(m.status)) warning(context, 'action_verification_not_transferred', record.sourceId, 'Legacy uitvoering/effectstatus raw behouden. Het nieuwe done vereist afzonderlijke menselijke effectverificatie.');
-    const linkedFindings = strings(m.source_ids).map(id => unique('ima.rie-finding/v2', id)).filter(item => item && findingProjected.has(item.targetId));
+    const linkedFindings = [...new Set(strings(m.source_ids).map(id => actionRelationUnique(id)).filter(item => item?.metadata.schema === 'ima.rie-finding/v2' && findingProjected.has(item.targetId)))];
     const finding = linkedFindings.length === 1 ? workspace.findings.find(item => item.id === linkedFindings[0].targetId) : undefined;
     if (linkedFindings.length > 1) warning(context, 'action_multiple_findings', record.sourceId, 'Actie verwijst naar meerdere bevindingen; het nieuwe enkele findingId is niet willekeurig gekozen.');
+    const projectedContext = {};
+    for (const [sourceKey, targetKey, choices] of [['ahs_level', 'ahsLevel', context.api.actionAhsLevels], ['priority', 'priority', context.api.actionPriorities]]) {
+      if (!Object.hasOwn(m, sourceKey)) continue;
+      if (choices.includes(m[sourceKey])) projectedContext[targetKey] = m[sourceKey];
+      else warning(context, 'action_context_value_unresolved', record.sourceId, `${sourceKey} is geen exacte ondersteunde bronkeuze; originele waarde blijft raw, geen standaard ingevuld.`);
+    }
+    if (Object.hasOwn(m, 'higher_levels_considered')) {
+      if (Array.isArray(m.higher_levels_considered) && m.higher_levels_considered.every(value => context.api.actionAhsLevels.includes(value))) {
+        projectedContext.higherLevelsConsidered = [...new Set(m.higher_levels_considered)];
+        if (projectedContext.higherLevelsConsidered.length !== m.higher_levels_considered.length) warning(context, 'action_context_duplicate_values', record.sourceId, 'Dubbele oorspronkelijke overwogen AHS-niveaus eenmaal geprojecteerd; volledige originele lijst blijft raw.');
+      } else warning(context, 'action_context_value_unresolved', record.sourceId, 'higher_levels_considered bevat geen volledig herkenbare lijst; geen niveaus geraden of selectief weggelaten. Exacte lijst blijft raw.');
+    }
+    if (Object.hasOwn(m, 'deviation_rationale')) {
+      if (typeof m.deviation_rationale === 'string' && m.deviation_rationale.length <= 100_000) projectedContext.deviationRationale = m.deviation_rationale;
+      else warning(context, 'action_context_value_unresolved', record.sourceId, 'deviation_rationale is geen ondersteunde tekstwaarde; exacte bronwaarde blijft raw.');
+    }
+    for (const [heading, key] of [['beoogd resultaat', 'intendedResult'], ['uitvoering', 'implementation'], ['verificatiemethode', 'verificationMethod']]) {
+      if (!Object.hasOwn(record.sections, heading)) continue;
+      if (record.sections[heading].length <= 100_000) projectedContext[key] = record.sections[heading];
+      else warning(context, 'action_context_section_unresolved', record.sourceId, `Actiesectie ${heading} overschrijdt de native veldgrens; volledige sectie blijft in notes en raw, niet afgekapt.`);
+    }
     workspace.actions.push({ id: record.targetId, title: m.title, owner: string(m.owner), dueDate: calendarDate(m.target_date), status, notes: record.body,
-      ...(finding ? { findingId: finding.id, dossierId: finding.dossierId } : {}) });
+      ...projectedContext, ...(finding ? { findingId: finding.id, dossierId: finding.dossierId } : {}) });
   }
   for (const record of bySchema('ima.incident/v1')) {
     const m = record.metadata;
@@ -816,6 +888,46 @@ export async function migrateMarkdown(root, options = {}) {
       basisRiskFactors: strings(m.basis_risk_factor_ids), evidenceIds: mappedRefs(m.evidence_ids, 'ima.rie-evidence/v1', record.sourceId).filter(id => evidenceProjected.has(id)), actionIds,
       conclusion: record.sections['conclusie en bewijs'] || '', reviewedBy: '', reviewNote: '' });
     warning(context, 'analysis_requires_review', record.sourceId, 'Herkenbare bronsecties als draft onderzoek overgedragen. Waarom-antwoorden blijven hypotheses; geen oorzaken, reviewgoedkeuring of barrièrecredit afgeleid.');
+  }
+  // Complete the original action edges only after every possible typed target
+  // has been projected. A raw-only original remains explicitly unresolved.
+  for (const record of records.filter(item => ['ima.action/v1', 'ima.action/v2'].includes(item.metadata.schema))) {
+    const action = workspace.actions.find(item => item.id === record.targetId);
+    if (!action) continue;
+    for (const [sourceKey, targetKey] of [['source_ids', 'sourceRefs'], ['topic_ids', 'topicIds']]) {
+      if (!Object.hasOwn(record.metadata, sourceKey)) continue;
+      const originals = record.metadata[sourceKey];
+      if (!Array.isArray(originals)) {
+        warning(context, 'action_context_relation_unresolved', record.sourceId, `${sourceKey} is geen oorspronkelijke lijst; exacte waarde blijft raw, geen relaties afgeleid.`);
+        continue;
+      }
+      const projected = [];
+      for (const originalId of originals) {
+        if (typeof originalId !== 'string' || !originalId.trim() || originalId.length > 1_000) {
+          warning(context, 'action_context_relation_unresolved', record.sourceId, `${sourceKey} bevat een onbruikbare ID; exact raw behouden, niet afgekapt of tot tekst omgezet.`);
+          continue;
+        }
+        const source = actionRelationUnique(originalId, sourceKey === 'topic_ids' ? 'ima.topic/v1' : undefined);
+        if (sourceKey === 'topic_ids') {
+          if (source && workspace.topics.filter(topic => topic.id === source.targetId).length === 1) projected.push(source.targetId);
+          else warning(context, 'action_topic_unresolved', record.sourceId, `Oorspronkelijk topic_ids → ${originalId} ontbreekt, is dubbel of niet bevestigd. Exacte onderwerp-ID blijft in raw bron ${record.sourceId}; geen bronrelatie of onderwerp verzonnen.`);
+          continue;
+        }
+        const targetIds = source ? [source.targetId] : [];
+        if (source && brfProjectedSources.has(source.sourceId)) targetIds.push(stableId('brf-version', `${source.metadata.id}|${source.metadata.version}|${source.legacySha256}`));
+        const targets = source ? context.api.actionSourceCollections.flatMap(collection => context.api.actionSourceRecords(workspace, collection)
+          .filter(target => targetIds.includes(target.id)).map(target => ({ kind: 'workspace', collection, id: target.id }))) : [];
+        if (targets.length === 1) projected.push(targets[0]);
+        else {
+          projected.push({ kind: 'unresolved', originalId, rawSourceId: source?.sourceId ?? record.sourceId });
+          warning(context, 'action_source_unresolved', record.sourceId, `Oorspronkelijk source_ids → ${originalId} ontbreekt, is dubbel of heeft geen uniek getypeerd doel. Onopgeloste verwijzing en exacte raw bron behouden; geen collectie gekozen.`);
+        }
+      }
+      const keys = projected.map(value => targetKey === 'sourceRefs' ? context.api.sourceRefKey(value) : value);
+      action[targetKey] = projected.filter((value, index) => keys.indexOf(keys[index]) === index);
+      if (action[targetKey].length !== projected.length) warning(context, 'action_context_duplicate_relations', record.sourceId, `Dubbele ${sourceKey}-relaties eenmaal geprojecteerd; volledige oorspronkelijke lijst blijft raw.`);
+    }
+    context.api.assertActionContextRelations(action, workspace);
   }
   for (const record of records) {
     if (record.metadata.scope_id) warning(context, 'scope_raw_only', record.sourceId, 'Oude scope-ID raw behouden; Markdown bevat geen bevestigde organisation/site/department-definitie voor deze ID.');

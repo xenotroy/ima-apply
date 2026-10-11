@@ -2,9 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { createWorkspace, type WorkspaceAction } from '../data/model';
 import type { Evidence } from '../data/dossier';
 import { evidenceHash } from '../data/frozen';
+import { captureRiskEvidenceReview, captureRiskTargetReference } from '../data/risk-evidence';
+import {
+  EvidenceFileSession,
+  evidenceFileBindingHash,
+  makeEvidenceFileCheck,
+} from '../data/evidence-files';
+import type { Scenario } from './types';
+import { range } from './risk';
 import { exportWorkspace, importWorkspace } from '../data/validation';
 import {
   actionEventHash,
+  actionCurrentValidity,
+  actionSnapshot,
+  actionSnapshotHash,
+  actionVerificationMethod,
   actionRevision,
   actionStage,
   assertActionHistory,
@@ -246,14 +258,23 @@ describe('action implementation, evaluation and reopening', () => {
     expect(cancelled.verifiedAt).toBeUndefined();
     expect(roundtrip(cancelled).actions[0]).toEqual(cancelled);
   });
-  it('blocks stale or revoked current proof but preserves its historical snapshot after reopening', () => {
+  it('keeps a historical chain importable after proof changes while requiring current proof for a new close', () => {
     const effective = assessed();
     const changed = {
       ...proof(),
       description: 'Deze meetbron is inhoudelijk aangepast.',
       status: 'unverified' as const,
     };
-    expect(() => roundtrip(effective, [changed])).toThrow(/gewijzigd of ingetrokken/);
+    expect(roundtrip(effective, [changed]).actions[0]).toEqual(effective);
+    expect(actionCurrentValidity(effective, [changed]).status).toBe('stale');
+    expect(() =>
+      reviseAction(
+        effective,
+        { expectedRevision: 4, actor: 'Ada', reason: 'Afsluiten', targetStage: 'closed' },
+        [changed],
+        at(13),
+      ),
+    ).toThrow(/gewijzigd of ingetrokken/);
     const reopened = reviseAction(
       effective,
       {
@@ -307,5 +328,261 @@ describe('action history import boundary', () => {
       recursive.lifecycle!.history[0].after.lifecycle as unknown as Record<string, unknown>
     ).history = [];
     expect(() => roundtrip(recursive)).toThrow(/onbekend veld/);
+  });
+});
+
+describe('additive action meaning and pinned risk targets', () => {
+  function targetScenario(): Scenario {
+    return {
+      id: 'machine',
+      title: 'Machine',
+      description: 'Lokale machinecontacten',
+      department: 'Werkplaats',
+      hazard: 'Bewegende delen',
+      consequence: 'Ernstig letsel',
+      probability: 6,
+      exposure: 6,
+      effect: 15,
+      controls: [
+        {
+          id: 'guard',
+          title: 'Afscherming',
+          ahs: 'collective',
+          status: 'planned',
+          evidence: 'unverified',
+          evidenceNote: '',
+          rationale: 'Voorkomt toegang',
+          probabilityReduction: range(0.5),
+          exposureReduction: range(0),
+          effectReduction: range(0),
+          independent: true,
+          feasibility: 'easy',
+          effort: 2,
+          legalRequired: false,
+        },
+      ],
+    };
+  }
+  it('retains exact pre-extension snapshot and event hashes without adding context defaults', () => {
+    expect(actionSnapshotHash(actionSnapshot(initial()))).toBe(
+      '595f8ccd4abb5cbdba98ea0a75d2b4af23efea645ab148b2421da5c409a07825',
+    );
+    const running = change(initial(), 'in_progress', 8);
+    expect(running.lifecycle?.history[0].sha256).toBe(
+      '993660f8f85af3c8831538bb8b3c0bd1413f29affe5ba54942315dd366e587ca',
+    );
+    expect(running.lifecycle?.history[0].before).toEqual(initial());
+    expect(Object.hasOwn(running, 'priority')).toBe(false);
+    expect(Object.hasOwn(running, 'verificationMethod')).toBe(false);
+  });
+  it('uses notes only when verificationMethod is absent; explicitly empty typed plans cannot inherit an old plan', () => {
+    expect(actionVerificationMethod(initial())).toBe(initial().notes);
+    expect(actionVerificationMethod({ ...initial(), verificationMethod: '' })).toBe('');
+    const typed = {
+      ...initial(),
+      notes: '',
+      verificationMethod: 'Afzonderlijk werkelijk criterium',
+    };
+    let action = change(typed, 'in_progress', 8);
+    action = change(action, 'implemented', 9);
+    expect(() =>
+      change(action, 'verification_due', 10, { verificationDueAt: at(12) }),
+    ).not.toThrow();
+    const old = change(change(initial(), 'in_progress', 8), 'implemented', 9);
+    expect(() =>
+      change(old, 'verification_due', 10, {
+        patch: { verificationMethod: '' },
+        verificationDueAt: at(12),
+      }),
+    ).toThrow(/Controleplan/);
+  });
+  it('protects every substantive new field after assessment in both mutation and semantic history validation', () => {
+    const patches: Parameters<typeof reviseAction>[1]['patch'][] = [
+      { intendedResult: 'Ander resultaat' },
+      { implementation: 'Andere uitvoering' },
+      { verificationMethod: 'Ander criterium' },
+      { ahsLevel: 'substitution' },
+      { higherLevelsConsidered: ['substitution'] },
+      { deviationRationale: 'Andere motivering' },
+      { sourceRefs: [{ kind: 'unresolved', originalId: 'other:source' }] },
+      { riskTargets: [captureRiskTargetReference(targetScenario(), 'control', 'guard')] },
+    ];
+    for (const patch of patches) {
+      const action = assessed();
+      expect(() => change(action, undefined, 13, { patch })).toThrow(/Heropen/);
+      const admin = change(action, undefined, 13, { patch: { owner: 'Ander beheer' } });
+      const forged = structuredClone(admin),
+        event = forged.lifecycle!.history.at(-1)!;
+      Object.assign(event.after, patch);
+      Object.assign(forged, patch);
+      event.sha256 = actionEventHash(event);
+      expect(() => assertActionHistory(forged)).toThrow(/zonder heropening/);
+    }
+    expect(() =>
+      change(assessed(), undefined, 13, { patch: { priority: 'critical', dueDate: '2026-10-09' } }),
+    ).not.toThrow();
+  });
+  it('requires the explicit chosen current target version for a new effect/close while retaining the old chain after target change', () => {
+    const scenario = targetScenario();
+    const target = captureRiskTargetReference(scenario, 'control', 'guard');
+    const beginning = { ...initial(), scenarioId: scenario.id, riskTargets: [target] };
+    let action = change(beginning, 'in_progress', 8);
+    action = change(action, 'implemented', 9);
+    action = change(action, 'verification_due', 10, { verificationDueAt: at(12) });
+    const outcome = {
+      expectedRevision: 3,
+      actor: 'Ada',
+      reason: 'Uitkomst gemeten',
+      targetStage: 'effective' as const,
+      verifier: 'Bert',
+      evaluation: 'Criterium bereikt',
+    };
+    expect(() => reviseAction(action, outcome, [proof()], at(12))).toThrow(/risicodoelbasis/);
+    const effective = reviseAction(action, outcome, [proof()], at(12), [scenario]);
+    expect(actionCurrentValidity(effective, [proof()], [scenario]).status).toBe('current');
+    scenario.controls[0].rationale = 'Gewijzigd mechanisme';
+    expect(() => assertActionHistory(effective)).not.toThrow();
+    expect(actionCurrentValidity(effective, [proof()], [scenario]).status).toBe('stale');
+    expect(() =>
+      reviseAction(
+        effective,
+        { expectedRevision: 4, actor: 'Ada', reason: 'Afsluiten', targetStage: 'closed' },
+        [proof()],
+        at(13),
+        [scenario],
+      ),
+    ).toThrow(/risicodoelbasis/);
+    const reopened = reviseAction(
+      effective,
+      { expectedRevision: 4, actor: 'Ada', reason: 'Doel veranderd', targetStage: 'reopened' },
+      [proof()],
+      at(13),
+      [scenario],
+    );
+    expect(reopened.lifecycle?.history[3].after.riskTargets).toEqual([target]);
+    expect(reopened.lifecycle?.effectiveness).toBe('pending');
+    expect(scenario.controls[0].evidence).toBe('unverified');
+  });
+  it('checks the target’s own pinned proof even when separate action-effect proof remains unchanged', () => {
+    const scenario = targetScenario();
+    const source = { ...proof(), id: 'risk-proof', recordedAt: at(6), verifiedAt: at(7) };
+    source.verifiedContentSha256 = evidenceHash(source);
+    scenario.controls[0].evidence = 'verified';
+    scenario.controls[0].evidenceReview = captureRiskEvidenceReview(
+      scenario,
+      'control',
+      scenario.controls[0],
+      [source],
+      'Beoordelaar',
+      'Doelmechanisme gecontroleerd',
+      at(7),
+    );
+    const target = captureRiskTargetReference(scenario, 'control', 'guard');
+    let action = change(
+      { ...initial(), scenarioId: scenario.id, riskTargets: [target] },
+      'in_progress',
+      8,
+    );
+    action = change(action, 'implemented', 9);
+    action = change(action, 'verification_due', 10, { verificationDueAt: at(12) });
+    const effective = reviseAction(
+      action,
+      {
+        expectedRevision: 3,
+        actor: 'Ada',
+        reason: 'Gemeten',
+        targetStage: 'effective',
+        verifier: 'Bert',
+        evaluation: 'Getest',
+      },
+      [proof(), source],
+      at(12),
+      [scenario],
+    );
+    const revoked = { ...source, status: 'unverified' as const };
+    expect(
+      actionCurrentValidity(effective, [proof(), revoked], [scenario]).issues.join(' '),
+    ).toContain('risk-proof');
+    expect(() => assertActionHistory(effective)).not.toThrow();
+    expect(() =>
+      reviseAction(
+        effective,
+        { expectedRevision: 4, actor: 'Ada', reason: 'Afsluiten', targetStage: 'closed' },
+        [proof(), revoked],
+        at(13),
+        [scenario],
+      ),
+    ).toThrow(/ingetrokken/);
+  });
+  it('allows explicitly selected workspace-wide or exact-dossier proof while refusing another dossier in historical and new assessments', () => {
+    let action = change({ ...initial(), dossierId: 'dossier-1' }, 'in_progress', 8);
+    action = change(action, 'implemented', 9);
+    action = change(action, 'verification_due', 10, { verificationDueAt: at(12) });
+    const outcome = {
+      expectedRevision: 3,
+      actor: 'Ada',
+      reason: 'Toepasbaarheid expliciet beoordeeld',
+      targetStage: 'effective' as const,
+      verifier: 'Bert',
+      evaluation: 'Dit gekozen bewijs ondersteunt het dossiercriterium',
+    };
+    const global = reviseAction(action, outcome, [proof()], at(12));
+    expect(() => assertActionHistory(global)).not.toThrow();
+    const local = { ...proof(), dossierId: 'dossier-1' };
+    local.verifiedContentSha256 = evidenceHash(local);
+    expect(() => reviseAction(action, outcome, [local], at(12))).not.toThrow();
+    const foreign = { ...proof(), dossierId: 'dossier-2' };
+    foreign.verifiedContentSha256 = evidenceHash(foreign);
+    expect(() => reviseAction(action, outcome, [foreign], at(12))).toThrow(/dossiervreemd/);
+  });
+  it('requires the supplied current file session for a new effect or close; serialized matches remain historical and cannot restore readiness', () => {
+    const record = proof();
+    record.file = {
+      schema: 'ima.evidence-file/v1',
+      expectedSha256: '1'.repeat(64),
+      expectedByteLength: 5,
+      mimeTypeOrigin: 'unknown',
+    };
+    record.verifiedFileBindingSha256 = evidenceFileBindingHash(record);
+    const session = new EvidenceFileSession();
+    record.fileCheck = session.record(
+      'workspace-file',
+      record,
+      makeEvidenceFileCheck(record.file, 'Controleur', 'selected-file', {
+        sha256: '1'.repeat(64),
+        byteLength: 5,
+      }),
+    );
+    const outcome = {
+      expectedRevision: 3,
+      actor: 'Ada',
+      reason: 'Bestandsbasis gecontroleerd',
+      targetStage: 'effective' as const,
+      verifier: 'Bert',
+      evaluation: 'Meetcriterium gehaald',
+    };
+    const context = { workspaceId: 'workspace-file', proofs: session.proofs };
+    expect(() =>
+      reviseAction(ready(), outcome, [record], at(12), [], {
+        workspaceId: context.workspaceId,
+        proofs: [],
+      }),
+    ).toThrow(/risicodoelbasis/);
+    const effective = reviseAction(ready(), outcome, [record], at(12), [], context);
+    expect(actionCurrentValidity(effective, [record], [], context).status).toBe('current');
+    session.clear();
+    const lost = { workspaceId: context.workspaceId, proofs: session.proofs };
+    expect(() => assertActionHistory(effective)).not.toThrow();
+    expect(actionCurrentValidity(effective, [record], [], lost).status).toBe('stale');
+    expect(() =>
+      reviseAction(
+        effective,
+        { expectedRevision: 4, actor: 'Ada', reason: 'Afsluiten', targetStage: 'closed' },
+        [record],
+        at(13),
+        [],
+        lost,
+      ),
+    ).toThrow(/risicodoelbasis/);
   });
 });

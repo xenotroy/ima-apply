@@ -1,3 +1,4 @@
+import { seedFictiveRiskEvidence, confirmFictiveRiskEvidence } from './helpers/risk-evidence';
 import { expect, test, type Page } from '@playwright/test';
 import { evidenceHash } from '../src/data/frozen';
 import type { Evidence } from '../src/data/dossier';
@@ -37,6 +38,7 @@ function projectedScore(page: Page) {
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await saved(page);
+  await seedFictiveRiskEvidence(page);
 });
 
 test('new scenario survives reload with its scope and baseline', async ({ page }) => {
@@ -78,11 +80,13 @@ test('planned and unverified controls never reduce current risk; evidence is req
   await dialog.getByLabel('Waarschijnlijkheid W verwachting', { exact: true }).fill('50');
   await dialog.getByLabel('Waarschijnlijkheid W ondergrens', { exact: true }).fill('50');
   await dialog.getByLabel('Onafhankelijkheid beoordeeld en onderbouwd', { exact: true }).check();
+  await confirmFictiveRiskEvidence(dialog);
   await dialog.getByRole('button', { name: 'Maatregel opslaan' }).click();
   await expect(currentScore(page)).toHaveText('135');
   await page.locator('.control-row').filter({ hasText: 'E2E: onafhankelijke afscherming' }).click();
   dialog = page.getByRole('dialog', { name: 'Werking van de beheersmaatregel' });
   await dialog.getByRole('combobox', { name: 'Status', exact: true }).selectOption('planned');
+  await confirmFictiveRiskEvidence(dialog);
   await dialog.getByRole('button', { name: 'Maatregel opslaan' }).click();
   await expect(currentScore(page)).toHaveText('270');
   await expect(projectedScore(page)).toHaveText('135');
@@ -176,7 +180,7 @@ test('implementation, negative effect check and reopening preserve history witho
   async function editor() {
     const details = card.locator('.action-revision-editor');
     if (!(await details.evaluate((node) => (node as HTMLDetailsElement).open)))
-      await details.locator('summary').click();
+      await details.locator(':scope > summary').click();
   }
   async function step(stage: string) {
     await editor();
@@ -404,6 +408,7 @@ test('effectiveness rubric requires conditional definitions and persists the pro
   ).toHaveValue(/E2E: beschikbaarheid binnen gedekte situaties/);
   await dialog.getByRole('button', { name: 'Maatregel opslaan' }).click();
   await expect(currentScore(page)).toHaveText('270');
+  // An unverified design remains a forecast with a zero guaranteed lower reduction.
   await expect(projectedScore(page)).toHaveText('216');
   await saved(page);
   const control = (await stored(page)).scenarios.find(

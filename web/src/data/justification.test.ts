@@ -12,6 +12,9 @@ import {
   justificationResult,
   type JustificationDraft,
 } from './justification';
+import type { Evidence } from './dossier';
+import { evidenceHash } from './frozen';
+import { captureRiskEvidenceReview, EVIDENCE_RISK_METHOD_VERSION } from './risk-evidence';
 
 function control(id: string, reduction: number, status: Control['status'] = 'planned'): Control {
   return {
@@ -251,5 +254,92 @@ describe('frozen, measure-bound justification decisions', () => {
     expect(markdown).toContain('Afzonderlijke lokale prioriteit');
     expect(markdown).toContain('Getekende');
     expect(justificationMarkdown([])).toEqual([]);
+  });
+});
+
+describe('evidence-aware justification dispatch and exact old-method compatibility', () => {
+  function nativeFixture() {
+    const original = fixture();
+    const evidence: Evidence = {
+      id: 'proof',
+      title: 'Fictieve veldtest',
+      kind: 'measurement',
+      reference: 'Private proef',
+      description: 'Onderbouwt het bestaande afzonderlijke W-mechanisme.',
+      recordedAt: '2026-10-07T09:00:00Z',
+      status: 'verified',
+      verifiedBy: 'Verificateur',
+      verifiedAt: '2026-10-07T09:00:00Z',
+      verificationNote: 'Proef voldoet.',
+    };
+    evidence.verifiedContentSha256 = evidenceHash(evidence);
+    const existing = original.scenario.controls[0];
+    existing.evidenceReview = captureRiskEvidenceReview(
+      original.scenario,
+      'control',
+      existing,
+      [evidence],
+      'Risicobeoordelaar',
+      'Lokale test past bij de bestaande reductie.',
+      '2026-10-07T10:00:00Z',
+    );
+    // Plans retain an honest projection, without inventing current field verification.
+    for (const plan of original.scenario.controls.slice(1)) plan.evidence = 'unverified';
+    const assessment = captureRiskAssessment(
+      original.scenario,
+      'Risicobeoordelaar',
+      'Nieuwe bevroren bewijsbasis.',
+      [evidence],
+    );
+    return { ...original, evidence, assessment };
+  }
+  it('uses the frozen verified baseline and only the selected planned forecast under the new method', () => {
+    const { assessment, draft } = nativeFixture();
+    const result = justificationResult(assessment, draft);
+    expect(assessment.methodVersion).toBe(EVIDENCE_RISK_METHOD_VERSION);
+    expect(result.current.value).toBe(270);
+    expect(result.selectedTarget.value).toBeCloseTo(216);
+    expect(result.selectedTarget.max).toBe(270);
+    expect(result.improvement.value).toBeCloseTo(54);
+    expect(result.currentCreditedControlIds).toEqual(['existing']);
+    expect(result.selectedCreditedControlIds).toEqual(['existing', 'selected']);
+    expect(() =>
+      assertJustification(captureJustification(assessment, draft), assessment),
+    ).not.toThrow();
+  });
+  it('preserves existing decisions after current proof withdrawal and does not borrow current evidence for historical calculation', () => {
+    const { scenario, evidence, assessment, draft } = nativeFixture();
+    const record = captureJustification(assessment, draft);
+    const old = structuredClone(record);
+    evidence.status = 'unverified';
+    scenario.controls[0].probabilityReduction = range(0.99);
+    expect(justificationResult(assessment, draft)).toEqual(record.result);
+    expect(record).toEqual(old);
+    expect(() => assertJustification(record, assessment)).not.toThrow();
+    const newAssessment = captureRiskAssessment(
+      scenario,
+      'Risicobeoordelaar',
+      'Bewijs ingetrokken.',
+      [evidence],
+    );
+    const next = justificationResult(newAssessment, draft);
+    expect(next.current.value).toBe(540);
+    expect(next.currentCreditedControlIds).toEqual([]);
+    expect(next.selectedTarget.value).toBeCloseTo(432);
+    expect(next.warnings.join(' ')).toMatch(/ingetrokken|gewijzigd/);
+  });
+  it('keeps old 2.0 assessment and justification hashes exact while new-method records coexist', () => {
+    const old = fixture();
+    const oldRecord = captureJustification(old.assessment, old.draft);
+    const serialized = JSON.stringify({ assessment: old.assessment, justification: oldRecord });
+    const next = nativeFixture();
+    const nextRecord = captureJustification(next.assessment, next.draft);
+    expect(nextRecord.methodVersion).toBe(EVIDENCE_RISK_METHOD_VERSION);
+    expect(oldRecord.methodVersion).toBe(RISK_METHOD_VERSION);
+    expect(() => assertJustification(oldRecord, old.assessment)).not.toThrow();
+    expect(() => assertJustification(nextRecord, next.assessment)).not.toThrow();
+    expect(JSON.stringify({ assessment: old.assessment, justification: oldRecord })).toBe(
+      serialized,
+    );
   });
 });

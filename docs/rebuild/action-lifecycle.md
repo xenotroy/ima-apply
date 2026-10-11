@@ -19,7 +19,7 @@ Iedere opgeslagen statusstap en inhoudsrevisie vraagt een actor en redenering. D
 
 Een heropening wist uitsluitend de **actieve** implementatie, controleplanning, verificateur, effectuitkomst, controleresultaat en verificatiedatum. Volledige vorige inhoud en het eerder gebruikte bewijs blijven in de historische snapshots leesbaar. Geannuleerd is een afzonderlijke terminale uitkomst en levert geen effectclaim op.
 
-Een positief én negatief oordeel vereist een bestaand bewijsrecord met `status: verified`, passende dossierscope, verificateur, verificatiedatum, inhoudelijke verificatienotitie en de hash van de daadwerkelijk geverifieerde bewijsinhoud. De actie archiveert de volledige gebruikte bewijsversie. Een checksum alleen maakt onbevestigd bewijs niet inhoudelijk geverifieerd. Het intrekken of wijzigen van actueel effectbewijs vraagt eerst heropening; een lopend positief label mag niet ongemerkt op gewijzigde inhoud steunen.
+Een positief én negatief oordeel vereist een bestaand bewijsrecord met `status: verified`, passende dossierscope, verificateur, verificatiedatum, inhoudelijke verificatienotitie en de hash van de daadwerkelijk geverifieerde bewijsinhoud. De actie archiveert de volledige gebruikte bewijsversie. Een checksum alleen maakt onbevestigd bewijs niet inhoudelijk geverifieerd. Het intrekken of wijzigen van actueel effectbewijs maakt de actuele geldigheid opnieuw te beoordelen. De reeds bewaarde effectbeoordeling en historie blijven exporteerbaar. De app toont de afwijking en weigert nieuwe afsluiting op die verouderde basis; heropening maakt een nieuw inhoudelijk oordeel mogelijk.
 
 Wijzig de beoordeelde actieomschrijving, het controleplan of de bewijskoppelingen via heropening. Zuivere administratieve wijzigingen zoals eigenaar of streefdatum kunnen als aparte inhoudsrevisie worden bewaard. Ook dan blijft zichtbaar wie welke inhoud veranderde en waarom.
 
@@ -64,3 +64,11 @@ Titel, eigenaar, datum, notities, gekozen bewijs, actor, redenering, volgende st
 Validatiefalen bewaart de exacte tekst en het oorspronkelijke actierecord. Een geaccepteerde revisie verwijdert het eigen concept pas nadat die exacte schrijfoperatie duurzaam is voltooid. Een latere revisie, ander schrijverslot of andere werkruimte behoudt zijn eigen inhoud. Oudere writers blijven via Markdown inspecteerbaar totdat zij bewust worden verwijderd.
 
 De browserproeven controleren ook een geïmporteerde andere werkruimte met identieke actie-ID en revisie, gewijzigde bewijsregistratie, 100.001 Unicode-tekens, werkelijk uitgestelde lokale opslag en een nieuw vervolgconcept tijdens de oude schrijfoperatie. Deze proeven bewijzen nieuwe browserconcepten; zij reconstrueren geen oude Markdown-actierevisies.
+
+## Afzonderlijke actiecontext, 2.4
+
+Acties bewaren optioneel de expliciete AHS-keuze, werkelijk overwogen hogere niveaus, afwijkingsreden, prioriteit, benoemde broncollectie en record-ID, onderwerp-ID’s, beoogd resultaat, uitvoering en verificatiemethode. De velden blijven deel van revisiesnapshots, herstelconcepten, heropeningscontrole en rapportage. Ontbrekende oude velden blijven ontbrekend. Alleen als een afzonderlijke verificatiemethode niet is vastgelegd, kan het oude notitieveld als compatibiliteitsbasis dienen; een expliciet leeg verificatieveld is geen gevuld plan.
+
+Een nieuwe actie vereist een doel en herleidbare aanleiding. Een geplande actie vereist een eigenaar; een voorstel kan nog op toewijzing wachten. Acties uit een incident en een bevinding gebruiken dezelfde vorm. De incidentkoppeling wordt pas samen met de aanvaarde actie opgeslagen. Een gekozen risicomaatregel, IPL of modifier krijgt zijn werkelijke ID, scenarioafbakening en exacte versiehash. Verandering of verdwijning van het doel vraagt beoordeling voordat het opnieuw voor effectcontrole wordt gebruikt.
+
+De oorspronkelijke zeven AHS-labels van acties blijven afzonderlijk van de vier rekenlabels bij scenario-maatregelen. Een label, bronverwijzing of actieprioriteit verleent geen risicoreductie. [Bewijs- en bestandsroute](evidence-integrity.md).

@@ -1,4 +1,6 @@
 import type { Scenario } from '../domain/types';
+import type { RiskTargetReference } from '../domain/risk-evidence-types';
+import type { ActionAhsLevel, ActionPriority, ActionSourceRef } from '../domain/action-context';
 import type { RiskAssessment } from './risk-history';
 import type { JustificationRecord } from './justification';
 import type { ModulePlan } from './module-plan';
@@ -66,6 +68,16 @@ export interface WorkspaceAction {
   evidenceIds?: string[];
   /** Absent in early v1 exports; do not infer effectiveness or historical events. */
   lifecycle?: ActionLifecycle;
+  ahsLevel?: ActionAhsLevel;
+  higherLevelsConsidered?: ActionAhsLevel[];
+  deviationRationale?: string;
+  priority?: ActionPriority;
+  sourceRefs?: ActionSourceRef[];
+  topicIds?: string[];
+  intendedResult?: string;
+  implementation?: string;
+  verificationMethod?: string;
+  riskTargets?: RiskTargetReference[];
 }
 
 export interface WorkspaceIncident {

@@ -1,6 +1,14 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { evaluateRisk, RISK_METHOD_VERSION } from '../domain/risk';
 import type { Estimate, LopaResult, Scenario } from '../domain/types';
+import type { Evidence } from './dossier';
+import type { FrozenRiskEvidenceBasis, RiskEvidenceContext } from '../domain/risk-evidence-types';
+import {
+  EVIDENCE_RISK_METHOD_VERSION,
+  assertFrozenRiskEvidenceBasis,
+  evaluateFrozenRisk,
+  freezeRiskEvidenceBasis,
+} from './risk-evidence';
 
 export interface RiskAssessment {
   id: string;
@@ -10,6 +18,8 @@ export interface RiskAssessment {
   rationale: string;
   methodVersion: string;
   input: Scenario;
+  /** Present only for the evidence-aware method; old records are never upgraded. */
+  evidenceBasis?: FrozenRiskEvidenceBasis;
   result: {
     current: Estimate;
     target: Estimate;
@@ -17,6 +27,8 @@ export interface RiskAssessment {
     targetCredited: string[];
     lopaFrequency?: Estimate;
     lopaComparison?: LopaResult['comparison'];
+    lopaCreditedLayers?: string[];
+    lopaCreditedModifiers?: string[];
   };
   sha256: string;
 }
@@ -42,44 +54,100 @@ export function riskAssessmentHash(
     .map((n) => n.toString(16).padStart(2, '0'))
     .join('');
 }
-export function riskAssessmentResult(input: Scenario): RiskAssessment['result'] {
-  const r = evaluateRisk(input);
+export function riskAssessmentResult(
+  input: Scenario,
+  evidenceBasis?: FrozenRiskEvidenceBasis,
+): RiskAssessment['result'] {
+  const r = evidenceBasis ? evaluateFrozenRisk(input, evidenceBasis) : evaluateRisk(input);
   return {
     current: r.current.score,
     target: r.target.score,
     currentCredited: r.current.creditedControlIds,
     targetCredited: r.target.creditedControlIds,
-    ...(r.lopa ? { lopaFrequency: r.lopa.frequency, lopaComparison: r.lopa.comparison } : {}),
+    ...(r.lopa
+      ? {
+          lopaFrequency: r.lopa.frequency,
+          lopaComparison: r.lopa.comparison,
+          ...(evidenceBasis
+            ? {
+                lopaCreditedLayers: r.lopa.creditedLayerIds,
+                lopaCreditedModifiers: r.lopa.creditedModifierIds,
+              }
+            : {}),
+        }
+      : {}),
   };
 }
 export function captureRiskAssessment(
   input: Scenario,
   assessor: string,
   rationale: string,
+  evidence?: readonly Evidence[],
+  context?: RiskEvidenceContext,
 ): RiskAssessment {
   if (!assessor.trim() || !rationale.trim())
     throw new Error('Leg beoordelaar en onderbouwing vast.');
   const copy: Scenario = JSON.parse(JSON.stringify(input));
+  const evidenceBasis =
+    evidence !== undefined ? freezeRiskEvidenceBasis(copy, evidence, context) : undefined;
   const artifact = {
     id: crypto.randomUUID(),
     scenarioId: copy.id,
     recordedAt: new Date().toISOString(),
     assessor: assessor.trim(),
     rationale: rationale.trim(),
-    methodVersion: RISK_METHOD_VERSION,
+    methodVersion: evidenceBasis ? EVIDENCE_RISK_METHOD_VERSION : RISK_METHOD_VERSION,
     input: copy,
-    result: riskAssessmentResult(copy),
+    ...(evidenceBasis ? { evidenceBasis } : {}),
+    result: riskAssessmentResult(copy, evidenceBasis),
   };
   return { ...artifact, sha256: riskAssessmentHash(artifact) };
+}
+/** Explicit native route; the three-argument legacy function remains byte compatible. */
+export function captureEvidenceRiskAssessment(
+  input: Scenario,
+  assessor: string,
+  rationale: string,
+  evidence: readonly Evidence[] = [],
+  context?: RiskEvidenceContext,
+): RiskAssessment {
+  return captureRiskAssessment(input, assessor, rationale, evidence, context);
+}
+export function isSupportedRiskMethod(version: string): boolean {
+  return version === RISK_METHOD_VERSION || version === EVIDENCE_RISK_METHOD_VERSION;
+}
+/** Native edits append checkpoints; replacing or trimming a prior record is never implicit. */
+export function assertRiskAssessmentUpdate(
+  previous: readonly RiskAssessment[],
+  next: readonly RiskAssessment[],
+): void {
+  const records = new Map(next.map((record) => [record.id, record]));
+  if (records.size !== next.length) throw new Error('Beoordelingsmomenten bevatten dubbele IDs.');
+  for (const record of previous) {
+    const found = records.get(record.id);
+    if (!found || canonical(found) !== canonical(record))
+      throw new Error(
+        'Een vastgelegd beoordelingsmoment blijft exact behouden; voeg een nieuwe beoordeling toe.',
+      );
+  }
 }
 export function assertRiskAssessment(record: RiskAssessment): void {
   if (record.input.id !== record.scenarioId)
     throw new Error('De historische invoer hoort bij een ander scenario.');
   if (record.sha256 !== riskAssessmentHash(record))
     throw new Error('De risicobeoordeling wijkt af van haar bronhash.');
+  if (record.methodVersion === EVIDENCE_RISK_METHOD_VERSION) {
+    if (!record.evidenceBasis)
+      throw new Error('De bewijsbewuste beoordeling mist haar bevroren bewijsbasis.');
+    assertFrozenRiskEvidenceBasis(record.evidenceBasis, record.input);
+  }
+  if (record.methodVersion === RISK_METHOD_VERSION && record.evidenceBasis !== undefined)
+    throw new Error(
+      'Een oude risicobeoordeling mag niet stil naar een nieuwe bewijsbasis worden opgewaardeerd.',
+    );
   if (
-    record.methodVersion === RISK_METHOD_VERSION &&
-    canonical(record.result) !== canonical(riskAssessmentResult(record.input))
+    isSupportedRiskMethod(record.methodVersion) &&
+    canonical(record.result) !== canonical(riskAssessmentResult(record.input, record.evidenceBasis))
   )
     throw new Error('De historische uitkomst past niet bij de vastgelegde invoer en methode.');
 }
