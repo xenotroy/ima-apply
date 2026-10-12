@@ -1,0 +1,491 @@
+.rie-choice {
+  margin: 20px 0;
+}
+.rie-choice-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 22px 0;
+}
+.rie-choice-heading > svg {
+  color: #80d7cd;
+  flex-shrink: 0;
+  margin-top: 7px;
+}
+.rie-choice-heading span {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: #8ebfbd;
+  font-weight: 750;
+}
+.rie-choice-heading h2 {
+  font-size: 23px;
+  letter-spacing: -0.5px;
+  margin: 6px 0;
+}
+.rie-choice-heading p {
+  color: #95aab7;
+  max-width: 750px;
+  line-height: 1.7;
+  font-size: 12px;
+}
+.rie-bank-register {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+.rie-bank-card {
+  border: 1px solid #304d5d;
+  background: linear-gradient(120deg, #142d38, #142938);
+  border-radius: 12px;
+  padding: 15px;
+}
+.rie-bank-card summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.rie-bank-card summary > span:first-child {
+  flex: 1;
+}
+.rie-bank-card summary strong {
+  font-size: 15px;
+  color: #b5e7e0;
+}
+.rie-bank-card summary small {
+  display: block;
+  font-size: 11px;
+  color: #98b7c3;
+  margin-top: 4px;
+}
+.rie-bank-coverage {
+  font-size: 10px;
+  border: 1px solid #436371;
+  padding: 5px 8px;
+  border-radius: 7px;
+  color: #a4c5c7;
+}
+.rie-bank-card dl {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 7px;
+  font-size: 11px;
+  margin: 18px 0;
+  color: #b5cbd2;
+}
+.rie-bank-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.rie-bank-card p {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #9eb9c6;
+  margin-top: 12px;
+}
+.rie-empty-bank {
+  border: 1px dashed #496977;
+  padding: 25px;
+  border-radius: 14px;
+  color: #a9c9d3;
+}
+.rie-empty-bank h3 {
+  color: #d5ebed;
+  margin: 0 0 10px;
+}
+.rie-empty-bank p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin-bottom: 17px;
+  max-width: 750px;
+}
+.rie-department-tree {
+  margin: 25px 0;
+  border: 1px solid #36505e;
+  padding: 19px;
+  border-radius: 14px;
+  background: #101f2b;
+}
+.rie-tree-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 17px;
+}
+.rie-tree-heading h3 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 15px;
+  margin: 0;
+}
+.rie-department-tree summary {
+  cursor: pointer;
+  color: #bdd5db;
+  line-height: 1.65;
+}
+.rie-department-tree summary span,
+.rie-department-tree summary small {
+  font-size: 10px;
+  color: #8caab8;
+  margin-left: 10px;
+}
+.rie-tree-organisation {
+  border-top: 1px solid #283e4a;
+  padding-top: 11px;
+  margin-top: 12px;
+}
+.rie-tree-department {
+  margin: 12px 0 12px 14px;
+  border-left: 2px solid #326472;
+  padding-left: 13px;
+}
+.rie-tree-department > summary small {
+  display: block;
+  margin: 0 0 0 15px;
+}
+.rie-tree-location {
+  color: #85a8b5;
+  font-size: 10px;
+  margin: 8px 0 12px;
+}
+.rie-tree-plan {
+  padding: 13px;
+  margin: 12px 0;
+  background: #152c36;
+  border: 1px solid #305061;
+  border-radius: 9px;
+}
+.rie-tree-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 13px 0;
+}
+.rie-tree-actions button,
+.rie-tree-department > button,
+.rie-frozen-dossiers button {
+  font-size: 11px;
+  padding: 8px 11px;
+}
+.rie-tree-module {
+  padding: 9px 0 9px 12px;
+  border-left: 1px solid #3f6575;
+  margin-top: 9px;
+}
+.rie-tree-question {
+  margin: 8px 0 0 12px;
+  font-size: 11px;
+}
+.rie-tree-question summary small {
+  display: block;
+  margin-left: 14px;
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+.rie-tree-question p {
+  white-space: pre-wrap;
+  font-size: 12px;
+  color: #c0d4da;
+  line-height: 1.8;
+  margin: 9px 0 9px 13px;
+}
+.rie-frozen-dossiers {
+  margin: 17px 0 0;
+  border-top: 1px solid #355462;
+  padding-top: 11px;
+}
+.rie-frozen-dossiers h5 {
+  margin: 0 0 7px;
+  font-size: 11px;
+  color: #98cbd0;
+}
+.rie-frozen-dossiers > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin: 9px 0;
+  font-size: 11px;
+  color: #b2d1d7;
+}
+.rie-frozen-dossiers p,
+.rie-tree-empty,
+.rie-tree-department > p {
+  font-size: 11px;
+  color: #87a7b5;
+  line-height: 1.7;
+  margin-top: 10px;
+}
+.rie-tree-project {
+  border-top: 1px dashed #3b5867;
+  padding-top: 15px;
+  margin-top: 20px;
+}
+.rie-department-selector {
+  max-width: 700px;
+  margin: 24px 0;
+}
+.rie-router-help {
+  padding: 21px;
+  background: linear-gradient(120deg, #163b3d, #182d40);
+  border: 1px solid #3b656d;
+  border-radius: 14px;
+  margin: 22px 0;
+}
+.rie-router-help > summary {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 750;
+  color: #a8e3dc;
+  list-style: none;
+}
+.rie-router-help > summary > span {
+  flex: 1;
+}
+.rie-router-help > p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #a6c4cf;
+  margin: 15px 0;
+}
+.rie-router-help > .field {
+  max-width: 440px;
+  margin: 20px 0;
+}
+.rie-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 20px 0;
+}
+.rie-profile-grid label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #b6d1d8;
+  cursor: pointer;
+}
+.rie-profile-grid input {
+  accent-color: #2abaae;
+  flex-shrink: 0;
+  margin-top: 3px;
+  width: 14px;
+  height: 14px;
+}
+.rie-risk-inputs {
+  font-size: 12px;
+  color: #a7c7d3;
+  border-top: 1px solid #3a5a64;
+  padding-top: 13px;
+}
+.rie-risk-inputs summary,
+.rie-router-reasons summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.rie-risk-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 15px;
+}
+.rie-risk-grid .field > span {
+  font-size: 11px;
+}
+.rie-risk-grid select {
+  font-size: 11px;
+}
+.rie-router-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin-top: 22px;
+  color: #b6e4df;
+  font-size: 13px;
+}
+.rie-router-result button {
+  font-size: 12px;
+}
+.rie-router-help .rie-router-boundary {
+  font-size: 10px;
+  color: #89b6be;
+  margin: 15px 0 10px;
+}
+.rie-router-reasons {
+  font-size: 11px;
+  color: #abcad1;
+  margin-top: 12px;
+}
+.rie-router-reasons p {
+  margin: 9px 0;
+  line-height: 1.65;
+}
+.rie-blocked {
+  padding: 13px;
+  border: 1px solid #9f7244;
+  background: #35291c;
+  border-radius: 9px;
+  font-size: 12px;
+  color: #edc794;
+  line-height: 1.65;
+}
+.rie-project-export {
+  margin-top: 15px;
+  padding: 14px;
+  border: 1px dashed #478393;
+  border-radius: 10px;
+}
+.rie-project-export p {
+  font-size: 11px;
+  color: #91bdc8;
+  line-height: 1.7;
+  margin-bottom: 12px;
+}
+@media (max-width: 900px) {
+  .rie-profile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .rie-bank-card summary {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 640px) {
+  .rie-profile-grid,
+  .rie-risk-grid {
+    grid-template-columns: 1fr;
+  }
+  .rie-tree-heading,
+  .rie-router-result,
+  .rie-frozen-dossiers > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .rie-bank-card dl {
+    grid-template-columns: 1fr;
+  }
+  .rie-bank-card dt {
+    font-weight: 700;
+  }
+  .rie-choice-heading h2 {
+    font-size: 19px;
+  }
+  .rie-department-tree,
+  .rie-router-help {
+    padding: 15px;
+  }
+  .rie-tree-plan {
+    padding: 10px;
+  }
+  .rie-bank-coverage {
+    font-size: 9px;
+  }
+  .rie-tree-department {
+    margin-left: 5px;
+    padding-left: 9px;
+  }
+}
+.rie-overview-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 24px 0 14px;
+  flex-wrap: wrap;
+}
+.rie-overview-tabs button {
+  border: 1px solid #426171;
+  color: #bdd7df;
+  background: #172f3d;
+  padding: 12px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+}
+.rie-overview-tabs button[aria-selected='true'] {
+  background: linear-gradient(120deg, #1b514e, #233b62);
+  border-color: #81d6cd;
+  color: #ecfffc;
+}
+.rie-choice-reasons {
+  border: 1px solid #355363;
+  border-radius: 16px;
+  padding: 22px;
+  background: linear-gradient(145deg, #122b35, #17263b);
+}
+.rie-choice-reasons p {
+  color: #b4cbd4;
+  line-height: 1.7;
+  font-size: 12px;
+}
+.rie-reason-department {
+  margin: 14px 0;
+  border: 1px solid #365362;
+  border-radius: 12px;
+  padding: 15px;
+}
+.rie-reason-department > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  color: #d9edee;
+}
+.rie-reason-department > summary span {
+  font-size: 12px;
+  color: #a7c8d0;
+}
+.rie-reason-plan {
+  padding: 15px;
+  margin-top: 15px;
+  background: #132a35;
+  border-radius: 10px;
+}
+.rie-reason-plan header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+.rie-reason-plan h4 {
+  margin: 0;
+}
+.rie-reason-plan h5 {
+  font-size: 13px;
+  color: #c4e8e2;
+  margin: 22px 0 12px;
+}
+.rie-selected-reason {
+  border-left: 3px solid #70c8b6;
+  padding: 10px 15px;
+  margin: 10px 0;
+  background: #183840;
+  border-radius: 0 9px 9px 0;
+}
+.rie-selected-reason strong {
+  font-size: 13px;
+  color: #dbf4ee;
+}
+.rie-conditional-reason {
+  border-left: 3px solid #debc75;
+  padding: 10px 15px;
+  background: #34372c;
+}
+.rie-reason-plan details {
+  margin-top: 16px;
+}
+.rie-reason-plan summary {
+  cursor: pointer;
+  color: #c7dae8;
+  font-size: 12px;
+}

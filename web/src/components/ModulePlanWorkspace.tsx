@@ -1,12 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { Layers, Plus, ArrowUp, ArrowDown } from 'lucide-react';
 import type { Question } from '../content/catalog';
 import type { WorkspaceState, WorkspacePatch } from '../data/model';
 import { departmentLabel, departmentOrganisationId } from '../data/dossier';
 import { draftBase } from '../data/local-drafts';
-import { usePersistentDraft } from '../hooks/usePersistentDraft';
+import { usePersistentDraft, type DraftStatus } from '../hooks/usePersistentDraft';
 import DraftNotice from './DraftNotice';
 import ModuleSelectionExplorer from './ModuleSelectionExplorer';
+import RieporterModuleWorkspace from './RieporterModuleWorkspace';
+import {
+  assertRieporterSelectionAvailable,
+  createRieporterProjectWorkspace,
+  rieporterModuleCatalog,
+  type RieporterQuestionMetadata,
+} from '../data/rieporter-module-choice';
+import { exportWorkspace, importWorkspace } from '../data/validation';
 import {
   assertModulePlans,
   createDossierFromModulePlan,
@@ -19,18 +27,35 @@ import {
 } from '../data/module-plan';
 import { Badge, Field, Modal } from './Primitives';
 
+function isRieporterPlan(plan: ModulePlan | undefined): boolean {
+  return Boolean(
+    plan?.modules.length &&
+    plan.modules.every((module) => module.id.startsWith('rieporter-process:')),
+  );
+}
+
 export default function ModulePlanWorkspace({
   workspace,
   questions,
   onUpdate,
   onOpenInventory,
+  initialView = 'general',
+  onViewChange,
+  onAddDepartment,
+  onOpenSettings,
 }: {
   workspace: WorkspaceState;
   questions: Question[];
   onUpdate: (patch: WorkspacePatch) => boolean;
   onOpenInventory?: (dossierId: string) => void;
+  initialView?: 'general' | 'rieporter';
+  onViewChange?: (view: 'general' | 'rieporter') => void;
+  onAddDepartment?: () => void;
+  onOpenSettings?: () => void;
 }) {
-  const [editing, setEditing] = useState<ModulePlan | 'new' | undefined>();
+  const [view, setView] = useState(initialView);
+  useEffect(() => setView(initialView), [initialView]);
+  const [editing, setEditing] = useState<ModulePlan | 'new' | 'rie-new' | undefined>();
   const [creating, setCreating] = useState<ModulePlan | undefined>();
   const [revealPlanId, setRevealPlanId] = useState<string>();
   useEffect(() => {
@@ -49,37 +74,111 @@ export default function ModulePlanWorkspace({
         <h2>
           <Layers size={18} /> Modules & scope
         </h2>
-        <button className="secondary" onClick={() => setEditing('new')}>
-          <Plus size={14} /> Moduleplan
-        </button>
+        {view === 'general' && (
+          <button
+            className="secondary"
+            onClick={() => {
+              setEditing('new');
+            }}
+          >
+            <Plus size={14} /> Moduleplan
+          </button>
+        )}
       </div>
       <p className="muted">
         Bewaar de modulekeuze per project of afdeling, inclusief volgorde en scopenotities. Een
         nieuw dossier bevriest die keuze en de beschikbare vraagversies; later wijzigen van het plan
         verandert bestaande dossiers niet.
       </p>
-      <NewModuleSelection
-        key={`${workspace.id}/${draftBase((workspace.modulePlans ?? []).map((plan) => plan.id))}`}
-        workspace={workspace}
-        questions={questions}
-        open={editing === 'new'}
-        onOpen={() => setEditing('new')}
-        onClose={() => setEditing(undefined)}
-        onSave={(plan) => {
-          const modulePlans = [...(workspace.modulePlans ?? []), plan];
-          try {
-            assertModulePlans({ ...workspace, modulePlans });
-          } catch (error) {
-            return error instanceof Error ? error.message : 'Moduleplan ongeldig.';
+      <div className="segmented dossier-tabs" aria-label="Ingang modulekeuze">
+        {(['general', 'rieporter'] as const).map((key) => (
+          <button
+            type="button"
+            key={key}
+            className={view === key ? 'active' : ''}
+            onClick={() => {
+              setView(key);
+              onViewChange?.(key);
+            }}
+          >
+            {key === 'general' ? 'Algemene modulekeuze' : 'RIEporter & afdelingen'}
+          </button>
+        ))}
+      </div>
+      {view === 'rieporter' && (
+        <RieporterModuleWorkspace
+          workspace={workspace}
+          questions={questions}
+          editorOpen={editing === 'rie-new'}
+          onRequestEditor={() => setEditing('rie-new')}
+          onEditPlan={(id) => {
+            const plan = workspace.modulePlans?.find((record) => record.id === id);
+            if (plan) setEditing(plan);
+          }}
+          onCreateDossier={(id) => {
+            const plan = workspace.modulePlans?.find((record) => record.id === id);
+            if (plan) setCreating(plan);
+          }}
+          onOpenInventory={onOpenInventory}
+          onAddDepartment={onAddDepartment}
+          onOpenSettings={onOpenSettings}
+          renderEditor={(state, catalog) =>
+            editing === 'rie-new' ? (
+              <Modal title="Moduleplan vastleggen" wide onClose={() => setEditing(undefined)}>
+                <PlanFields
+                  workspace={workspace}
+                  questions={questions}
+                  state={state}
+                  questionMetadata={catalog.questionMetadata}
+                  onSave={(plan) => {
+                    try {
+                      assertRieporterSelectionAvailable(catalog, plan.modules);
+                      const saved = {
+                        ...plan,
+                        modules: plan.modules.filter((module) => module.enabled),
+                      };
+                      const modulePlans = [...(workspace.modulePlans ?? []), saved];
+                      assertModulePlans({ ...workspace, modulePlans });
+                      if (onUpdate({ modulePlans })) {
+                        setRevealPlanId(saved.id);
+                        setEditing(undefined);
+                        return '';
+                      }
+                      return 'Opslag is niet gelukt. Je volledige keuze blijft behouden.';
+                    } catch (error) {
+                      return error instanceof Error ? error.message : 'RIEporter-keuze ongeldig.';
+                    }
+                  }}
+                />
+              </Modal>
+            ) : null
           }
-          if (onUpdate({ modulePlans })) {
-            setRevealPlanId(plan.id);
-            setEditing(undefined);
-            return '';
-          }
-          return 'Opslag is niet gelukt. Je formulier blijft beschikbaar.';
-        }}
-      />
+        />
+      )}
+      {view === 'general' && (
+        <NewModuleSelection
+          key={`${workspace.id}/${draftBase((workspace.modulePlans ?? []).map((plan) => plan.id))}`}
+          workspace={workspace}
+          questions={questions}
+          open={editing === 'new'}
+          onOpen={() => setEditing('new')}
+          onClose={() => setEditing(undefined)}
+          onSave={(plan) => {
+            const modulePlans = [...(workspace.modulePlans ?? []), plan];
+            try {
+              assertModulePlans({ ...workspace, modulePlans });
+            } catch (error) {
+              return error instanceof Error ? error.message : 'Moduleplan ongeldig.';
+            }
+            if (onUpdate({ modulePlans })) {
+              setRevealPlanId(plan.id);
+              setEditing(undefined);
+              return '';
+            }
+            return 'Opslag is niet gelukt. Je formulier blijft beschikbaar.';
+          }}
+        />
+      )}
       {Boolean(workspace.modulePlans?.length) && (
         <h3 className="module-plan-saved-heading">Opgeslagen modulekeuzes</h3>
       )}
@@ -151,13 +250,18 @@ export default function ModulePlanWorkspace({
           Nog geen opgeslagen modulekeuze. Kies eerst de project- of afdelingsscope.
         </p>
       )}
-      {editing && editing !== 'new' && (
+      {editing && typeof editing !== 'string' && (
         <Modal title="Moduleplan vastleggen" wide onClose={() => setEditing(undefined)}>
           <PlanForm
             key={editing.id}
             workspace={workspace}
             questions={questions}
             original={editing}
+            questionMetadata={
+              isRieporterPlan(editing)
+                ? rieporterModuleCatalog(workspace, questions).questionMetadata
+                : undefined
+            }
             onSave={(plan) => {
               const original = editing;
               if (
@@ -166,17 +270,26 @@ export default function ModulePlanWorkspace({
                   JSON.stringify(original)
               )
                 return 'Dit plan is intussen gewijzigd. Sluit het formulier en open de actuele versie.';
-              const modulePlans = original
-                ? (workspace.modulePlans ?? []).map((item) => (item.id === plan.id ? plan : item))
-                : [...(workspace.modulePlans ?? []), plan];
+              const rieporter = isRieporterPlan(original);
+              let saved = plan;
               try {
+                if (rieporter) {
+                  assertRieporterSelectionAvailable(
+                    rieporterModuleCatalog(workspace, questions),
+                    plan.modules,
+                  );
+                  saved = { ...plan, modules: plan.modules.filter((module) => module.enabled) };
+                }
+                const modulePlans = (workspace.modulePlans ?? []).map((item) =>
+                  item.id === saved.id ? saved : item,
+                );
                 assertModulePlans({ ...workspace, modulePlans });
+                if (onUpdate({ modulePlans })) {
+                  setEditing(undefined);
+                  return '';
+                }
               } catch (error) {
                 return error instanceof Error ? error.message : 'Moduleplan ongeldig.';
-              }
-              if (onUpdate({ modulePlans })) {
-                setEditing(undefined);
-                return '';
               }
               return 'Opslag is niet gelukt. Je formulier blijft beschikbaar.';
             }}
@@ -190,6 +303,34 @@ export default function ModulePlanWorkspace({
             workspace={workspace}
             questions={questions}
             plan={creating}
+            onExport={
+              creating.modules
+                .filter((module) => module.enabled)
+                .every((module) => module.id.startsWith('rieporter-process:'))
+                ? (fields) => {
+                    try {
+                      const project = createRieporterProjectWorkspace(
+                        workspace,
+                        creating,
+                        questions,
+                        { ...fields, id: crypto.randomUUID(), createdAt: new Date().toISOString() },
+                        (candidate) => importWorkspace(JSON.stringify(candidate)),
+                      );
+                      const href = URL.createObjectURL(
+                        new Blob([exportWorkspace(project)], { type: 'application/json' }),
+                      );
+                      const link = document.createElement('a');
+                      link.href = href;
+                      link.download = 'ima-rieporter-project.json';
+                      link.click();
+                      setTimeout(() => URL.revokeObjectURL(href), 1000);
+                      return '';
+                    } catch (error) {
+                      return error instanceof Error ? error.message : 'Projectexport geweigerd.';
+                    }
+                  }
+                : undefined
+            }
             onSave={(fields) => {
               const live = workspace.modulePlans?.find((plan) => plan.id === creating.id);
               if (JSON.stringify(live) !== JSON.stringify(creating))
@@ -223,6 +364,9 @@ function useModulePlanDraft(
   questions: Question[],
   original?: ModulePlan,
 ) {
+  const options = isRieporterPlan(original)
+    ? rieporterModuleCatalog(workspace, questions).modules
+    : modulePlanOptions(workspace, questions);
   return usePersistentDraft(
     `${workspace.id}/module-plan/${original?.id ?? 'new'}`,
     () => ({
@@ -233,9 +377,7 @@ function useModulePlanDraft(
       departmentId: original?.departmentId ?? '',
       modules: [
         ...(original?.modules.map((module) => structuredClone(module)) ?? []),
-        ...modulePlanOptions(workspace, questions).filter(
-          (module) => !original?.modules.some((item) => item.id === module.id),
-        ),
+        ...options.filter((module) => !original?.modules.some((item) => item.id === module.id)),
       ],
       signalIds: [] as string[],
     }),
@@ -244,6 +386,7 @@ function useModulePlanDraft(
       : `new/v1:${draftBase((workspace.modulePlans ?? []).map((record) => record.id))}`,
   );
 }
+export type ModulePlanDraft = ReturnType<typeof useModulePlanDraft>[0];
 type PlanDraftState = ReturnType<typeof useModulePlanDraft>;
 function NewModuleSelection({
   workspace,
@@ -289,11 +432,13 @@ function PlanForm({
   questions,
   original,
   onSave,
+  questionMetadata,
 }: {
   workspace: WorkspaceState;
   questions: Question[];
   original?: ModulePlan;
   onSave: (plan: ModulePlan) => string;
+  questionMetadata?: Record<string, RieporterQuestionMetadata>;
 }) {
   const state = useModulePlanDraft(workspace, questions, original);
   return (
@@ -303,21 +448,24 @@ function PlanForm({
       original={original}
       onSave={onSave}
       state={state}
+      questionMetadata={questionMetadata}
     />
   );
 }
-function PlanFields({
+function PlanFields<T extends ModulePlanDraft>({
   workspace,
   questions,
   original,
   onSave,
   state,
+  questionMetadata,
 }: {
   workspace: WorkspaceState;
   questions: Question[];
   original?: ModulePlan;
   onSave: (plan: ModulePlan) => string;
-  state: PlanDraftState;
+  state: [T, Dispatch<SetStateAction<T>>, DraftStatus];
+  questionMetadata?: Record<string, RieporterQuestionMetadata>;
 }) {
   const [draft, setDraft, draftStatus] = state;
   const { title, scope, projectContextId, organisationId, departmentId, modules } = draft;
@@ -452,6 +600,8 @@ function PlanFields({
         workspace={workspace}
         questions={questions}
         modules={modules}
+        questionMetadata={questionMetadata}
+        showAdvice={!questionMetadata}
         signalIds={draft.signalIds ?? []}
         onSignalIdsChange={(signalIds) => setDraft((current) => ({ ...current, signalIds }))}
         onModulesChange={(modules) => setModules(modules)}
@@ -506,11 +656,13 @@ function DossierFromPlan({
   questions,
   plan,
   onSave,
+  onExport,
 }: {
   workspace: WorkspaceState;
   questions: Question[];
   plan: ModulePlan;
   onSave: (fields: { title: string; scope: string; assessor: string }) => string;
+  onExport?: (fields: { title: string; scope: string; assessor: string }) => string;
 }) {
   const [draft, setDraft, draftStatus] = usePersistentDraft(
     `${workspace.id}/module-plan-dossier/${plan.id}`,
@@ -568,6 +720,25 @@ function DossierFromPlan({
       <button type="submit" className="primary" disabled={missing.length > 0}>
         Dossier met bevroren modulekeuze aanmaken
       </button>
+      {onExport && (
+        <div className="rie-project-export">
+          <p>
+            Maak expliciet een afzonderlijke projectwerkruimte met deze selectie. De bronbank en
+            eerdere interviews blijven in de huidige werkruimte; de export bevat een nieuw dossier
+            met lege antwoorden.
+          </p>
+          <button
+            type="button"
+            className="secondary"
+            onClick={(event) => {
+              if (event.currentTarget.form?.reportValidity())
+                setError(onExport({ title, scope, assessor }));
+            }}
+          >
+            Projectwerkruimte exporteren
+          </button>
+        </div>
+      )}
     </form>
   );
 }

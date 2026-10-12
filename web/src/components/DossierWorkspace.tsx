@@ -85,6 +85,8 @@ export default function DossierWorkspace({
   openInventory,
   openScenario,
   initialTab = 'dossiers',
+  initialModal,
+  openSettings,
 }: {
   workspace: WorkspaceState;
   questions: Question[];
@@ -93,6 +95,8 @@ export default function DossierWorkspace({
   openInventory: (dossierId: string) => void;
   openScenario: (scenarioId: string) => void;
   initialTab?: 'dossiers' | 'organisation';
+  initialModal?: 'organisation' | 'department';
+  openSettings?: () => void;
 }) {
   const { context } = useRiskEvidence();
   const [tab, setTab] = useState<
@@ -111,7 +115,7 @@ export default function DossierWorkspace({
     | 'legal'
     | 'review'
     | null
-  >(null);
+  >(initialModal ?? null);
   const [editingEvidence, setEditingEvidence] = useState<Evidence | undefined>();
   const [editingFinding, setEditingFinding] = useState<Finding | undefined>();
   const dossiers = workspace.dossiers ?? [],
@@ -242,6 +246,11 @@ export default function DossierWorkspace({
           questions={questions}
           onUpdate={onUpdate}
           onOpenInventory={openInventory}
+          onOpenSettings={openSettings}
+          onAddDepartment={() => {
+            setTab('organisation');
+            setModal(organisations.length ? 'department' : 'organisation');
+          }}
         />
       )}
       {tab === 'context' && (

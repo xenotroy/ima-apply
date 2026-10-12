@@ -917,3 +917,53 @@
 .module-plan-saved-card {
   scroll-margin-top: 24px;
 }
+
+.mse-layout.mse-without-advice {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mse-aspect {
+  margin: 11px 0;
+  border-left: 2px solid #b5d9db;
+  padding: 8px 0 8px 11px;
+}
+.mse-aspect > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #24576a;
+  font-size: 11px;
+  cursor: pointer;
+  list-style: none;
+  line-height: 1.7;
+}
+.mse-aspect > summary strong {
+  flex: 1;
+}
+.mse-aspect > summary span {
+  color: #6b8996;
+  font-size: 9px;
+}
+.mse-aspect > summary > svg {
+  transition: transform 0.16s;
+}
+.mse-aspect[open] > summary > svg {
+  transform: rotate(90deg);
+}
+.mse .mse-source-location {
+  display: grid;
+  grid-template-columns: 85px minmax(0, 1fr);
+  gap: 5px 9px;
+  margin: 14px 0 5px;
+  background: #edf6f8;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 10px;
+  color: #416877;
+}
+.mse-source-location dt {
+  font-weight: 750;
+}
+.mse-source-location dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

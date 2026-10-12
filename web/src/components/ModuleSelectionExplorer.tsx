@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { sources as catalogSources, type Question } from '../content/catalog';
 import type { WorkspaceState } from '../data/model';
+import type { RieporterQuestionMetadata } from '../data/rieporter-module-choice';
 import { moduleOriginLabels, moduleQuestionIds, type PlannedModule } from '../data/module-plan';
 import {
   moduleAdvice,
@@ -31,6 +32,8 @@ export interface ModuleSelectionExplorerProps {
   onSignalIdsChange?: (ids: string[]) => void;
   onCreatePlan?: () => void;
   renderModuleExtra?: (module: PlannedModule, index: number) => ReactNode;
+  questionMetadata?: Record<string, RieporterQuestionMetadata>;
+  showAdvice?: boolean;
 }
 function SelectionCheck({
   label,
@@ -97,6 +100,8 @@ export default function ModuleSelectionExplorer({
   onSignalIdsChange,
   onCreatePlan,
   renderModuleExtra,
+  questionMetadata,
+  showAdvice = true,
 }: ModuleSelectionExplorerProps) {
   const [view, setView] = useState<'tree' | 'map'>('tree');
   const [search, setSearch] = useState('');
@@ -112,8 +117,8 @@ export default function ModuleSelectionExplorer({
     [questions],
   );
   const advice = useMemo(
-    () => moduleAdvice(modules, questions, signals),
-    [modules, questions, signals],
+    () => (showAdvice ? moduleAdvice(modules, questions, signals) : []),
+    [modules, questions, signals, showAdvice],
   );
   const adviceById = new Map(advice.map((item) => [item.moduleId, item]));
   const recommended = advice.filter((item) => item.recommended);
@@ -129,7 +134,19 @@ export default function ModuleSelectionExplorer({
     (module) =>
       !query ||
       moduleMatches(module) ||
-      module.questionIds.some((id) => searchable(questionById.get(id)).includes(query)),
+      module.questionIds.some((id) =>
+        [
+          searchable(questionById.get(id)),
+          questionMetadata?.[id]?.code,
+          questionMetadata?.[id]?.aspect,
+          questionMetadata?.[id]?.process,
+          questionMetadata?.[id]?.key,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLocaleLowerCase('nl-NL')
+          .includes(query),
+      ),
   );
   const knownSources = new Map(
     [...catalogSources, ...workspace.sources].map((source) => [source.id, source]),
@@ -155,8 +172,127 @@ export default function ModuleSelectionExplorer({
       const opened = forceOpen || expanded.has(module.id) || Boolean(query);
       const itemAdvice = adviceById.get(module.id);
       const questionIds = module.questionIds.filter(
-        (id) => !query || moduleMatches(module) || searchable(questionById.get(id)).includes(query),
+        (id) =>
+          !query ||
+          moduleMatches(module) ||
+          [
+            searchable(questionById.get(id)),
+            questionMetadata?.[id]?.code,
+            questionMetadata?.[id]?.aspect,
+            questionMetadata?.[id]?.process,
+            questionMetadata?.[id]?.key,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLocaleLowerCase('nl-NL')
+            .includes(query),
       );
+      const renderQuestion = (id: string) => {
+        const question = questionById.get(id);
+        const checked = module.enabled && selected.includes(id);
+        return (
+          <div className={`mse-question ${checked ? 'is-selected' : ''}`} key={id}>
+            <SelectionCheck
+              label={`Vraag kiezen: ${id} ${question?.title ?? 'Niet beschikbaar'}`}
+              checked={checked}
+              onChange={(value) =>
+                onModulesChange(setModuleQuestionSelected(modules, module.id, id, value))
+              }
+            />
+            <details>
+              <summary>
+                <span>{question?.title ?? 'Vraagdefinitie niet beschikbaar'}</span>
+                <small>
+                  {id}
+                  {question ? ` · ${question.route === 'kern' ? 'Kernvraag' : 'Verdieping'}` : ''}
+                </small>
+                <ChevronRight size={15} />
+              </summary>
+              {questionMetadata?.[id] && (
+                <dl className="mse-source-location">
+                  <dt>Broncode</dt>
+                  <dd>{questionMetadata[id].code}</dd>
+                  <dt>Aspect</dt>
+                  <dd>{questionMetadata[id].aspect}</dd>
+                  <dt>Vindplaats</dt>
+                  <dd>
+                    {questionMetadata[id].sourceId} · pagina {questionMetadata[id].page}
+                  </dd>
+                  <dt>Bronoccurrence</dt>
+                  <dd>{questionMetadata[id].key}</dd>
+                  <dt>Mapping</dt>
+                  <dd>
+                    {questionMetadata[id].mappingStatus === 'checked'
+                      ? 'Gecontroleerde koppeling'
+                      : 'Conceptkoppeling'}
+                  </dd>
+                </dl>
+              )}
+              {question ? (
+                <div className="mse-question-body">
+                  <p className="mse-question-prompt">{question.prompt}</p>
+                  {(question.richFields?.hazard || question.richFields?.risk) && (
+                    <dl>
+                      <dt>Gevaar</dt>
+                      <dd>{question.richFields?.hazard || 'Niet afzonderlijk vastgelegd'}</dd>
+                      <dt>Risico</dt>
+                      <dd>{question.richFields?.risk || 'Niet afzonderlijk vastgelegd'}</dd>
+                    </dl>
+                  )}
+                  {question.acceptanceCriteria && (
+                    <section>
+                      <h5>Beoordelingscriteria</h5>
+                      <p>{question.acceptanceCriteria}</p>
+                    </section>
+                  )}
+                  {question.assessmentGuidance && (
+                    <section>
+                      <h5>Beoordelingsaanwijzing</h5>
+                      <p>{question.assessmentGuidance}</p>
+                    </section>
+                  )}
+                  {question.expectedEvidence && (
+                    <section>
+                      <h5>Verwacht bewijs</h5>
+                      <p>{question.expectedEvidence}</p>
+                    </section>
+                  )}
+                  {question.evidenceHints.length > 0 && (
+                    <section>
+                      <h5>Bewijsaanwijzingen</h5>
+                      <ul>
+                        {question.evidenceHints.map((hint, index) => (
+                          <li key={index}>{hint}</li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                  {question.legalReferences && (
+                    <section>
+                      <h5>Oorspronkelijke normverwijzing</h5>
+                      <p>{question.legalReferences}</p>
+                    </section>
+                  )}
+                  <p className="mse-question-sources">
+                    Bronnen:{' '}
+                    {question.sourceIds
+                      .map(
+                        (sourceId) =>
+                          `${knownSources.get(sourceId)?.title ?? sourceId} [${sourceId}]`,
+                      )
+                      .join(' · ') || 'Niet vastgelegd'}
+                  </p>
+                </div>
+              ) : (
+                <p className="mse-missing">
+                  De werkelijke inhoud ontbreekt in deze werkruimte. Controleer de beschikbaarheid
+                  vóór dossieraanmaak.
+                </p>
+              )}
+            </details>
+          </div>
+        );
+      };
       return (
         <div
           className={`mse-module registry-item ${selected.length ? 'is-selected' : ''}`}
@@ -182,7 +318,8 @@ export default function ModuleSelectionExplorer({
               <span>
                 <strong>{module.title}</strong>
                 <small>
-                  {module.code} · {moduleOriginLabels[module.origin]}
+                  {module.code} ·{' '}
+                  {questionMetadata ? 'RIEporter-bronproces' : moduleOriginLabels[module.origin]}
                 </small>
               </span>
             </button>
@@ -205,96 +342,24 @@ export default function ModuleSelectionExplorer({
                   {itemAdvice.reasons.join(' ')}
                 </p>
               ) : null}
-              {questionIds.map((id) => {
-                const question = questionById.get(id);
-                const checked = module.enabled && selected.includes(id);
-                return (
-                  <div className={`mse-question ${checked ? 'is-selected' : ''}`} key={id}>
-                    <SelectionCheck
-                      label={`Vraag kiezen: ${id} ${question?.title ?? 'Niet beschikbaar'}`}
-                      checked={checked}
-                      onChange={(value) =>
-                        onModulesChange(setModuleQuestionSelected(modules, module.id, id, value))
-                      }
-                    />
-                    <details>
-                      <summary>
-                        <span>{question?.title ?? 'Vraagdefinitie niet beschikbaar'}</span>
-                        <small>
-                          {id}
-                          {question
-                            ? ` · ${question.route === 'kern' ? 'Kernvraag' : 'Verdieping'}`
-                            : ''}
-                        </small>
+              {questionMetadata
+                ? [
+                    ...questionIds.reduce<Map<string, string[]>>((groups, id) => {
+                      const aspect = questionMetadata[id]?.aspect ?? 'Aspect niet beschikbaar';
+                      groups.set(aspect, [...(groups.get(aspect) ?? []), id]);
+                      return groups;
+                    }, new Map()),
+                  ].map(([aspect, ids]) => (
+                    <details className="mse-aspect" key={aspect} open={Boolean(query)}>
+                      <summary aria-label={`Aspect bekijken: ${aspect}`}>
+                        <strong>{aspect}</strong>
+                        <span>{ids.length} bronvragen</span>
                         <ChevronRight size={15} />
                       </summary>
-                      {question ? (
-                        <div className="mse-question-body">
-                          <p className="mse-question-prompt">{question.prompt}</p>
-                          {(question.richFields?.hazard || question.richFields?.risk) && (
-                            <dl>
-                              <dt>Gevaar</dt>
-                              <dd>
-                                {question.richFields?.hazard || 'Niet afzonderlijk vastgelegd'}
-                              </dd>
-                              <dt>Risico</dt>
-                              <dd>{question.richFields?.risk || 'Niet afzonderlijk vastgelegd'}</dd>
-                            </dl>
-                          )}
-                          {question.acceptanceCriteria && (
-                            <section>
-                              <h5>Beoordelingscriteria</h5>
-                              <p>{question.acceptanceCriteria}</p>
-                            </section>
-                          )}
-                          {question.assessmentGuidance && (
-                            <section>
-                              <h5>Beoordelingsaanwijzing</h5>
-                              <p>{question.assessmentGuidance}</p>
-                            </section>
-                          )}
-                          {question.expectedEvidence && (
-                            <section>
-                              <h5>Verwacht bewijs</h5>
-                              <p>{question.expectedEvidence}</p>
-                            </section>
-                          )}
-                          {question.evidenceHints.length > 0 && (
-                            <section>
-                              <h5>Bewijsaanwijzingen</h5>
-                              <ul>
-                                {question.evidenceHints.map((hint, index) => (
-                                  <li key={index}>{hint}</li>
-                                ))}
-                              </ul>
-                            </section>
-                          )}
-                          {question.legalReferences && (
-                            <section>
-                              <h5>Oorspronkelijke normverwijzing</h5>
-                              <p>{question.legalReferences}</p>
-                            </section>
-                          )}
-                          <p className="mse-question-sources">
-                            Bronnen:{' '}
-                            {question.sourceIds
-                              .map(
-                                (sourceId) =>
-                                  `${knownSources.get(sourceId)?.title ?? sourceId} [${sourceId}]`,
-                              )
-                              .join(' · ') || 'Niet vastgelegd'}
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="mse-missing">
-                          De werkelijke inhoud ontbreekt in deze werkruimte. Controleer de
-                          beschikbaarheid vóór dossieraanmaak.
-                        </p>
-                      )}
+                      {ids.map(renderQuestion)}
                     </details>
-                  </div>
-                );
-              })}
+                  ))
+                : questionIds.map(renderQuestion)}
               {!questionIds.length && (
                 <p className="mse-empty">Geen vraagteksten passen bij deze zoekterm.</p>
               )}
@@ -323,7 +388,9 @@ export default function ModuleSelectionExplorer({
         </div>
         <div>
           <span className="mse-eyebrow">JOUW ONDERZOEK, JOUW SCOPE</span>
-          <h3>Van thema naar de juiste vragen</h3>
+          <h3>
+            {questionMetadata ? 'Van procesblok naar bronvraag' : 'Van thema naar de juiste vragen'}
+          </h3>
           <p>Verken de inhoud. Kies hele modules of stel je eigen vraagselectie samen.</p>
         </div>
         {onCreatePlan && (
@@ -332,74 +399,76 @@ export default function ModuleSelectionExplorer({
           </button>
         )}
       </header>
-      <div className="mse-layout">
-        <aside className="mse-advice">
-          <div className="mse-advice-heading">
-            <Compass size={20} />
-            <div>
-              <h4>Keuzehulp</h4>
-              <span>Welke gevaren spelen mogelijk?</span>
+      <div className={`mse-layout ${showAdvice ? '' : 'mse-without-advice'}`}>
+        {showAdvice && (
+          <aside className="mse-advice">
+            <div className="mse-advice-heading">
+              <Compass size={20} />
+              <div>
+                <h4>Keuzehulp</h4>
+                <span>Welke gevaren spelen mogelijk?</span>
+              </div>
             </div>
-          </div>
-          <p>
-            Kies herkenbare profielen. Het advies wijst je naar de werkelijke inhoud van de
-            beschikbare modules.
-          </p>
-          <div className="mse-profiles">
-            {moduleHazardProfiles.map((profile) => (
-              <label
-                key={profile.id}
-                className={signals.includes(profile.id) ? 'is-active' : ''}
-                title={profile.description}
-              >
-                <input
-                  type="checkbox"
-                  aria-label={`Gevaarprofiel: ${profile.label}`}
-                  checked={signals.includes(profile.id)}
-                  onChange={(event) =>
-                    setSignals(
-                      event.target.checked
-                        ? [...signals, profile.id]
-                        : signals.filter((id) => id !== profile.id),
-                    )
-                  }
-                />
-                <span>{profile.label}</span>
-              </label>
-            ))}
-          </div>
-          <div className="mse-advice-result">
-            <Sparkles size={16} />
-            <strong>{recommended.length} modules aanbevolen</strong>
-          </div>
-          <button
-            type="button"
-            className="mse-add-advice"
-            disabled={!recommended.length}
-            onClick={applyAdvice}
-          >
-            <Plus size={16} /> Aanbevolen modules toevoegen
-          </button>
-          <p className="mse-advice-footnote">
-            Voegt alleen toe. Jouw uitsluitingen blijven behouden. Een aanbeveling stelt
-            aanwezigheid, werking of naleving niet vast.
-          </p>
-          <details className="mse-advice-explanation">
-            <summary>Waarom dit advies?</summary>
-            <ul>
-              {recommended.map((item) => (
-                <li key={item.moduleId}>
-                  <strong>{modules.find((module) => module.id === item.moduleId)?.title}</strong>
-                  <span>{item.reasons.join(' ')}</span>
-                </li>
-              ))}
-            </ul>
             <p>
-              Geen match betekent dat de keuze nog te onderzoeken is. Alle modules blijven
-              beschikbaar.
+              Kies herkenbare profielen. Het advies wijst je naar de werkelijke inhoud van de
+              beschikbare modules.
             </p>
-          </details>
-        </aside>
+            <div className="mse-profiles">
+              {moduleHazardProfiles.map((profile) => (
+                <label
+                  key={profile.id}
+                  className={signals.includes(profile.id) ? 'is-active' : ''}
+                  title={profile.description}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label={`Gevaarprofiel: ${profile.label}`}
+                    checked={signals.includes(profile.id)}
+                    onChange={(event) =>
+                      setSignals(
+                        event.target.checked
+                          ? [...signals, profile.id]
+                          : signals.filter((id) => id !== profile.id),
+                      )
+                    }
+                  />
+                  <span>{profile.label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="mse-advice-result">
+              <Sparkles size={16} />
+              <strong>{recommended.length} modules aanbevolen</strong>
+            </div>
+            <button
+              type="button"
+              className="mse-add-advice"
+              disabled={!recommended.length}
+              onClick={applyAdvice}
+            >
+              <Plus size={16} /> Aanbevolen modules toevoegen
+            </button>
+            <p className="mse-advice-footnote">
+              Voegt alleen toe. Jouw uitsluitingen blijven behouden. Een aanbeveling stelt
+              aanwezigheid, werking of naleving niet vast.
+            </p>
+            <details className="mse-advice-explanation">
+              <summary>Waarom dit advies?</summary>
+              <ul>
+                {recommended.map((item) => (
+                  <li key={item.moduleId}>
+                    <strong>{modules.find((module) => module.id === item.moduleId)?.title}</strong>
+                    <span>{item.reasons.join(' ')}</span>
+                  </li>
+                ))}
+              </ul>
+              <p>
+                Geen match betekent dat de keuze nog te onderzoeken is. Alle modules blijven
+                beschikbaar.
+              </p>
+            </details>
+          </aside>
+        )}
         <div className="mse-browser">
           <div className="mse-toolbar">
             <label className="mse-search">
