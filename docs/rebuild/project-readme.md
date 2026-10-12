@@ -2,9 +2,9 @@
 
 Een browserwerkruimte voor risico-inventarisatie, onderbouwde beheersmaatregelen en zichtbaar restrisico.
 
-Deze implementatiestand betreft appversie **2.4.1**. Het browserdataschema blijft additief `schemaVersion: 1`; nieuwe beoordelingen gebruiken `ima-risk/2.1.0` met een expliciete bewijsbasis; oude `ima-risk/2.0.0`-beoordelingen bewaren hun eigen invoer, berekening en hashes.
+Deze implementatiestand betreft appversie **2.4.2**. Het browserdataschema blijft additief `schemaVersion: 1`; nieuwe beoordelingen gebruiken `ima-risk/2.1.0` met een expliciete bewijsbasis; oude `ima-risk/2.0.0`-beoordelingen bewaren hun eigen invoer, berekening en hashes.
 
-[Modulekeuze: boom, mindmap en keuzehulp](docs/rebuild/module-selection.md) · **[Open Modulekeuze](https://xenotroy.github.io/ima-apply/#modules)** · [Release 2.4.1](docs/rebuild/release-2.4.1.md) · [Handleiding](docs/rebuild/getting-started.md) · [Risicomethodiek](docs/rebuild/risk-methodology.md) · [Bronregister](docs/rebuild/source-register.md)
+[RIEporter & afdelingen](docs/rebuild/rieporter-module-choice.md) · **[Open RIEporter-keuze](https://xenotroy.github.io/ima-apply/#rieporter)** · [Modulekeuze: boom, mindmap en keuzehulp](docs/rebuild/module-selection.md) · **[Open Modulekeuze](https://xenotroy.github.io/ima-apply/#modules)** · [Release 2.4.2](docs/rebuild/release-2.4.2.md) · [Handleiding](docs/rebuild/getting-started.md) · [Risicomethodiek](docs/rebuild/risk-methodology.md) · [Bronregister](docs/rebuild/source-register.md)
 
 ## Wat de app doet
 

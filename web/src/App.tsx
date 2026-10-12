@@ -119,6 +119,7 @@ import { modulePlanOptions } from './data/module-plan';
 type Page =
   | 'overview'
   | 'modules'
+  | 'rieporter'
   | 'dossiers'
   | 'risk'
   | 'questions'
@@ -131,6 +132,7 @@ type Page =
 const pages: { id: Page; label: string; icon: typeof Shield }[] = [
   { id: 'overview', label: 'Overzicht', icon: LayoutDashboard },
   { id: 'modules', label: 'Modulekeuze', icon: GitBranch },
+  { id: 'rieporter', label: 'RIEporter & afdelingen', icon: GitBranch },
   { id: 'dossiers', label: 'Organisatie & dossiers', icon: FileText },
   { id: 'risk', label: 'Risicowerkbank', icon: Activity },
   { id: 'questions', label: 'Inventarisatie', icon: ClipboardCheck },
@@ -207,6 +209,8 @@ export default function App() {
   const pendingSavesRef = useRef(0);
   const [page, setPage] = useState<Page>(pageFromLocation);
   const [dossierStart, setDossierStart] = useState<'dossiers' | 'organisation'>('dossiers');
+  const [dossierInitialModal, setDossierInitialModal] = useState<'organisation' | 'department' | undefined>();
+  const [dossierStartRequest, setDossierStartRequest] = useState(0);
   useEffect(() => {
     const restorePage = () => setPage(pageFromLocation());
     window.addEventListener('hashchange', restorePage);
@@ -368,7 +372,10 @@ export default function App() {
   const navigate = (next: Page) => {
     setPage(next);
     setGlobalSearch('');
-    if (next === 'dossiers') setDossierStart('dossiers');
+    if (next === 'dossiers') {
+      setDossierStart('dossiers');
+      setDossierInitialModal(undefined);
+    }
     if (window.location.hash !== `#${next}`)
       window.history.pushState(null, '', `#${next}`);
   };
@@ -937,13 +944,13 @@ export default function App() {
                 )}
               </>
             )}
-            {page === 'modules' && (
+            {(page === 'modules' || page === 'rieporter') && (
               <>
                 <div className="page-heading">
                   <div>
                     <div className="eyebrow">KIEZEN · VERKENNEN · STARTEN</div>
-                    <h1>Stel je onderzoek samen<span>.</span></h1>
-                    <p>Verken thema’s, kies wat er speelt en bouw je eigen vragenroute.</p>
+                    <h1>{page === 'rieporter' ? 'Van afdeling naar bronvragen' : 'Stel je onderzoek samen'}<span>.</span></h1>
+                    <p>{page === 'rieporter' ? 'Kies RIEporter-procesblokken, bekijk aspecten en pas de vragen per afdeling aan.' : 'Verken thema’s, kies wat er speelt en bouw je eigen vragenroute.'}</p>
                   </div>
                   <button className="secondary" onClick={() => {
                     navigate('dossiers');
@@ -953,9 +960,19 @@ export default function App() {
                   </button>
                 </div>
                 <ModulePlanWorkspace
+                  key={`${workspace.id}/${page}`}
+                  initialView={page === 'rieporter' ? 'rieporter' : 'general'}
+                  onViewChange={(view) => navigate(view === 'rieporter' ? 'rieporter' : 'modules')}
                   workspace={workspace}
                   questions={allQuestions}
                   onUpdate={update}
+                  onOpenSettings={() => navigate('settings')}
+                  onAddDepartment={() => {
+                    navigate('dossiers');
+                    setDossierStart('organisation');
+                    setDossierInitialModal(workspace.organisations?.length ? 'department' : 'organisation');
+                    setDossierStartRequest((current) => current + 1);
+                  }}
                   onOpenInventory={(dossierId) => {
                     setInventoryDossierId(dossierId);
                     navigate('questions');
@@ -965,12 +982,14 @@ export default function App() {
             )}
             {page === 'dossiers' && (
               <DossierWorkspace
-                key={`${workspace.id}/${dossierStart}`}
+                key={`${workspace.id}/${dossierStart}/${dossierInitialModal ?? ''}/${dossierStartRequest}`}
                 initialTab={dossierStart}
+                initialModal={dossierInitialModal}
                 workspace={workspace}
                 questions={allQuestions}
                 onUpdate={update}
                 onCreateAction={startAction}
+                openSettings={() => navigate('settings')}
                 openInventory={(dossierId) => {
                   setInventoryDossierId(dossierId);
                   navigate('questions');
