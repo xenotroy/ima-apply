@@ -24,6 +24,7 @@ import {
 import type { ModulePlanDraft } from './ModulePlanWorkspace';
 import ModuleSelectionExplorer from './ModuleSelectionExplorer';
 import DraftNotice from './DraftNotice';
+import DepartmentChoiceReasons from './DepartmentChoiceReasons';
 import './RieporterModuleWorkspace.css';
 
 export interface RieporterDraft extends ModulePlanDraft {
@@ -57,6 +58,7 @@ export default function RieporterModuleWorkspace(props: RieporterModuleWorkspace
       (!value.departmentId ||
         Boolean(workspace.departments?.some((record) => record.id === value.departmentId))),
   );
+  const [overview, setOverview] = useState<'tree' | 'reasons'>('tree');
   const departmentId = choiceContext.departmentId;
   const setDepartmentId = (departmentId: string) => setChoiceContext({ departmentId });
   const bank = useMemo(() => {
@@ -160,14 +162,40 @@ export default function RieporterModuleWorkspace(props: RieporterModuleWorkspace
               ))}
             </div>
           )}
-          <DepartmentModuleTree
-            {...props}
-            canCreateChoice={Boolean(catalog?.banks.length)}
-            onCreateForDepartment={(id) => {
-              setDepartmentId(id);
-              props.onRequestEditor();
-            }}
-          />
+          <div className="rie-overview-tabs" role="tablist" aria-label="Afdelingsoverzicht">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={overview === 'tree'}
+              onClick={() => setOverview('tree')}
+            >
+              Afdelingen & modules
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={overview === 'reasons'}
+              onClick={() => setOverview('reasons')}
+            >
+              Argumentatie & keuzes
+            </button>
+          </div>
+          {overview === 'reasons' ? (
+            <DepartmentChoiceReasons
+              workspace={workspace}
+              catalog={catalog}
+              onEditPlan={props.onEditPlan}
+            />
+          ) : (
+            <DepartmentModuleTree
+              {...props}
+              canCreateChoice={Boolean(catalog?.banks.length)}
+              onCreateForDepartment={(id) => {
+                setDepartmentId(id);
+                props.onRequestEditor();
+              }}
+            />
+          )}
           {catalog?.banks.length ? (
             <label className="field rie-department-selector">
               <span>Afdeling voor deze keuze</span>

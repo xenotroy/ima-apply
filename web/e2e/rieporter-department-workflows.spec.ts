@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { createWorkspace, type WorkspaceRecord, type WorkspaceState } from '../src/data/model';
 import { exportWorkspace } from '../src/data/validation';
 import type { Question } from '../src/content/catalog';
-import type { ModulePlan } from '../src/data/module-plan';
+import { modulePlanHash, type ModulePlan } from '../src/data/module-plan';
+import { rieporterModuleCatalog } from '../src/data/rieporter-module-choice';
 import type { PiRouterBindings } from '../src/data/pi-router';
 
 const workspaceKey = 'ima-apply.workspace.v1';
@@ -514,4 +515,64 @@ test('opt-in original private snapshot exposes all 46 processes, 189 aspects and
   expect((await state(page)).contentRecords).toEqual(original.contentRecords);
   expect((await state(page)).departments).toEqual([]);
   expect((await state(page)).modulePlans).toEqual([]);
+});
+
+test('department argumentation distinguishes selected, conditional and unknown and warns after plan revision', async ({
+  page,
+}) => {
+  const workspace = fixture();
+  const catalog = rieporterModuleCatalog(workspace, workspace.questions as unknown as Question[]);
+  const department = workspace.departments![0];
+  const selected = catalog.modules.find((module) => module.code === buildingProcess)!;
+  const plan: ModulePlan = {
+    id: 'fictief-keuzebesluit',
+    title: 'Fictieve onderbouwde selectie',
+    scope: 'department',
+    organisationId: 'fictief-org',
+    departmentId: department.id,
+    revision: 1,
+    sourceIds: [bankSourceId],
+    modules: [
+      {
+        ...selected,
+        enabled: true,
+        scopeNotes: 'Fictieve rookmelding vraagt onderzoek van alarmeren en evacueren.',
+      },
+    ],
+  };
+  workspace.modulePlans = [plan];
+  workspace.contentRecords!.push({
+    id: 'fictief-besluit',
+    schema: 'ima.department-module-decisions/v1',
+    planId: plan.id,
+    planSha256: modulePlanHash(plan),
+    conditional: [
+      {
+        code: machineProcess,
+        reason: 'Eerst vaststellen of eigen machineonderhoud wordt uitgevoerd.',
+      },
+    ],
+    unselectedReason: 'Nog geen bewijs van afwezigheid; taakverkenning nodig.',
+  });
+  plan.revision = 2;
+  await importJson(page, exportWorkspace(workspace), 'fictieve-keuzes.json');
+  await openRieporter(page);
+  await page.getByRole('tab', { name: 'Argumentatie & keuzes', exact: true }).click();
+  const reasons = page.getByRole('region', { name: 'Argumentatie per afdeling', exact: true });
+  await reasons.getByLabel('Toon argumentatie van afdeling').selectOption(department.id);
+  await expect(
+    reasons.getByText('Fictieve rookmelding vraagt onderzoek van alarmeren en evacueren.', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(reasons.getByText(/Eerst vaststellen of eigen machineonderhoud/)).toBeVisible();
+  await expect(reasons.getByRole('status')).toContainText('Keuze gewijzigd');
+  await reasons.getByText(/Niet geselecteerd \/ nog niet beoordeeld/).click();
+  await expect(
+    reasons.getByText('Nog geen bewijs van afwezigheid; taakverkenning nodig.', { exact: true }),
+  ).toBeVisible();
+  await reasons
+    .getByLabel('Toon argumentatie van afdeling')
+    .selectOption(workspace.departments![1].id);
+  await expect(reasons.getByText(/Geen eigen modulekeuze vastgelegd/)).toBeVisible();
 });

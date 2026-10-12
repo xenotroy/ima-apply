@@ -15,3 +15,9 @@ De nieuwe browsergevallen toetsen een echte fictieve JSON-import met twee afdeli
 Een onafhankelijke review vond dat een opgeslagen RIEporter-plan aanvankelijk algemene moduleopties kreeg bij bewerken. Dit is hersteld: bronprocesopties en availability-checks worden nu ook in het editpad gebruikt. De browserregressie voegt daadwerkelijk een tweede proces toe en bewaart de eerdere dossierfreeze en andere afdelingskeuze.
 
 De appversie is `2.4.2`; contentversie `2.4.0`, schema 1 en bestaande risicomethode blijven behouden. Zie [starten met RIEporter](rieporter-module-choice.md). De resterende volledige herbouw en primaire bronintegratie zijn afzonderlijke vervolgtaken.
+
+## Argumentatie en keuzes
+
+De RIEporter-pagina heeft een afzonderlijke tab **Argumentatie & keuzes**, filterbaar per afdeling. Per opgeslagen plan toont deze selectie en motivering, bronverwijzingen, voorwaarden voor aanvullende modules en nog niet beoordeelde procesblokken. Afgebakende bronbanken worden als zodanig aangeduid. Werkgebieden zonder eigen plan krijgen geen stilzwijgende bovenliggende selectie. Als een voorbereidingsrecord van schema `ima.department-module-decisions/v1` een eerdere planhash bevat, waarschuwt de tab na wijziging van de selectie. De browserproef controleert geselecteerd, voorwaardelijk, onbekend, een andere afdeling zonder plan en een gewijzigde planrevisie.
+
+Private PI Vught-voorbereiding wordt afzonderlijk aangeleverd en bevat geen openbare klantdata in deze repository. Bestaande dossierfreezes blijven behouden.

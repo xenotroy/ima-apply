@@ -394,3 +394,98 @@
     padding-left: 9px;
   }
 }
+.rie-overview-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 24px 0 14px;
+  flex-wrap: wrap;
+}
+.rie-overview-tabs button {
+  border: 1px solid #426171;
+  color: #bdd7df;
+  background: #172f3d;
+  padding: 12px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+}
+.rie-overview-tabs button[aria-selected='true'] {
+  background: linear-gradient(120deg, #1b514e, #233b62);
+  border-color: #81d6cd;
+  color: #ecfffc;
+}
+.rie-choice-reasons {
+  border: 1px solid #355363;
+  border-radius: 16px;
+  padding: 22px;
+  background: linear-gradient(145deg, #122b35, #17263b);
+}
+.rie-choice-reasons p {
+  color: #b4cbd4;
+  line-height: 1.7;
+  font-size: 12px;
+}
+.rie-reason-department {
+  margin: 14px 0;
+  border: 1px solid #365362;
+  border-radius: 12px;
+  padding: 15px;
+}
+.rie-reason-department > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  color: #d9edee;
+}
+.rie-reason-department > summary span {
+  font-size: 12px;
+  color: #a7c8d0;
+}
+.rie-reason-plan {
+  padding: 15px;
+  margin-top: 15px;
+  background: #132a35;
+  border-radius: 10px;
+}
+.rie-reason-plan header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+.rie-reason-plan h4 {
+  margin: 0;
+}
+.rie-reason-plan h5 {
+  font-size: 13px;
+  color: #c4e8e2;
+  margin: 22px 0 12px;
+}
+.rie-selected-reason {
+  border-left: 3px solid #70c8b6;
+  padding: 10px 15px;
+  margin: 10px 0;
+  background: #183840;
+  border-radius: 0 9px 9px 0;
+}
+.rie-selected-reason strong {
+  font-size: 13px;
+  color: #dbf4ee;
+}
+.rie-conditional-reason {
+  border-left: 3px solid #debc75;
+  padding: 10px 15px;
+  background: #34372c;
+}
+.rie-reason-plan details {
+  margin-top: 16px;
+}
+.rie-reason-plan summary {
+  cursor: pointer;
+  color: #c7dae8;
+  font-size: 12px;
+}
