@@ -112,9 +112,13 @@ import { assertRiskLibraryUpdate, riskLibraryMarkdown } from './data/risk-librar
 import { upsertResponse, responseRelationsMarkdown } from './data/response-relations';
 import QuestionAnswerCard from './components/QuestionAnswerCard';
 import { questionDefinitionsMarkdown } from './data/question-definition';
+import ModulePlanWorkspace from './components/ModulePlanWorkspace';
+import ModuleStartCard from './components/ModuleStartCard';
+import { modulePlanOptions } from './data/module-plan';
 
 type Page =
   | 'overview'
+  | 'modules'
   | 'dossiers'
   | 'risk'
   | 'questions'
@@ -126,6 +130,7 @@ type Page =
   | 'settings';
 const pages: { id: Page; label: string; icon: typeof Shield }[] = [
   { id: 'overview', label: 'Overzicht', icon: LayoutDashboard },
+  { id: 'modules', label: 'Modulekeuze', icon: GitBranch },
   { id: 'dossiers', label: 'Organisatie & dossiers', icon: FileText },
   { id: 'risk', label: 'Risicowerkbank', icon: Activity },
   { id: 'questions', label: 'Inventarisatie', icon: ClipboardCheck },
@@ -135,6 +140,12 @@ const pages: { id: Page; label: string; icon: typeof Shield }[] = [
   { id: 'sources', label: 'Kennis & bronnen', icon: BookOpen },
   { id: 'report', label: 'Rapportage', icon: FileText },
 ];
+function pageFromLocation(): Page {
+  const value = window.location.hash.slice(1);
+  return value === 'settings' || pages.some((item) => item.id === value)
+    ? (value as Page)
+    : 'overview';
+}
 const num = (n: number) => n.toLocaleString('nl-NL', { maximumFractionDigits: 1 });
 const pct = (n: number) => `${num(n * 100)}%`;
 const exp = (n: number) => (n === 0 ? '0' : n.toExponential(2));
@@ -194,7 +205,17 @@ export default function App() {
   const versionRef = useRef(initial.version);
   const queueRef = useRef(Promise.resolve());
   const pendingSavesRef = useRef(0);
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useState<Page>(pageFromLocation);
+  const [dossierStart, setDossierStart] = useState<'dossiers' | 'organisation'>('dossiers');
+  useEffect(() => {
+    const restorePage = () => setPage(pageFromLocation());
+    window.addEventListener('hashchange', restorePage);
+    window.addEventListener('popstate', restorePage);
+    return () => {
+      window.removeEventListener('hashchange', restorePage);
+      window.removeEventListener('popstate', restorePage);
+    };
+  }, []);
   const [inventoryDossierId, setInventoryDossierId] = useState('');
   useEffect(() => setInventoryDossierId(''), [workspace.id]);
   const [selectedId, setSelectedId] = useState(workspace.scenarios[0]?.id ?? '');
@@ -347,6 +368,9 @@ export default function App() {
   const navigate = (next: Page) => {
     setPage(next);
     setGlobalSearch('');
+    if (next === 'dossiers') setDossierStart('dossiers');
+    if (window.location.hash !== `#${next}`)
+      window.history.pushState(null, '', `#${next}`);
   };
   const changeControl = (control: Control) => {
     if (selected)
@@ -398,7 +422,7 @@ export default function App() {
     });
     if (!accepted) return false;
     setSelectedId(s.id);
-    setPage('risk');
+    navigate('risk');
     setModal(null);
     return true;
   };
@@ -708,6 +732,11 @@ export default function App() {
                   </div>
                 )}
                 <MigrationReviewPanel sources={workspace.sources} />
+                <ModuleStartCard
+                  onStart={() => navigate('modules')}
+                  moduleCount={modulePlanOptions(workspace, allQuestions).length}
+                  questionCount={allQuestions.length}
+                />
                 <div className="stats-grid">
                   <Stat
                     title="Risicoscenario’s"
@@ -783,7 +812,7 @@ export default function App() {
                         compact
                         onEdit={(c) => {
                           setEditingControl(c);
-                          setPage('risk');
+                          navigate('risk');
                           setModal('control');
                         }}
                       />
@@ -908,8 +937,36 @@ export default function App() {
                 )}
               </>
             )}
+            {page === 'modules' && (
+              <>
+                <div className="page-heading">
+                  <div>
+                    <div className="eyebrow">KIEZEN · VERKENNEN · STARTEN</div>
+                    <h1>Stel je onderzoek samen<span>.</span></h1>
+                    <p>Verken thema’s, kies wat er speelt en bouw je eigen vragenroute.</p>
+                  </div>
+                  <button className="secondary" onClick={() => {
+                    navigate('dossiers');
+                    setDossierStart('organisation');
+                  }}>
+                    <Settings2 size={16} /> Organisatie invullen
+                  </button>
+                </div>
+                <ModulePlanWorkspace
+                  workspace={workspace}
+                  questions={allQuestions}
+                  onUpdate={update}
+                  onOpenInventory={(dossierId) => {
+                    setInventoryDossierId(dossierId);
+                    navigate('questions');
+                  }}
+                />
+              </>
+            )}
             {page === 'dossiers' && (
               <DossierWorkspace
+                key={`${workspace.id}/${dossierStart}`}
+                initialTab={dossierStart}
                 workspace={workspace}
                 questions={allQuestions}
                 onUpdate={update}

@@ -37,9 +37,15 @@ test('department module selection stays scoped, ordered and frozen across later 
   await dialog
     .getByRole('combobox', { name: 'Afdeling', exact: true })
     .selectOption({ label: 'Moduleafdeling · Moduleorganisatie · Locatie niet vastgelegd' });
-  const boxes = dialog.getByRole('checkbox');
-  await boxes.nth(0).check();
-  await boxes.nth(1).check();
+  await dialog
+    .getByRole('checkbox', { name: 'Module kiezen: Organisatie, taken en RI&E', exact: true })
+    .check();
+  await dialog
+    .getByRole('checkbox', {
+      name: 'Module kiezen: Agressie, dreiging en sociale interactie',
+      exact: true,
+    })
+    .check();
   // The actual module labels remain meaningful and are used for notes/order controls.
   const selectedRows = dialog.locator('.registry-item:has(input:checked)');
   const firstTitle = await selectedRows.nth(0).locator('small').innerText();
@@ -79,11 +85,17 @@ test('department module selection stays scoped, ordered and frozen across later 
   expect(before.questions.map((question: { id: string }) => question.id)).toEqual(originalIds);
   expect(before.departmentIds).toEqual([plan.departmentId]);
   expect((await state(page)).answers).toEqual([]);
+  await page.getByRole('button', { name: 'Modulekeuze', exact: true }).click();
   await page
     .getByRole('button', { name: 'Moduleplan bewerken: Afdelingskeuze', exact: true })
     .click();
   dialog = page.getByRole('dialog', { name: 'Moduleplan vastleggen', exact: true });
-  await dialog.locator('input:checked').first().uncheck();
+  await dialog
+    .getByRole('checkbox', {
+      name: `Module kiezen: ${plan.modules.find((module: { enabled: boolean }) => module.enabled).title}`,
+      exact: true,
+    })
+    .uncheck();
   await dialog.locator('textarea').first().fill('Gewijzigde actuele plannotitie.');
   await dialog.getByRole('button', { name: 'Moduleplan opslaan', exact: true }).click();
   await expect.poll(async () => (await state(page)).modulePlans[0].revision).toBe(1);

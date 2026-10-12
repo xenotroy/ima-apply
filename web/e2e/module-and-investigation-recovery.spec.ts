@@ -55,8 +55,15 @@ test('module choices, order and dossier scope recover; failed durable save prese
   await dialog
     .getByRole('combobox', { name: 'Organisatie', exact: true })
     .selectOption('recovery-organisation');
-  await dialog.getByRole('checkbox').nth(0).check();
-  await dialog.getByRole('checkbox').nth(1).check();
+  await dialog
+    .getByRole('checkbox', { name: 'Module kiezen: Organisatie, taken en RI&E', exact: true })
+    .check();
+  await dialog
+    .getByRole('checkbox', {
+      name: 'Module kiezen: Agressie, dreiging en sociale interactie',
+      exact: true,
+    })
+    .check();
   const rows = dialog.locator('.registry-item:has(input:checked)');
   await rows.nth(0).locator('textarea').fill('Afgebakende moduleactiviteit\nLaatste teken: Ω');
   await rows
@@ -79,7 +86,9 @@ test('module choices, order and dossier scope recover; failed durable save prese
   await expect(dialog.locator('textarea').nth(1)).toHaveValue(
     'Afgebakende moduleactiviteit\nLaatste teken: Ω',
   );
-  await expect(dialog.getByRole('status')).toContainText('Concept hersteld');
+  await expect(dialog.getByRole('status').filter({ hasText: 'Concept hersteld' })).toContainText(
+    'Concept hersteld',
+  );
   await dialog.getByRole('button', { name: 'Moduleplan opslaan', exact: true }).click();
   await expect.poll(async () => (await state(page)).modulePlans?.length).toBe(1);
   expect((await state(page)).modulePlans[0].modules).toEqual(before.draft.value.modules);

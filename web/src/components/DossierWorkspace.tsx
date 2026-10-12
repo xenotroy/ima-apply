@@ -84,6 +84,7 @@ export default function DossierWorkspace({
   onCreateAction,
   openInventory,
   openScenario,
+  initialTab = 'dossiers',
 }: {
   workspace: WorkspaceState;
   questions: Question[];
@@ -91,11 +92,12 @@ export default function DossierWorkspace({
   onCreateAction: (seed: ActionCreateSeed) => void;
   openInventory: (dossierId: string) => void;
   openScenario: (scenarioId: string) => void;
+  initialTab?: 'dossiers' | 'organisation';
 }) {
   const { context } = useRiskEvidence();
   const [tab, setTab] = useState<
     'dossiers' | 'organisation' | 'knowledge' | 'context' | 'modules' | 'managed' | 'library' | 'pi'
-  >('dossiers');
+  >(initialTab);
   const [selectedId, setSelectedId] = useState('');
   const [modal, setModal] = useState<
     | 'organisation'
@@ -235,7 +237,12 @@ export default function DossierWorkspace({
         />
       )}
       {tab === 'modules' && (
-        <ModulePlanWorkspace workspace={workspace} questions={questions} onUpdate={onUpdate} />
+        <ModulePlanWorkspace
+          workspace={workspace}
+          questions={questions}
+          onUpdate={onUpdate}
+          onOpenInventory={openInventory}
+        />
       )}
       {tab === 'context' && (
         <ProjectContextWorkspace

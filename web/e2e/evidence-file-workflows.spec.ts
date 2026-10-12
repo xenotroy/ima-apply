@@ -25,6 +25,15 @@ async function createDossier(page: Page) {
   await dialog.locator('.link-choices').last().getByRole('checkbox').first().check();
   await dialog.getByRole('button', { name: 'Dossier aanmaken', exact: true }).click();
   await expect(dialog).toHaveCount(0);
+  // Closing the form confirms acceptance; the queued durable write can still be pending.
+  await expect
+    .poll(async () =>
+      (await state(page)).dossiers.find(
+        (dossier: { id: string; title: string }) => dossier.title === 'Fictief bijlagendossier',
+      ),
+    )
+    .toMatchObject({ id: expect.any(String), title: 'Fictief bijlagendossier' });
+  await expect(page.locator('.workspace-health')).toContainText('Werkruimte lokaal bewaard');
 }
 async function newEvidence(page: Page) {
   await page.getByRole('button', { name: 'Bewijs', exact: true }).click();

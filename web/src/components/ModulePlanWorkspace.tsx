@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Layers, Plus, ArrowUp, ArrowDown } from 'lucide-react';
 import type { Question } from '../content/catalog';
 import type { WorkspaceState, WorkspacePatch } from '../data/model';
@@ -6,12 +6,14 @@ import { departmentLabel, departmentOrganisationId } from '../data/dossier';
 import { draftBase } from '../data/local-drafts';
 import { usePersistentDraft } from '../hooks/usePersistentDraft';
 import DraftNotice from './DraftNotice';
+import ModuleSelectionExplorer from './ModuleSelectionExplorer';
 import {
   assertModulePlans,
   createDossierFromModulePlan,
   moduleOriginLabels,
   modulePlanOptions,
   modulePlanQuestionIds,
+  moduleQuestionIds,
   type ModulePlan,
   type PlannedModule,
 } from '../data/module-plan';
@@ -21,13 +23,26 @@ export default function ModulePlanWorkspace({
   workspace,
   questions,
   onUpdate,
+  onOpenInventory,
 }: {
   workspace: WorkspaceState;
   questions: Question[];
   onUpdate: (patch: WorkspacePatch) => boolean;
+  onOpenInventory?: (dossierId: string) => void;
 }) {
   const [editing, setEditing] = useState<ModulePlan | 'new' | undefined>();
   const [creating, setCreating] = useState<ModulePlan | undefined>();
+  const [revealPlanId, setRevealPlanId] = useState<string>();
+  useEffect(() => {
+    if (!revealPlanId) return;
+    const card = document.getElementById(`module-plan-${revealPlanId}`);
+    if (!card) return;
+    card.scrollIntoView({
+      block: 'start',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
+    setRevealPlanId(undefined);
+  }, [revealPlanId, workspace.modulePlans]);
   return (
     <section className="panel">
       <div className="section-row">
@@ -43,8 +58,37 @@ export default function ModulePlanWorkspace({
         nieuw dossier bevriest die keuze en de beschikbare vraagversies; later wijzigen van het plan
         verandert bestaande dossiers niet.
       </p>
+      <NewModuleSelection
+        key={`${workspace.id}/${draftBase((workspace.modulePlans ?? []).map((plan) => plan.id))}`}
+        workspace={workspace}
+        questions={questions}
+        open={editing === 'new'}
+        onOpen={() => setEditing('new')}
+        onClose={() => setEditing(undefined)}
+        onSave={(plan) => {
+          const modulePlans = [...(workspace.modulePlans ?? []), plan];
+          try {
+            assertModulePlans({ ...workspace, modulePlans });
+          } catch (error) {
+            return error instanceof Error ? error.message : 'Moduleplan ongeldig.';
+          }
+          if (onUpdate({ modulePlans })) {
+            setRevealPlanId(plan.id);
+            setEditing(undefined);
+            return '';
+          }
+          return 'Opslag is niet gelukt. Je formulier blijft beschikbaar.';
+        }}
+      />
+      {Boolean(workspace.modulePlans?.length) && (
+        <h3 className="module-plan-saved-heading">Opgeslagen modulekeuzes</h3>
+      )}
       {(workspace.modulePlans ?? []).map((plan) => (
-        <div className="registry-item" key={plan.id}>
+        <div
+          className="registry-item module-plan-saved-card"
+          id={`module-plan-${plan.id}`}
+          key={plan.id}
+        >
           <div className="section-row">
             <h3>{plan.title}</h3>
             <Badge tone="blue">Revisie {plan.revision}</Badge>
@@ -64,7 +108,8 @@ export default function ModulePlanWorkspace({
                 </strong>
                 <small>
                   {' '}
-                  · {moduleOriginLabels[module.origin]} · {module.questionIds.length} vragen
+                  · {moduleOriginLabels[module.origin]} · {moduleQuestionIds(module).length} van{' '}
+                  {module.questionIds.length} vragen
                 </small>
                 <p>{module.scopeNotes}</p>
               </div>
@@ -85,6 +130,20 @@ export default function ModulePlanWorkspace({
               Dossier uit deze keuze
             </button>
           </div>
+          {onOpenInventory &&
+            (workspace.dossiers ?? [])
+              .filter((dossier) => dossier.modulePlanSnapshot?.id === plan.id)
+              .map((dossier) => (
+                <button
+                  key={dossier.id}
+                  type="button"
+                  className="secondary"
+                  aria-label={`Start interview: ${dossier.title}`}
+                  onClick={() => onOpenInventory(dossier.id)}
+                >
+                  Start interview · {dossier.title}
+                </button>
+              ))}
         </div>
       ))}
       {!workspace.modulePlans?.length && (
@@ -92,15 +151,15 @@ export default function ModulePlanWorkspace({
           Nog geen opgeslagen modulekeuze. Kies eerst de project- of afdelingsscope.
         </p>
       )}
-      {editing && (
+      {editing && editing !== 'new' && (
         <Modal title="Moduleplan vastleggen" wide onClose={() => setEditing(undefined)}>
           <PlanForm
-            key={editing === 'new' ? 'new' : editing.id}
+            key={editing.id}
             workspace={workspace}
             questions={questions}
-            original={editing === 'new' ? undefined : editing}
+            original={editing}
             onSave={(plan) => {
-              const original = editing === 'new' ? undefined : editing;
+              const original = editing;
               if (
                 original &&
                 JSON.stringify(workspace.modulePlans?.find((item) => item.id === original.id)) !==
@@ -143,6 +202,7 @@ export default function ModulePlanWorkspace({
                 });
                 if (onUpdate({ dossiers: [...(workspace.dossiers ?? []), dossier] })) {
                   setCreating(undefined);
+                  onOpenInventory?.(dossier.id);
                   return '';
                 }
                 return 'Opslag is niet gelukt. Je formulier blijft beschikbaar.';
@@ -158,18 +218,12 @@ export default function ModulePlanWorkspace({
     </section>
   );
 }
-function PlanForm({
-  workspace,
-  questions,
-  original,
-  onSave,
-}: {
-  workspace: WorkspaceState;
-  questions: Question[];
-  original?: ModulePlan;
-  onSave: (plan: ModulePlan) => string;
-}) {
-  const [draft, setDraft, draftStatus] = usePersistentDraft(
+function useModulePlanDraft(
+  workspace: WorkspaceState,
+  questions: Question[],
+  original?: ModulePlan,
+) {
+  return usePersistentDraft(
     `${workspace.id}/module-plan/${original?.id ?? 'new'}`,
     () => ({
       title: original?.title ?? '',
@@ -183,11 +237,89 @@ function PlanForm({
           (module) => !original?.modules.some((item) => item.id === module.id),
         ),
       ],
+      signalIds: [] as string[],
     }),
     original
       ? draftBase(original)
       : `new/v1:${draftBase((workspace.modulePlans ?? []).map((record) => record.id))}`,
   );
+}
+type PlanDraftState = ReturnType<typeof useModulePlanDraft>;
+function NewModuleSelection({
+  workspace,
+  questions,
+  open,
+  onOpen,
+  onClose,
+  onSave,
+}: {
+  workspace: WorkspaceState;
+  questions: Question[];
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onSave: (plan: ModulePlan) => string;
+}) {
+  const state = useModulePlanDraft(workspace, questions);
+  const [draft, setDraft] = state;
+  return (
+    <>
+      {!open && <DraftNotice status={state[2]} />}
+      {!open && (
+        <ModuleSelectionExplorer
+          workspace={workspace}
+          questions={questions}
+          modules={draft.modules}
+          signalIds={draft.signalIds ?? []}
+          onSignalIdsChange={(signalIds) => setDraft((current) => ({ ...current, signalIds }))}
+          onModulesChange={(modules) => setDraft((current) => ({ ...current, modules }))}
+          onCreatePlan={onOpen}
+        />
+      )}
+      {open && (
+        <Modal title="Moduleplan vastleggen" wide onClose={onClose}>
+          <PlanFields workspace={workspace} questions={questions} onSave={onSave} state={state} />
+        </Modal>
+      )}
+    </>
+  );
+}
+function PlanForm({
+  workspace,
+  questions,
+  original,
+  onSave,
+}: {
+  workspace: WorkspaceState;
+  questions: Question[];
+  original?: ModulePlan;
+  onSave: (plan: ModulePlan) => string;
+}) {
+  const state = useModulePlanDraft(workspace, questions, original);
+  return (
+    <PlanFields
+      workspace={workspace}
+      questions={questions}
+      original={original}
+      onSave={onSave}
+      state={state}
+    />
+  );
+}
+function PlanFields({
+  workspace,
+  questions,
+  original,
+  onSave,
+  state,
+}: {
+  workspace: WorkspaceState;
+  questions: Question[];
+  original?: ModulePlan;
+  onSave: (plan: ModulePlan) => string;
+  state: PlanDraftState;
+}) {
+  const [draft, setDraft, draftStatus] = state;
   const { title, scope, projectContextId, organisationId, departmentId, modules } = draft;
   const setTitle = (title: string) => setDraft((current) => ({ ...current, title }));
   const setScope = (scope: ModulePlan['scope']) => setDraft((current) => ({ ...current, scope }));
@@ -316,54 +448,44 @@ function PlanForm({
           </Field>
         )}
       </div>
-      <fieldset className="link-choices">
-        <legend>Modulekeuze en volgorde</legend>
-        {modules.map((module, index) => (
-          <div className="registry-item" key={module.id}>
-            <label>
-              <input
-                type="checkbox"
-                checked={module.enabled}
-                onChange={(event) => change(module.id, { enabled: event.target.checked })}
+      <ModuleSelectionExplorer
+        workspace={workspace}
+        questions={questions}
+        modules={modules}
+        signalIds={draft.signalIds ?? []}
+        onSignalIdsChange={(signalIds) => setDraft((current) => ({ ...current, signalIds }))}
+        onModulesChange={(modules) => setModules(modules)}
+        renderModuleExtra={(module, index) => (
+          <>
+            <Field label={`Scopenotities ${module.title}`}>
+              <textarea
+                value={module.scopeNotes}
+                onChange={(event) => change(module.id, { scopeNotes: event.target.value })}
               />
-              {module.title} · {module.questionIds.length} vragen
-            </label>
-            <small>
-              {moduleOriginLabels[module.origin]} · {module.code} · {module.id}
-            </small>
-            {module.enabled && (
-              <>
-                <Field label={`Scopenotities ${module.title}`}>
-                  <textarea
-                    value={module.scopeNotes}
-                    onChange={(event) => change(module.id, { scopeNotes: event.target.value })}
-                  />
-                </Field>
-                <div className="button-row">
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={index === 0}
-                    aria-label={`Module omhoog: ${module.title}`}
-                    onClick={() => move(index, -1)}
-                  >
-                    <ArrowUp size={14} /> Omhoog
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={index === modules.length - 1}
-                    aria-label={`Module omlaag: ${module.title}`}
-                    onClick={() => move(index, 1)}
-                  >
-                    <ArrowDown size={14} /> Omlaag
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        ))}
-      </fieldset>
+            </Field>
+            <div className="button-row">
+              <button
+                type="button"
+                className="secondary"
+                disabled={index === 0}
+                aria-label={`Module omhoog: ${module.title}`}
+                onClick={() => move(index, -1)}
+              >
+                <ArrowUp size={14} /> Omhoog
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={index === modules.length - 1}
+                aria-label={`Module omlaag: ${module.title}`}
+                onClick={() => move(index, 1)}
+              >
+                <ArrowDown size={14} /> Omlaag
+              </button>
+            </div>
+          </>
+        )}
+      />
       <p className="muted">
         {modulePlanQuestionIds({ modules } as ModulePlan).length} vragen geselecteerd. Opslaan maakt
         geen antwoorden of beoordeling aan.
