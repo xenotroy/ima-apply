@@ -222,3 +222,17 @@ export function setModuleQuestionSelected(
     };
   });
 }
+
+/** A growing library exposes new options without changing saved or draft selections. */
+export function completeModuleOptions(
+  current: readonly PlannedModule[],
+  available: readonly PlannedModule[],
+): PlannedModule[] {
+  const existing = new Set(current.map((module) => module.id));
+  return [
+    ...current,
+    ...available
+      .filter((module) => !existing.has(module.id))
+      .map((module) => ({ ...structuredClone(module), enabled: false })),
+  ];
+}

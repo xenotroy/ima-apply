@@ -4,7 +4,7 @@ import type { Question } from '../content/catalog';
 import type { WorkspaceState } from '../data/model';
 import { departmentLabel, departmentOrganisationId } from '../data/dossier';
 import { modulePlanQuestionIds, moduleQuestionIds, type ModulePlan } from '../data/module-plan';
-import { setModuleEnabled } from '../data/module-selection';
+import { setModuleEnabled, completeModuleOptions } from '../data/module-selection';
 import { draftBase } from '../data/local-drafts';
 import { usePersistentDraft, type DraftStatus } from '../hooks/usePersistentDraft';
 import {
@@ -243,7 +243,7 @@ function RieporterChoice({
   organisationId?: string;
   selectionBasis: string;
 }) {
-  const state = usePersistentDraft<RieporterDraft>(
+  const storedState = usePersistentDraft<RieporterDraft>(
     `${workspace.id}/rieporter-module-choice/${departmentId || 'project'}/new`,
     () => ({
       title: '',
@@ -263,7 +263,12 @@ function RieporterChoice({
     }),
     `rieporter/v1:${selectionBasis}`,
   );
-  const [draft, setDraft, status] = state;
+  const [storedDraft, setDraft, status] = storedState;
+  const draft = {
+    ...storedDraft,
+    modules: completeModuleOptions(storedDraft.modules, catalog.modules),
+  };
+  const state: RieporterDraftState = [draft, setDraft, status];
   const [error, setError] = useState('');
   const recommendation = useMemo(() => {
     try {

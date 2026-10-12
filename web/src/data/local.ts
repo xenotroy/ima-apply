@@ -1,3 +1,4 @@
+import { encodeStoredJson, decodeStoredJson } from './stored-json';
 import { newId, type WorkspaceState } from './model';
 import { exportWorkspace, importWorkspace, MAX_WORKSPACE_BYTES } from './validation';
 
@@ -71,7 +72,7 @@ export class LocalWorkspaceStore {
     }
     let envelope: unknown;
     try {
-      envelope = JSON.parse(raw);
+      envelope = decodeStoredJson(raw, MAX_WORKSPACE_BYTES + 2_000);
     } catch {
       throw new WorkspaceStorageError(
         'De bestaande lokale werkruimte bevat ongeldige JSON; de gegevens zijn bewaard en worden niet overschreven.',
@@ -112,7 +113,7 @@ export class LocalWorkspaceStore {
       try {
         this.#storage.setItem(
           LOCAL_WORKSPACE_KEY,
-          JSON.stringify({ format: 1, version, workspace: copy }),
+          encodeStoredJson({ format: 1, version, workspace: copy }),
         );
       } catch {
         throw new WorkspaceStorageError();

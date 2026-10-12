@@ -360,23 +360,23 @@ describe('explicit separate manual-choice project export', () => {
       createRieporterProjectWorkspace(workspace, plan, questions, fields, validate),
     ).toThrow(/Herstel/);
   });
-  it('enforces the real 2MB native boundary when freezing would duplicate a large but valid source workspace', () => {
+  it('enforces the real 8MB native boundary when freezing would duplicate a large but valid source workspace', () => {
     const { workspace, bank } = fixture();
-    bank.questions = Array.from({ length: 19 }, (_, index) =>
+    bank.questions = Array.from({ length: 40 }, (_, index) =>
       binding(`large-${index}`, 'Groot bronproces'),
     );
     workspace.contentRecords = [bank as unknown as WorkspaceRecord];
     const questions = bank.questions.map((q) => ({
       ...question(q.questionId),
-      prompt: 'Ω'.repeat(40_000),
+      prompt: 'Ω'.repeat(85_000),
     }));
     workspace.questions = questions as unknown as WorkspaceRecord[];
-    expect(Buffer.byteLength(exportWorkspace(workspace))).toBeLessThan(2_000_000);
+    expect(Buffer.byteLength(exportWorkspace(workspace))).toBeLessThan(8_000_000);
     const plan = planFor(workspace, questions),
       before = structuredClone(workspace);
     expect(() =>
       createRieporterProjectWorkspace(workspace, plan, questions, fields, validate),
-    ).toThrow(/groter dan 2000000 bytes/);
+    ).toThrow(/groter dan 8000000 bytes/);
     expect(workspace).toEqual(before);
   });
 });

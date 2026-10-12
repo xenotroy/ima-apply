@@ -1214,9 +1214,18 @@ export default function App() {
                       <div className="stack-buttons">
                         <button
                           className="secondary"
-                          onClick={() =>
-                            download('ima-werkruimte.json', exportWorkspace(workspace))
-                          }
+                          onClick={() => {
+                            try {
+                              download('ima-werkruimte.json', exportWorkspace(workspace));
+                              setNotice(
+                                `JSON-export van revisie ${workspace.revision} aangeboden als ima-werkruimte.json. Controleer de downloads van je browser; bij eerdere exports kan een volgnummer aan de naam zijn toegevoegd.`,
+                              );
+                            } catch (error) {
+                              setNotice(
+                                `Export niet gelukt: ${error instanceof Error ? error.message : String(error)} Je werkruimte blijft behouden.`,
+                              );
+                            }
+                          }}
                         >
                           <ArrowDownToLine size={16} /> Werkruimte exporteren
                         </button>
