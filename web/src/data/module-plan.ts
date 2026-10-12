@@ -18,6 +18,8 @@ export interface PlannedModule {
   code: string;
   title: string;
   questionIds: string[];
+  /** Individual omissions within the original module membership; absent in early exports. */
+  excludedQuestionIds?: string[];
   enabled: boolean;
   scopeNotes: string;
   /** Original assignment order, distinct from the module-definition order. */
@@ -59,6 +61,9 @@ export function modulePlanHash(plan: ModulePlan): string {
       title: module.title,
       enabled: module.enabled,
       questionIds: module.questionIds,
+      ...(module.excludedQuestionIds !== undefined
+        ? { excludedQuestionIds: module.excludedQuestionIds }
+        : {}),
       scopeNotes: module.scopeNotes,
       sortOrder: module.sortOrder ?? null,
       definitionSortOrder: module.definitionSortOrder ?? null,
@@ -69,12 +74,13 @@ export function modulePlanHash(plan: ModulePlan): string {
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
 }
+/** Selection within one module; its enabled flag is handled at plan level. */
+export function moduleQuestionIds(module: PlannedModule): string[] {
+  const excluded = new Set(module.excludedQuestionIds ?? []);
+  return module.questionIds.filter((id) => !excluded.has(id));
+}
 export function modulePlanQuestionIds(plan: ModulePlan): string[] {
-  return [
-    ...new Set(
-      plan.modules.filter((module) => module.enabled).flatMap((module) => module.questionIds),
-    ),
-  ];
+  return [...new Set(plan.modules.filter((module) => module.enabled).flatMap(moduleQuestionIds))];
 }
 /** Existing legacy identities remain separate; new themes never impersonate them. */
 export function modulePlanOptions(
@@ -180,6 +186,7 @@ export function assertModulePlan(plan: unknown): asserts plan is ModulePlan {
       'code',
       'title',
       'questionIds',
+      'excludedQuestionIds',
       'enabled',
       'scopeNotes',
       'sortOrder',
@@ -196,6 +203,12 @@ export function assertModulePlan(plan: unknown): asserts plan is ModulePlan {
       invalid('onbekende moduleherkomst.');
     if (typeof module.enabled !== 'boolean') invalid('selectiestatus ontbreekt.');
     ids(module.questionIds);
+    const membership = module.questionIds;
+    if (module.excludedQuestionIds !== undefined) {
+      ids(module.excludedQuestionIds);
+      if (module.excludedQuestionIds.some((id) => !membership.includes(id)))
+        invalid('uitgesloten vraag behoort niet tot de oorspronkelijke module.');
+    }
     ids(module.sourceIds);
     for (const key of ['sortOrder', 'definitionSortOrder'])
       if (module[key] !== undefined && !Number.isSafeInteger(module[key]))
@@ -255,6 +268,11 @@ export function assertDossierModulePlanSnapshot(dossier: Dossier, workspace: Wor
     invalid('bevroren moduleplanhash komt niet overeen.');
   if (plan.modules.some((module) => !module.enabled))
     invalid('dossiersnapshot bevat een niet-geselecteerde module.');
+  if (
+    !modulePlanQuestionIds(plan).length &&
+    plan.modules.some((module) => module.excludedQuestionIds !== undefined)
+  )
+    invalid('bevroren individuele modulekeuze vereist minimaal één vraag.');
   if (
     plan.organisationId !== dossier.organisationId ||
     plan.projectContextId !== dossier.projectContextId ||
@@ -352,12 +370,17 @@ export function modulePlanMarkdown(workspace: WorkspaceState): string[] {
       `### ${plan.title} [${plan.id}]`,
       `Revisie ${plan.revision} | scope ${plan.scope} | projectcontext ${plan.projectContextId ?? 'Niet gekoppeld'} | organisatie ${plan.organisationId ?? 'Niet gekoppeld'} | afdeling ${plan.departmentId ?? 'Projectbreed'}`,
     );
-    for (const module of plan.modules)
+    for (const module of plan.modules) {
       lines.push(
         `${module.enabled ? 'Geselecteerd' : 'Uitgeschakeld'}: ${module.code} ${module.title} [${module.id}] | ${moduleOriginLabels[module.origin]}`,
-        `Volgorde: ${module.sortOrder ?? 'Niet vastgelegd'} | definitievolgorde ${module.definitionSortOrder ?? 'Niet vastgelegd'} | vragen ${module.questionIds.join(', ')}`,
+        `Volgorde: ${module.sortOrder ?? 'Niet vastgelegd'} | definitievolgorde ${module.definitionSortOrder ?? 'Niet vastgelegd'} | vragen ${(module.excludedQuestionIds === undefined ? module.questionIds : module.enabled ? moduleQuestionIds(module) : []).join(', ')}`,
         `Scopenotities: ${module.scopeNotes || 'Niet vastgelegd'} | bronrecords ${module.sourceIds.join(', ')}`,
       );
+      if (module.excludedQuestionIds !== undefined)
+        lines.push(
+          `Oorspronkelijk vraaglidmaatschap: ${module.questionIds.join(', ')} | uitgesloten vragen: ${module.excludedQuestionIds.join(', ') || 'Geen'}`,
+        );
+    }
     lines.push(`Bronrecords plan: ${plan.sourceIds.join(', ')}`, '');
   }
   for (const dossier of workspace.dossiers ?? []) {
@@ -369,12 +392,17 @@ export function modulePlanMarkdown(workspace: WorkspaceState): string[] {
       `Plan: ${plan.title} [${plan.id}] | revisie ${plan.revision} | hash ${dossier.modulePlanSnapshotSha256}`,
       `Scope: ${plan.scope} | projectcontext ${plan.projectContextId ?? 'Niet gekoppeld'} | organisatie ${plan.organisationId ?? 'Niet gekoppeld'} | afdeling ${plan.departmentId ?? 'Projectbreed'}`,
     );
-    for (const module of plan.modules)
+    for (const module of plan.modules) {
       lines.push(
         `${module.code} ${module.title} [${module.id}] | ${moduleOriginLabels[module.origin]}`,
-        `Volgorde ${module.sortOrder ?? 'Niet vastgelegd'} | definitievolgorde ${module.definitionSortOrder ?? 'Niet vastgelegd'} | vragen ${module.questionIds.join(', ')}`,
+        `Volgorde ${module.sortOrder ?? 'Niet vastgelegd'} | definitievolgorde ${module.definitionSortOrder ?? 'Niet vastgelegd'} | vragen ${moduleQuestionIds(module).join(', ')}`,
         `Scopenotities: ${module.scopeNotes || 'Niet vastgelegd'} | bronrecords ${module.sourceIds.join(', ')}`,
       );
+      if (module.excludedQuestionIds !== undefined)
+        lines.push(
+          `Oorspronkelijk vraaglidmaatschap: ${module.questionIds.join(', ')} | uitgesloten vragen: ${module.excludedQuestionIds.join(', ') || 'Geen'}`,
+        );
+    }
     lines.push(`Bronrecords plan: ${plan.sourceIds.join(', ')}`, '');
   }
   return lines;

@@ -3,12 +3,14 @@ import { createWorkspace, exportWorkspace, importWorkspace, emptyProjectDetails 
 import { questions } from '../content/catalog';
 import {
   assertModulePlans,
+  assertModulePlan,
   assertDossierModulePlanSnapshot,
   createDossierFromModulePlan,
   modulePlanOptions,
   modulePlanQuestionIds,
   modulePlanMarkdown,
   modulePlanHash,
+  moduleQuestionIds,
   type ModulePlan,
 } from './module-plan';
 
@@ -79,6 +81,108 @@ const fields = {
   createdAt: '2026-10-11T08:00:00Z',
 };
 describe('module selection with real scope and frozen dossier membership', () => {
+  it('retains the exact pre-exclusion hash dialect when the additive field is absent', () => {
+    const plan: ModulePlan = {
+      id: 'golden-plan',
+      title: 'Oorspronkelijk plan',
+      scope: 'project',
+      organisationId: 'org',
+      revision: 3,
+      sourceIds: [],
+      modules: [
+        {
+          id: 'golden-module',
+          origin: 'legacy_module',
+          code: 'M01',
+          title: 'Exacte oorspronkelijke module',
+          questionIds: ['q1', 'q2'],
+          enabled: true,
+          scopeNotes: 'Oude scope Ω',
+          sortOrder: 7,
+          definitionSortOrder: 2,
+          sourceIds: [],
+        },
+      ],
+    };
+    // Captured from the existing 2.4.0 implementation before adding the optional field.
+    expect(modulePlanHash(plan)).toBe(
+      '54c51c19c8fe393daf389f5ee947fbe665f0d186eb1cf07ca88fd91f7d95a284',
+    );
+    const { workspace } = fixture();
+    const before = JSON.stringify(workspace.modulePlans);
+    const loaded = importWorkspace(exportWorkspace(workspace));
+    expect(JSON.stringify(loaded.modulePlans)).toBe(before);
+    expect(loaded.modulePlans![0].modules[0]).not.toHaveProperty('excludedQuestionIds');
+  });
+  it('freezes only individually selected questions while preserving the original membership and omission IDs', () => {
+    const { workspace, plan } = fixture();
+    plan.modules[0].excludedQuestionIds = [questions[1].id];
+    const originalMembership = [...plan.modules[0].questionIds];
+    const dossier = createDossierFromModulePlan(plan, questions, workspace, fields);
+    expect(moduleQuestionIds(plan.modules[0])).toEqual([questions[0].id]);
+    expect(dossier.questions.map((question) => question.id)).toEqual([questions[0].id]);
+    expect(dossier.modulePlanSnapshot!.modules[0].questionIds).toEqual(originalMembership);
+    expect(dossier.modulePlanSnapshot!.modules[0].excludedQuestionIds).toEqual([questions[1].id]);
+    workspace.dossiers = [dossier];
+    expect(importWorkspace(exportWorkspace(workspace)).dossiers![0]).toEqual(dossier);
+    const report = modulePlanMarkdown(workspace).join('\n');
+    expect(report).toContain(`| vragen ${questions[0].id}\n`);
+    expect(report).toContain(
+      `Oorspronkelijk vraaglidmaatschap: ${originalMembership.join(', ')} | uitgesloten vragen: ${questions[1].id}`,
+    );
+    const frozen = JSON.stringify(dossier);
+    plan.modules[0].excludedQuestionIds = [];
+    plan.revision++;
+    expect(JSON.stringify(dossier)).toBe(frozen);
+    expect(() => assertDossierModulePlanSnapshot(dossier, workspace)).not.toThrow();
+  });
+  it('validates omissions as unique original members and detects omission tampering through the frozen hash', () => {
+    const { workspace, plan } = fixture();
+    for (const excludedQuestionIds of [null, 'q', [questions[0].id, questions[0].id], ['foreign']])
+      expect(() =>
+        assertModulePlan({ ...plan, modules: [{ ...plan.modules[0], excludedQuestionIds }] }),
+      ).toThrow(/Moduleplan/);
+    plan.modules[0].excludedQuestionIds = [questions[1].id];
+    const dossier = createDossierFromModulePlan(plan, questions, workspace, fields);
+    dossier.modulePlanSnapshot!.modules[0].excludedQuestionIds = [];
+    expect(() => assertDossierModulePlanSnapshot(dossier, workspace)).toThrow(/hash/);
+  });
+  it('refuses an empty effective dossier even when the module itself is enabled', () => {
+    const { workspace, plan } = fixture();
+    plan.modules[0].excludedQuestionIds = [...plan.modules[0].questionIds];
+    expect(modulePlanQuestionIds(plan)).toEqual([]);
+    expect(() => assertModulePlans(workspace)).not.toThrow(); // An unfinished plan remains editable.
+    expect(() => createDossierFromModulePlan(plan, questions, workspace, fields)).toThrow(
+      /minimaal één/,
+    );
+    const forged = {
+      ...fields,
+      organisationId: 'org',
+      projectContextId: 'context',
+      departmentIds: ['dept'],
+      status: 'active' as const,
+      questions: [],
+      sourceSnapshots: [workspace.sources[0]],
+      modulePlanSnapshot: { ...plan, modules: [plan.modules[0]] },
+    };
+    expect(() =>
+      assertDossierModulePlanSnapshot(
+        { ...forged, modulePlanSnapshotSha256: modulePlanHash(forged.modulePlanSnapshot) },
+        workspace,
+      ),
+    ).toThrow(/minimaal één/);
+  });
+  it('keeps a shared question selected through another enabled module after a local omission', () => {
+    const { plan } = fixture();
+    plan.modules[0].excludedQuestionIds = [questions[0].id];
+    plan.modules[1].enabled = true;
+    plan.modules[1].questionIds = [questions[0].id, questions[2].id];
+    expect(modulePlanQuestionIds(plan)).toEqual([
+      questions[1].id,
+      questions[0].id,
+      questions[2].id,
+    ]);
+  });
   it('round-trips exact selected/unselected definitions, source notes and two separate order values', () => {
     const { workspace } = fixture();
     expect(importWorkspace(exportWorkspace(workspace)).modulePlans).toEqual(workspace.modulePlans);

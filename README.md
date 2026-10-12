@@ -2,9 +2,9 @@
 
 Een browserwerkruimte voor risico-inventarisatie, onderbouwde beheersmaatregelen en zichtbaar restrisico.
 
-Deze implementatiestand betreft appversie **2.4.0**. Het browserdataschema blijft additief `schemaVersion: 1`; nieuwe beoordelingen gebruiken `ima-risk/2.1.0` met een expliciete bewijsbasis; oude `ima-risk/2.0.0`-beoordelingen bewaren hun eigen invoer, berekening en hashes.
+Deze implementatiestand betreft appversie **2.4.1**. Het browserdataschema blijft additief `schemaVersion: 1`; nieuwe beoordelingen gebruiken `ima-risk/2.1.0` met een expliciete bewijsbasis; oude `ima-risk/2.0.0`-beoordelingen bewaren hun eigen invoer, berekening en hashes.
 
-[Release 2.4: bewijsversies en bestanden](docs/rebuild/release-2.4.0.md) · **[Open IMA Apply](https://xenotroy.github.io/ima-apply/)** · [Handleiding](docs/rebuild/getting-started.md) · [Risicomethodiek](docs/rebuild/risk-methodology.md) · [Bronregister](docs/rebuild/source-register.md)
+[Modulekeuze: boom, mindmap en keuzehulp](docs/rebuild/module-selection.md) · **[Open Modulekeuze](https://xenotroy.github.io/ima-apply/#modules)** · [Release 2.4.1](docs/rebuild/release-2.4.1.md) · [Handleiding](docs/rebuild/getting-started.md) · [Risicomethodiek](docs/rebuild/risk-methodology.md) · [Bronregister](docs/rebuild/source-register.md)
 
 ## Wat de app doet
 
@@ -26,7 +26,8 @@ Deze implementatiestand betreft appversie **2.4.0**. Het browserdataschema blijf
 - Respondenten en meerdere response-/waarneming-/bevindingrelaties met dossierscope en gecontroleerde inverse links.
 - Geversioneerde herbruikbare risicobibliotheek met gedeelde maatregelen, lokale reviews en kaartposities; ordinale ratings blijven oorspronkelijke screening.
 - PI-router met zelfstandige ingangen profiel, risico's, verplichtingen en signalen, onderscheiden onderzoekslagen en herleidbare bronvraagsets.
-- Project-/afdelingsmoduleplannen met volgorde, scopenotities en bevroren dossiervragen, ook als ze nog onbeantwoord zijn.
+- Directe modulekeuze met uitklapbare thema-/vraagboom, interactieve mindmap, zoeken en expliciete voorstellen op basis van twaalf gevaarprofielen. Volledige modules en afzonderlijke vragen zijn selecteerbaar; de verkenner en scope-invoer delen herstelbare concepten.
+- Project-/afdelingsmoduleplannen met volgorde, scopenotities, individuele uitselectie en bevroren dossiervragen, ook als ze nog onbeantwoord zijn.
 - Bewerkbare projectcontext met dertien inhoudelijke velden, volledige rondgangverslagen met modules en expliciete waarnemingslinks; versieerbaar lokaal register voor basisrisicofactoren.
 - Opgeslagen 5×Waarom-/BowTie-onderzoeken en incidentfrequenties met passende maanduren en expliciete datadekking.
 - Gecontroleerde legacy dossierexport uit Markdown en SQLite met bronbehoud en reviewwaarschuwingen.

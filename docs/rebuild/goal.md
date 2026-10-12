@@ -125,3 +125,9 @@ Bewijsbestanden hebben een afzonderlijke bytehash, MIME-herkomst, bekende oorspr
 Acties gebruiken dezelfde expliciete invoer vanaf een incident, bevinding of zelfstandig voorstel. Doel, eigenaar, AHS/hoger overwogen niveaus/motivering, prioriteit, werkelijke bron-/onderwerpverwijzingen, uitvoering en verificatie blijven in de revisie en het herstelconcept. Bewust geselecteerde risicodoelen dragen hun echte ID en versie. De aanvullende migrator behoudt aantoonbare velden en raw onbekende betekenis zonder oorspronkelijke beoordelingen te verzinnen.
 
 Dit sluit de nieuwe technische ketengaten E01/E02/E04 voor hun beproefde browsergevallen. E05/E06/E07, werkelijke geselecteerde bestand-/archiefmigratie en een inhoudelijk beoordeelde productieoverdracht blijven open. De [release 2.4](release-2.4.0.md) en [audit](completion-audit-2026-10-11.md) houden de bewijsgrens expliciet. De volledige goal blijft **actief**.
+
+### Geprioriteerde modulekeuze — versie 2.4.1, 12 oktober 2026
+
+Op expliciet verzoek krijgt de zichtbare keuze-ingang voor thema’s, modules en vragen voorrang. Hoofdmenu en startpagina openen dezelfde boom/mindmap. Twaalf gevaarprofielen geven uitlegbare voorstellen met expliciete toevoeging; individuele uitsluitingen blijven behouden. De selectie deelt het herstelconcept met het moduleplanformulier, bevriest exact in het nieuwe dossier en opent het interview. Oudere planhashes blijven gelijk wanneer het nieuwe optionele selectieveld ontbreekt.
+
+386 unittests, 73 import-/migratietests en 78 lokale Chrome-proeven slagen; nul browserherpogingen en één private-bankproef overgeslagen. TypeScript/Pages-build en audit slagen met nul kwetsbaarheden. Desktop en mobiel zijn visueel gecontroleerd. Zie [release 2.4.1](release-2.4.1.md) en de [startinstructie](module-selection.md). E05/E06/E07 en de resterende bron-/overdrachtsbewijzen blijven onderdeel van dit actieve goal.
