@@ -7,6 +7,7 @@ import { draftBase } from '../data/local-drafts';
 import { usePersistentDraft, type DraftStatus } from '../hooks/usePersistentDraft';
 import DraftNotice from './DraftNotice';
 import ModuleSelectionExplorer from './ModuleSelectionExplorer';
+import { completeModuleOptions } from '../data/module-selection';
 import RieporterModuleWorkspace from './RieporterModuleWorkspace';
 import {
   assertRieporterSelectionAvailable,
@@ -367,7 +368,7 @@ function useModulePlanDraft(
   const options = isRieporterPlan(original)
     ? rieporterModuleCatalog(workspace, questions).modules
     : modulePlanOptions(workspace, questions);
-  return usePersistentDraft(
+  const state = usePersistentDraft(
     `${workspace.id}/module-plan/${original?.id ?? 'new'}`,
     () => ({
       title: original?.title ?? '',
@@ -385,6 +386,11 @@ function useModulePlanDraft(
       ? draftBase(original)
       : `new/v1:${draftBase((workspace.modulePlans ?? []).map((record) => record.id))}`,
   );
+  return [
+    { ...state[0], modules: completeModuleOptions(state[0].modules, options) },
+    state[1],
+    state[2],
+  ] as typeof state;
 }
 export type ModulePlanDraft = ReturnType<typeof useModulePlanDraft>[0];
 type PlanDraftState = ReturnType<typeof useModulePlanDraft>;

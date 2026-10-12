@@ -35,7 +35,7 @@ import {
 } from './brf';
 
 // Product guard for browser storage. GitHub files above 1 MB use an immutable raw blob.
-export const MAX_WORKSPACE_BYTES = 2_000_000;
+export const MAX_WORKSPACE_BYTES = 8_000_000;
 const MAX_RECORDS = 5_000;
 const MAX_TEXT_LENGTH = 100_000;
 const credentialPattern = /\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})\b/;

@@ -1,3 +1,4 @@
+import { encodeStoredJson, decodeStoredJson } from './stored-json';
 import type { WorkspaceState } from './model';
 import type { LocalWorkspaceSnapshot } from './local';
 import { exportWorkspace, importWorkspace, MAX_WORKSPACE_BYTES } from './validation';
@@ -14,7 +15,7 @@ export interface WorkspaceJournalEntry {
 function read(raw: string): WorkspaceJournalEntry {
   if (new TextEncoder().encode(raw).byteLength > MAX_WORKSPACE_BYTES + 2000)
     throw new Error('De tussentijdse versie is te groot en blijft bewaard.');
-  const entry = JSON.parse(raw) as WorkspaceJournalEntry;
+  const entry = decodeStoredJson(raw, MAX_WORKSPACE_BYTES + 2000) as WorkspaceJournalEntry;
   if (
     !entry ||
     entry.schema !== 'ima.workspace-journal/v1' ||
@@ -71,7 +72,7 @@ export class WorkspaceJournal {
     const key = WORKSPACE_JOURNAL_PREFIX + writer;
     const existing = this.storage.getItem(key);
     if (existing !== null) read(existing);
-    const raw = JSON.stringify(entry);
+    const raw = encodeStoredJson(entry);
     read(raw);
     this.storage.setItem(key, raw); // Synchronous: the current keystroke is recoverable before queued saving starts.
     if (this.storage.getItem(key) !== raw)
@@ -93,7 +94,7 @@ export class WorkspaceJournal {
       pending.workspace.revision >= entry.workspace.revision
     ) {
       // A later queued change descends from this completed write. Advance its conflict baseline.
-      this.storage.setItem(key, JSON.stringify({ ...pending, expectedVersion: saved.version }));
+      this.storage.setItem(key, encodeStoredJson({ ...pending, expectedVersion: saved.version }));
     }
   }
   recoverable(snapshot: LocalWorkspaceSnapshot | null): WorkspaceJournalEntry[] {
