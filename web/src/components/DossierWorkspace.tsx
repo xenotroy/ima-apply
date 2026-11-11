@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import InventoryOverview from './InventoryOverview';
 import { EvidenceAttachmentPanel } from './EvidenceAttachmentPanel';
 import { useRiskEvidence } from './RiskEvidenceContext';
 import { evidenceFileBindingHash, evidenceFileIntegrityReady } from '../data/evidence-files';
@@ -378,6 +379,7 @@ export default function DossierWorkspace({
                   </p>
                 )}
               </section>
+              <InventoryOverview dossier={selected} answers={workspace.answers} />
               <div className="registry-grid">
                 <section className="panel">
                   <div className="section-row">

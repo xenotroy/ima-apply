@@ -79,6 +79,7 @@ import MigrationReviewPanel from './components/MigrationReviewPanel';
 import { Badge, Field, Modal } from './components/Primitives';
 import DossierWorkspace, { MultiSelect } from './components/DossierWorkspace';
 import { questionHash } from './data/frozen';
+import { inventoryProgress, matchesInventoryFilter, type InventoryFilter } from './data/inventory-progress';
 import DossierReport, { dossierMarkdown } from './components/DossierReport';
 import LearningWorkspace from './components/LearningWorkspace';
 import { ActionLifecyclePanel } from './components/ActionLifecyclePanel';
@@ -3035,18 +3036,34 @@ function Questionnaire({
     [search, setSearch] = useState(''),
     [pack, setPack] = useState('all');
   const [respondedBy, setRespondedBy] = useState('');
+  const [inventoryFilter, setInventoryFilter] = useState<InventoryFilter>('all');
+  // Keep the current interview list stable while autosaving a choice and its notes.
+  const [inventoryFilterIds, setInventoryFilterIds] = useState<Set<string> | null>(null);
+  const progress = useMemo(
+    () => inventoryProgress(questions, answers, dossierId),
+    [questions, answers, dossierId],
+  );
+  useEffect(() => {
+    setFilter('all');
+    setSearch('');
+    setPack('all');
+    setInventoryFilter('all');
+    setInventoryFilterIds(null);
+  }, [workspace.id, dossierId]);
   const locked = ['completed', 'archived'].includes(
     dossiers.find((d) => d.id === dossierId)?.status ?? '',
   );
   const themed = new Map(themes.map((t) => [t.id, t]));
   const availableThemes = [...new Set(questions.map((q) => q.themeId))];
   const packThemes = pack === 'all' ? null : contentPacks.find((p) => p.id === pack)?.themeIds;
-  const shown = questions.filter(
-    (q) =>
-      (filter === 'all' || q.themeId === filter) &&
-      (!packThemes || packThemes.includes(q.themeId)) &&
-      `${q.prompt} ${q.assessmentGuidance}`.toLowerCase().includes(search.toLowerCase()),
-  );
+  const shown = questions
+    .map((question, index) => ({ question, index }))
+    .filter(({ question }) =>
+      (filter === 'all' || question.themeId === filter) &&
+      (!packThemes || packThemes.includes(question.themeId)) &&
+      (!inventoryFilterIds || inventoryFilterIds.has(question.id)) &&
+      `${question.prompt} ${question.assessmentGuidance}`.toLowerCase().includes(search.toLowerCase()),
+    );
   return (
     <>
       <div className="page-heading">
@@ -3058,7 +3075,7 @@ function Questionnaire({
           <p>Een antwoord wordt pas bruikbaar met context, bewijs en een passende vervolgactie.</p>
         </div>
         <Badge tone="blue">
-          {answers.length} / {questions.length} antwoorden
+          {progress.answered} / {progress.total} vragen met opgeslagen antwoord
         </Badge>
       </div>
       <section className="panel inventory-scope">
@@ -3120,6 +3137,51 @@ function Questionnaire({
             ))}
         </aside>
         <div className="question-cards">
+          <section className="panel" aria-label="Voortgang inventarisatie">
+            <div className="section-row">
+              <h2>Wat staat nog open?</h2>
+              <Badge tone="blue">{progress.percent}% vastgelegd</Badge>
+            </div>
+            <p className="caption">
+              {progress.unanswered} niet beantwoord · {progress.followUp} nog uitzoeken.
+              Een opgeslagen antwoord betekent niet automatisch dat het risico is beheerst.
+            </p>
+            <progress
+              aria-label="Vragen met opgeslagen antwoord"
+              max={Math.max(1, progress.total)}
+              value={progress.answered}
+              style={{ width: '100%', accentColor: 'var(--accent, #5ed7bb)' }}
+            />
+            <div className="segmented" role="group" aria-label="Filter op antwoordstatus">
+              {([
+                ['all', 'Alle vragen', progress.total],
+                ['unanswered', 'Niet beantwoord', progress.unanswered],
+                ['follow-up', 'Nog uitzoeken', progress.followUp],
+              ] as const).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={inventoryFilter === value ? 'active' : ''}
+                  aria-pressed={inventoryFilter === value}
+                  onClick={() => {
+                    setInventoryFilter(value);
+                    setInventoryFilterIds(value === 'all' ? null : new Set(
+                      questions.filter((question) =>
+                        matchesInventoryFilter(progress.byQuestion.get(question.id), value),
+                      ).map((question) => question.id),
+                    ));
+                  }}
+                >
+                  {label} ({count})
+                </button>
+              ))}
+            </div>
+            <p className="caption">
+              Nog uitzoeken toont antwoorden ‘Onbekend’ en ‘Deels’. De aantallen gelden voor het
+              hele dossier; thema en zoekterm beperken de zichtbare lijst. Vraagnummers blijven gelijk.
+              De lijst blijft staan tijdens het invullen. Klik opnieuw op een statusfilter om te verversen.
+            </p>
+          </section>
           <div className="search-field">
             <Search size={17} />
             <input
@@ -3133,7 +3195,7 @@ function Questionnaire({
             {shown.length} vragen · Publieke vragen zijn eigen formuleringen. Geïmporteerde private
             vragen blijven onderdeel van je eigen dossier.
           </p>
-          {shown.map((question, index) => (
+          {shown.map(({ question, index }) => (
             <QuestionAnswerCard
               key={draftBase({
                 workspaceId: workspace.id,
@@ -3143,7 +3205,7 @@ function Questionnaire({
               })}
               workspace={workspace}
               question={question}
-              answer={answers.find((answer) => answer.questionId === question.id)}
+              answer={progress.byQuestion.get(question.id)}
               dossierId={dossierId}
               respondedBy={respondedBy}
               locked={locked}
